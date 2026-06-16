@@ -45,11 +45,11 @@ create_agent_worktree() {
   fi
 }
 
+create_agent_worktree "agent/pm-strategy" "$WORKTREE_ROOT/pm-strategy"
 create_agent_worktree "agent/prd" "$WORKTREE_ROOT/prd"
-create_agent_worktree "agent/ui" "$WORKTREE_ROOT/ui"
+create_agent_worktree "agent/ui-designer" "$WORKTREE_ROOT/ui-designer"
 create_agent_worktree "agent/frontend" "$WORKTREE_ROOT/frontend"
 create_agent_worktree "agent/backend" "$WORKTREE_ROOT/backend"
-create_agent_worktree "agent/algorithm" "$WORKTREE_ROOT/algorithm"
 create_agent_worktree "agent/qa" "$WORKTREE_ROOT/qa"
 create_agent_worktree "agent/docs" "$WORKTREE_ROOT/docs"
 create_agent_worktree "agent/compliance-audit" "$WORKTREE_ROOT/compliance-audit"

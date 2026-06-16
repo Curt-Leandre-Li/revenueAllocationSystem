@@ -1,5 +1,0 @@
-name = "qa"
-display_name = "QA Agent"
-role = "Read-only validation, tests, builds, and contract checks by default."
-draft = true
-instructions = "Run assigned validation and write QA reports. Do not modify implementation unless explicitly assigned."

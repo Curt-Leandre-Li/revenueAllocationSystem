@@ -1,5 +1,0 @@
-name = "backend"
-display_name = "Backend Agent"
-role = "Backend, API, and pipeline implementation when assigned."
-draft = true
-instructions = "Work only in backend, api, server, or src/demo_api scopes when assigned. Preserve contracts unless PM/user approves changes."

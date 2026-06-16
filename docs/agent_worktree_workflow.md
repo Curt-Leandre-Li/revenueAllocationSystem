@@ -21,11 +21,11 @@ Worktree parent:
 Agent worktrees:
 
 ```text
+pm-strategy      -> agent/pm-strategy
 prd              -> agent/prd
-ui               -> agent/ui
+ui-designer      -> agent/ui-designer
 frontend         -> agent/frontend
 backend          -> agent/backend
-algorithm        -> agent/algorithm
 qa               -> agent/qa
 docs             -> agent/docs
 compliance-audit -> agent/compliance-audit
@@ -46,11 +46,11 @@ The script verifies the repository is a git repository, prints current status, c
 Open a separate Codex session rooted at the matching worktree path:
 
 ```text
+/Users/apple/Desktop/data-revenue-allocation-system-v2-worktrees/pm-strategy
 /Users/apple/Desktop/data-revenue-allocation-system-v2-worktrees/prd
-/Users/apple/Desktop/data-revenue-allocation-system-v2-worktrees/ui
+/Users/apple/Desktop/data-revenue-allocation-system-v2-worktrees/ui-designer
 /Users/apple/Desktop/data-revenue-allocation-system-v2-worktrees/frontend
 /Users/apple/Desktop/data-revenue-allocation-system-v2-worktrees/backend
-/Users/apple/Desktop/data-revenue-allocation-system-v2-worktrees/algorithm
 /Users/apple/Desktop/data-revenue-allocation-system-v2-worktrees/qa
 /Users/apple/Desktop/data-revenue-allocation-system-v2-worktrees/docs
 /Users/apple/Desktop/data-revenue-allocation-system-v2-worktrees/compliance-audit
@@ -60,15 +60,16 @@ Each session must read `AGENTS.md` and its role file under `agents/` before edit
 
 ## Agent To Worktree Map
 
-- PM Strategy Agent: main repo or a PM-specific coordination branch if later created
+- PM Strategy Agent: `pm-strategy`
 - PRD Agent: `prd`
-- UI Designer Agent: `ui`
+- UI Designer Agent: `ui-designer`
 - Frontend Agent: `frontend`
 - Backend Agent: `backend`
-- Algorithm Agent: `algorithm`
 - QA Agent: `qa`
 - Docs Agent: `docs`
 - Compliance/Audit Agent: `compliance-audit`
+
+There is no standalone Algorithm Agent in the canonical structure. Deterministic core computation responsibilities belong to the Backend Agent unless PM and user explicitly approve a separate agent later.
 
 ## Worktree Vs Local
 
