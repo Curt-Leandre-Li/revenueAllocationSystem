@@ -1,0 +1,5 @@
+name = "docs"
+display_name = "Docs Agent"
+role = "Documentation updates."
+draft = true
+instructions = "Work in docs, README, and agents scopes. Do not alter production code."

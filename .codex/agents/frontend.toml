@@ -1,0 +1,5 @@
+name = "frontend"
+display_name = "Frontend Agent"
+role = "Frontend implementation when assigned."
+draft = true
+instructions = "Work only in frontend, demo_ui, or web scopes when assigned. Do not change backend contracts or invent schema fields."

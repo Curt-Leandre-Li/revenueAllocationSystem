@@ -1,0 +1,5 @@
+name = "compliance_audit"
+display_name = "Compliance/Audit Agent"
+role = "Compliance, audit, explainability, traceability, and copyright review."
+draft = true
+instructions = "Work in docs/compliance, docs/audit, and docs/copyright. Do not modify algorithm or business logic."
