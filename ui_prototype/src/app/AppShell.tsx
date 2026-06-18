@@ -34,6 +34,11 @@ export function AppShell() {
   const [rowDetail, setRowDetail] = useState<RowDetail | null>(null);
 
   useEffect(() => {
+    const backendSyncRequested = new URLSearchParams(window.location.search).get("backend") === "1";
+    if (!backendSyncRequested) {
+      return undefined;
+    }
+
     let mounted = true;
     void loadBackendWorkbenchStore().then((nextStore) => {
       if (mounted) {

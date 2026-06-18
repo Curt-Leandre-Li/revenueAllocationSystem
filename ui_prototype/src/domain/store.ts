@@ -1,7 +1,4 @@
-import {
-  formatApiError,
-  loadWorkbenchSnapshotFromBackend,
-} from "./backendAdapter";
+import { loadWorkbenchSnapshotFromBackend } from "./backendAdapter";
 import { dvasApi } from "./apiClient";
 import { workbenchSnapshot } from "./mockData";
 import type { WorkbenchSnapshot } from "./types";
@@ -43,7 +40,7 @@ export interface WorkbenchStore {
 export function createWorkbenchStore(): WorkbenchStore {
   return {
     snapshot: initialWorkbenchSnapshot,
-    lastMessage: "工作区已加载，正在连接后端；后端不可用时使用本地 mock 工作区。",
+    lastMessage: "演示工作区已加载，所有操作会写入本地模拟记录。",
   };
 }
 
@@ -57,10 +54,10 @@ export async function loadBackendWorkbenchStore(): Promise<WorkbenchStore> {
       },
       lastMessage: "后端 API 已连接，工作区已同步。",
     };
-  } catch (error) {
+  } catch {
     return {
       snapshot: initialWorkbenchSnapshot,
-      lastMessage: `后端 API 暂不可用：${formatApiError(error)}。已切换为本地 mock 工作区。`,
+      lastMessage: "后端 API 暂不可用，已切换为本地演示工作区。",
     };
   }
 }
