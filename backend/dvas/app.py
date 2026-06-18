@@ -7,6 +7,7 @@ from .services import (
     ContributionService,
     DashboardService,
     DataIngestionService,
+    MdDshapService,
     PartyService,
     ProjectService,
     QualityAssessmentService,
@@ -28,6 +29,7 @@ class DvasApplication:
         self.shuyuan_service = ShuyuanMeteringService(self.repository)
         self.contribution_service = ContributionService(self.repository)
         self.utility_service = UtilityService(self.repository)
+        self.md_dshap_service = MdDshapService(self.repository)
 
     def handle(self, method, path, body=None):
         trace_id = None
@@ -139,6 +141,24 @@ class DvasApplication:
             and segments[2] == "trace"
         ):
             return self.utility_service.trace(segments[1])
+        if method == "POST" and segments == ["md-dshap", "tasks"]:
+            return self.md_dshap_service.run(body)
+        if method == "GET" and len(segments) == 3 and segments[:2] == ["md-dshap", "tasks"]:
+            return self.md_dshap_service.task(segments[2])
+        if (
+            method == "GET"
+            and len(segments) == 4
+            and segments[:2] == ["md-dshap", "tasks"]
+            and segments[3] == "results"
+        ):
+            return self.md_dshap_service.results(segments[2])
+        if (
+            method == "GET"
+            and len(segments) == 4
+            and segments[:2] == ["md-dshap", "tasks"]
+            and segments[3] == "marginal-traces"
+        ):
+            return self.md_dshap_service.marginal_traces(segments[2])
         raise ApiError("DVAS_NOT_FOUND", "接口不存在", status=404)
 
     def _normalize_path(self, path):

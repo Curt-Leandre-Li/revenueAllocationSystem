@@ -67,6 +67,7 @@ class DashboardService:
         parties = self.repository.list_parties()
         metering_count = len(self.repository.list_shuyuan_meterings())
         utility_count = len(self.repository.list_utility_records())
+        weight_count = len(self.repository.list_md_dshap_tasks())
         preconditions = self.preconditions()
         return {
             **project,
@@ -76,6 +77,7 @@ class DashboardService:
                 "party_count": len(parties),
                 "metering_count": metering_count,
                 "utility_count": utility_count,
+                "weight_count": weight_count,
                 "audit_log_count": len(self.repository.list_audit_logs()),
             },
             "risk_notices": [
@@ -102,6 +104,8 @@ class DashboardService:
         contribution_records = self.repository.list_contribution_records()
         has_contribution_records = bool(contribution_records)
         has_utility_result = bool(self.repository.list_utility_records())
+        has_mds_weight_result = bool(self.repository.list_md_dshap_tasks())
+        mds_ready, mds_reason = self._mds_ready_reason(project)
         preconditions = [
             {
                 "code": "HAS_VALID_DATA_PACKAGE",
@@ -132,6 +136,11 @@ class DashboardService:
                 "code": "HAS_UTILITY_RESULT",
                 "passed": has_utility_result,
                 "message": "已完成效用计算" if has_utility_result else "请先完成效用计算",
+            },
+            {
+                "code": "HAS_MDS_WEIGHT_RESULT",
+                "passed": has_mds_weight_result,
+                "message": "已完成 MD-DShap 权重计算" if has_mds_weight_result else "待完成 MD-DShap 权重计算",
             },
         ]
         available_actions = ["SYS-002", "DATA-002", "DATA-003"]
@@ -168,8 +177,8 @@ class DashboardService:
             available_actions,
             disabled_actions,
             "MDS-011",
-            project["project_status"] == "UTILITY_CALCULATED" and has_utility_result,
-            "请先完成效用计算",
+            mds_ready,
+            mds_reason,
         )
         return {
             "project_id": project["project_id"],
@@ -215,6 +224,8 @@ class DashboardService:
             return {"label": "计算贡献度与效用", "button_code": "UTIL-006"}
         if project_status == "UTILITY_CALCULATED":
             return {"label": "进入 MD-DShap 权重计算", "button_code": "MDS-011"}
+        if project_status == "WEIGHT_CALCULATED":
+            return {"label": "查看或重算 MD-DShap 权重", "button_code": "MDS-011"}
         return {"label": "查看当前状态", "button_code": "SYS-001"}
 
     def _gate_action(self, available_actions, disabled_actions, button_code, passed, reason):
@@ -222,6 +233,29 @@ class DashboardService:
             available_actions.append(button_code)
         else:
             disabled_actions.append({"button_code": button_code, "reason": reason})
+
+    def _mds_ready_reason(self, project):
+        if project["project_status"] not in {"UTILITY_CALCULATED", "WEIGHT_CALCULATED"}:
+            return False, "请先完成效用计算"
+        utility_records = self.repository.list_utility_records()
+        if not utility_records:
+            return False, "请先完成效用计算"
+        participants = [
+            party
+            for party in self.repository.list_parties()
+            if party["party_type"] == "DATA_PROVIDER"
+            and party["status"] == "ENABLED"
+            and party.get("include_in_md_dshap")
+        ]
+        if not participants:
+            return False, "请先维护可进入 MD-DShap 的数据源主体"
+        latest_utility = utility_records[-1]
+        traces = self.repository.get_utility_traces(latest_utility["utility_id"])
+        utility_by_party = {trace["party_id"]: trace["utility_value"] for trace in traces}
+        total_utility = sum(float(utility_by_party.get(party["party_id"], 0)) for party in participants)
+        if len(participants) > 1 and total_utility <= 0:
+            return False, "效用总值必须大于 0"
+        return True, ""
 
 
 class DataIngestionService:
@@ -1324,3 +1358,339 @@ class UtilityService:
             "created_by": LOCAL_OPERATOR,
             "created_at": now,
         }
+
+
+class MdDshapService:
+    TASK_KEY = "P0_DETERMINISTIC_UTILITY"
+    ALGORITHM_VERSION = "DVAS_MD_DSHAP_P0_DETERMINISTIC_V0"
+    WEIGHT_NOTE = "P0 deterministic MD-DShap weight-layer reference; not allocation, payment, or legal settlement."
+    SINGLE_NOTE = (
+        "single-data-provider simplification: one data provider receives weight 1.000000; "
+        "P0 deterministic MD-DShap weight-layer reference only."
+    )
+
+    def __init__(self, repository):
+        self.repository = repository
+
+    def run(self, payload):
+        project = self.repository.get_project()
+        self._ensure_project_ready(project)
+        utility = self._latest_utility()
+        utility_traces = self.repository.get_utility_traces(utility["utility_id"])
+        participants = self._participants()
+        if not participants:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "缺少可进入 MD-DShap 的数据源主体",
+                field_errors=[
+                    {"field": "participant_set", "reason": "请先维护可进入 MD-DShap 的数据源主体"}
+                ],
+            )
+
+        utility_by_party = {
+            trace["party_id"]: float(trace["utility_value"]) for trace in utility_traces
+        }
+        total_utility = sum(utility_by_party.get(party["party_id"], 0.0) for party in participants)
+        if len(participants) > 1 and total_utility <= 0:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "效用总值必须大于 0",
+                field_errors=[{"field": "utility_records", "reason": "效用总值必须大于 0"}],
+            )
+
+        now = utc_now()
+        parameters = self._parameters(payload, len(participants))
+        task_id = self.repository.next_id("task")
+        weights = self._weights(participants, utility_by_party, total_utility)
+        baseline_weights = self._baseline_weights(participants) if parameters["baseline_enabled"] else {}
+        approximation_note = self.SINGLE_NOTE if len(participants) == 1 else self.WEIGHT_NOTE
+        parameter_snapshot_id = self.repository.next_id("snapshot")
+        result_snapshot_id = self.repository.next_id("snapshot")
+        algorithm_audit_snapshot_id = self.repository.next_id("snapshot")
+        participant_set = [
+            {
+                "party_id": party["party_id"],
+                "party_name": party["party_name"],
+                "party_type": party["party_type"],
+            }
+            for party in participants
+        ]
+        task = {
+            "task_id": task_id,
+            "project_id": project["project_id"],
+            "algorithm_mode": parameters["algorithm_mode"],
+            "baseline_enabled": parameters["baseline_enabled"],
+            "participant_set": participant_set,
+            "task_set": [self.TASK_KEY],
+            "seed": parameters["seed"],
+            "sample_rounds": parameters["sample_rounds"],
+            "epsilon": parameters["epsilon"],
+            "status": "COMPLETED",
+            "result_count": len(participants),
+            "approximation_note": approximation_note,
+            "algorithm_version": self.ALGORITHM_VERSION,
+            "parameter_snapshot_id": parameter_snapshot_id,
+            "result_snapshot_id": result_snapshot_id,
+            "algorithm_audit_snapshot_id": algorithm_audit_snapshot_id,
+            "created_at": now,
+            "completed_at": now,
+            "failure_reason": None,
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+        }
+        results = self._results(task_id, participants, weights, baseline_weights, approximation_note, now)
+        traces = (
+            self._marginal_traces(task_id, participants, utility_by_party, parameters["seed"], now)
+            if parameters["save_marginal_detail"]
+            else []
+        )
+        parameter_snapshot = self._snapshot(
+            parameter_snapshot_id,
+            "PARAMETER",
+            {
+                **parameters,
+                "formula": "raw_weight_i = utility_value_i / total_utility; normalized to 6 decimals",
+            },
+            now,
+        )
+        result_snapshot = self._snapshot(
+            result_snapshot_id,
+            "RESULT",
+            {"task": task, "results": results, "marginal_trace_count": len(traces)},
+            now,
+        )
+        algorithm_audit_snapshot = self._snapshot(
+            algorithm_audit_snapshot_id,
+            "ALGORITHM_AUDIT",
+            {
+                "algorithm_mode": task["algorithm_mode"],
+                "algorithm_version": task["algorithm_version"],
+                "participant_set": participant_set,
+                "task_set": task["task_set"],
+                "approximation_note": approximation_note,
+                "simulation_disclaimer": SIMULATION_DISCLAIMER,
+            },
+            now,
+        )
+
+        self.repository.put_snapshot(parameter_snapshot)
+        self.repository.put_snapshot(result_snapshot)
+        self.repository.put_snapshot(algorithm_audit_snapshot)
+        self.repository.put_algorithm_audit_snapshot(algorithm_audit_snapshot)
+        self.repository.put_md_dshap_task(task, results, traces)
+        updated_project = self.repository.update_project(
+            project_status="WEIGHT_CALCULATED",
+            current_algorithm_task_id=task_id,
+        )
+        write_audit(
+            self.repository,
+            module_code="MDS",
+            menu_code="NAV_ALLOC_MDS",
+            operation_type="RUN_MD_DSHAP",
+            object_type="md_dshap_task",
+            object_id=task_id,
+            status="SUCCESS",
+            parameter_snapshot_id=parameter_snapshot_id,
+            result_snapshot_id=result_snapshot_id,
+            after_value_json={"task": task, "results": results, "marginal_traces": traces},
+        )
+        return {
+            "project_id": updated_project["project_id"],
+            "project_status": updated_project["project_status"],
+            "task": task,
+            "result_count": len(results),
+            "approximation_note": approximation_note,
+            "results": results,
+        }
+
+    def task(self, task_id):
+        task = self.repository.get_md_dshap_task(task_id)
+        if not task:
+            raise ApiError("DVAS_NOT_FOUND", "MD-DShap 任务不存在", status=404)
+        return task
+
+    def results(self, task_id):
+        self.task(task_id)
+        return table_page(self.repository.list_md_dshap_results(task_id))
+
+    def marginal_traces(self, task_id):
+        self.task(task_id)
+        return table_page(self.repository.list_md_dshap_marginal_traces(task_id))
+
+    def _ensure_project_ready(self, project):
+        if project["project_status"] not in {"UTILITY_CALCULATED", "WEIGHT_CALCULATED"}:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "请先完成效用计算",
+                field_errors=[{"field": "project_status", "reason": "请先完成效用计算"}],
+            )
+
+    def _latest_utility(self):
+        utilities = self.repository.list_utility_records()
+        if not utilities:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "请先完成效用计算",
+                field_errors=[{"field": "utility_records", "reason": "请先完成效用计算"}],
+            )
+        return utilities[-1]
+
+    def _participants(self):
+        return [
+            party
+            for party in self.repository.list_parties()
+            if party["party_type"] == "DATA_PROVIDER"
+            and party["status"] == "ENABLED"
+            and party.get("include_in_md_dshap")
+        ]
+
+    def _parameters(self, payload, participant_count):
+        return {
+            "algorithm_mode": payload.get("algorithm_mode", "MD_DSHAP"),
+            "seed": self._int(payload, "seed", 42),
+            "sample_rounds": self._int(payload, "sample_rounds", 64),
+            "epsilon": self._number(payload, "epsilon", 0.000001),
+            "baseline_enabled": self._bool(
+                payload,
+                "baseline_enabled",
+                participant_count <= 8,
+            ),
+            "save_marginal_detail": self._bool(payload, "save_marginal_detail", True),
+        }
+
+    def _weights(self, participants, utility_by_party, total_utility):
+        if len(participants) == 1:
+            return {participants[0]["party_id"]: 1.0}
+        raw_weights = {
+            party["party_id"]: utility_by_party.get(party["party_id"], 0.0) / total_utility
+            for party in participants
+        }
+        weights = {
+            party_id: round(weight, 6)
+            for party_id, weight in raw_weights.items()
+        }
+        delta = round(1.0 - sum(weights.values()), 6)
+        if delta:
+            largest_party_id = max(raw_weights, key=raw_weights.get)
+            weights[largest_party_id] = round(weights[largest_party_id] + delta, 6)
+        return weights
+
+    def _baseline_weights(self, participants):
+        weight = round(1.0 / len(participants), 6)
+        weights = {party["party_id"]: weight for party in participants}
+        delta = round(1.0 - sum(weights.values()), 6)
+        if delta:
+            weights[participants[0]["party_id"]] = round(weights[participants[0]["party_id"]] + delta, 6)
+        return weights
+
+    def _results(self, task_id, participants, weights, baseline_weights, approximation_note, now):
+        results = []
+        for party in participants:
+            party_id = party["party_id"]
+            normalized_weight = weights[party_id]
+            baseline_weight = baseline_weights.get(party_id)
+            results.append(
+                {
+                    "result_id": self.repository.next_id("result"),
+                    "task_id": task_id,
+                    "party_id": party_id,
+                    "party_name": party["party_name"],
+                    "participant_weight": normalized_weight,
+                    "normalized_weight": normalized_weight,
+                    "baseline_weight": baseline_weight,
+                    "weight_diff": round(normalized_weight - baseline_weight, 6)
+                    if baseline_weight is not None
+                    else None,
+                    "task_level_weight_json": {self.TASK_KEY: normalized_weight},
+                    "approximation_note": approximation_note,
+                    "created_at": now,
+                    "simulation_disclaimer": SIMULATION_DISCLAIMER,
+                }
+            )
+        return results
+
+    def _marginal_traces(self, task_id, participants, utility_by_party, seed, now):
+        traces = []
+        coalition = []
+        running_value = 0.0
+        for index, party in enumerate(participants, start=1):
+            utility_value = round(utility_by_party.get(party["party_id"], 0.0), 6)
+            trace = {
+                "trace_id": self.repository.next_id("trace"),
+                "task_id": task_id,
+                "party_id": party["party_id"],
+                "party_name": party["party_name"],
+                "task_key": self.TASK_KEY,
+                "iteration_no": index,
+                "coalition_before": list(coalition),
+                "v_before": round(running_value, 6),
+                "v_after": round(running_value + utility_value, 6),
+                "marginal_contribution": utility_value,
+                "seed": seed,
+                "created_at": now,
+            }
+            traces.append(trace)
+            coalition.append(party["party_id"])
+            running_value = trace["v_after"]
+        return traces
+
+    def _snapshot(self, snapshot_id, snapshot_type, content, now):
+        return {
+            "snapshot_id": snapshot_id,
+            "project_id": self.repository.get_project()["project_id"],
+            "snapshot_type": snapshot_type,
+            "content_json": copy.deepcopy(content),
+            "checksum": stable_checksum(content),
+            "created_by": LOCAL_OPERATOR,
+            "created_at": now,
+        }
+
+    def _number(self, payload, field, default):
+        try:
+            value = float(payload.get(field, default))
+        except (TypeError, ValueError) as exc:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "MD-DShap 参数不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须是数字"}],
+            ) from exc
+        if value < 0:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "MD-DShap 参数不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须大于等于 0"}],
+            )
+        return round(value, 6)
+
+    def _int(self, payload, field, default):
+        try:
+            value = int(payload.get(field, default))
+        except (TypeError, ValueError) as exc:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "MD-DShap 参数不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须是整数"}],
+            ) from exc
+        if value < 0:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "MD-DShap 参数不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须大于等于 0"}],
+            )
+        return value
+
+    def _bool(self, payload, field, default):
+        if field not in payload:
+            return default
+        value = payload[field]
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            if value.lower() in {"true", "1", "yes"}:
+                return True
+            if value.lower() in {"false", "0", "no"}:
+                return False
+        raise ApiError(
+            "DVAS_FACTOR_INVALID",
+            "MD-DShap 参数不合法",
+            field_errors=[{"field": field, "reason": f"{field} 必须是布尔值"}],
+        )

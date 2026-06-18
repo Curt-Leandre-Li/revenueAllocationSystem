@@ -17,6 +17,7 @@ def initial_state():
             "operator_id": LOCAL_OPERATOR,
             "current_package_id": None,
             "current_input_snapshot_id": None,
+            "current_algorithm_task_id": None,
             "created_at": now,
             "updated_at": now,
             "simulation_disclaimer": SIMULATION_DISCLAIMER,
@@ -33,6 +34,10 @@ def initial_state():
         "contribution_records": {},
         "utility_records": {},
         "utility_traces": {},
+        "md_dshap_tasks": {},
+        "md_dshap_results": {},
+        "md_dshap_marginal_traces": {},
+        "algorithm_audit_snapshots": {},
         "snapshots": {},
         "audit_logs": {},
     }
@@ -48,7 +53,12 @@ class InMemoryRepository:
         self.state.setdefault("contribution_records", {})
         self.state.setdefault("utility_records", {})
         self.state.setdefault("utility_traces", {})
+        self.state.setdefault("md_dshap_tasks", {})
+        self.state.setdefault("md_dshap_results", {})
+        self.state.setdefault("md_dshap_marginal_traces", {})
+        self.state.setdefault("algorithm_audit_snapshots", {})
         self.state.setdefault("snapshots", {})
+        self.state["project"].setdefault("current_algorithm_task_id", None)
 
     def next_id(self, prefix):
         current = self.state["counters"].get(prefix, 0) + 1
@@ -207,6 +217,44 @@ class InMemoryRepository:
 
     def get_utility_traces(self, utility_id):
         return copy.deepcopy(self.state["utility_traces"].get(utility_id, []))
+
+    def put_algorithm_audit_snapshot(self, snapshot):
+        self.state["algorithm_audit_snapshots"][snapshot["snapshot_id"]] = copy.deepcopy(snapshot)
+        self.save()
+        return copy.deepcopy(snapshot)
+
+    def put_md_dshap_task(self, task, results, traces):
+        self.state["md_dshap_tasks"][task["task_id"]] = copy.deepcopy(task)
+        for result in results:
+            self.state["md_dshap_results"][result["result_id"]] = copy.deepcopy(result)
+        for trace in traces:
+            self.state["md_dshap_marginal_traces"][trace["trace_id"]] = copy.deepcopy(trace)
+        self.save()
+        return copy.deepcopy(task)
+
+    def get_md_dshap_task(self, task_id):
+        task = self.state["md_dshap_tasks"].get(task_id)
+        return copy.deepcopy(task) if task else None
+
+    def list_md_dshap_tasks(self):
+        return sorted(
+            [copy.deepcopy(item) for item in self.state["md_dshap_tasks"].values()],
+            key=lambda item: item["created_at"],
+        )
+
+    def list_md_dshap_results(self, task_id=None):
+        items = [copy.deepcopy(item) for item in self.state["md_dshap_results"].values()]
+        if task_id:
+            items = [item for item in items if item["task_id"] == task_id]
+        return sorted(items, key=lambda item: (item["created_at"], item["result_id"]))
+
+    def list_md_dshap_marginal_traces(self, task_id=None):
+        items = [
+            copy.deepcopy(item) for item in self.state["md_dshap_marginal_traces"].values()
+        ]
+        if task_id:
+            items = [item for item in items if item["task_id"] == task_id]
+        return sorted(items, key=lambda item: (item["iteration_no"], item["trace_id"]))
 
     def put_audit_log(self, audit_log):
         self.state["audit_logs"][audit_log["log_id"]] = copy.deepcopy(audit_log)

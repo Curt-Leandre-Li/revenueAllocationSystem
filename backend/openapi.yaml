@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
   title: DVAS P0 Local API
-  version: 0.3.0
+  version: 0.4.0
   description: >
-    BE-00 through BE-05 local demo API contract. Results are simulation
+    BE-00 through BE-06 local demo API contract. Results are simulation
     references only and are not legal settlement, statutory settlement,
     payment instructions, contract performance, or authority approval.
 servers:
@@ -316,6 +316,62 @@ paths:
           description: UtilityRecord plus trace rows.
         "404":
           description: Utility result not found.
+  /md-dshap/tasks:
+    post:
+      summary: Run BE-06 P0 synchronous MD-DShap weight calculation
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MdDshapTaskRunRequest"
+      responses:
+        "200":
+          description: MD-DShap task, result count, approximation note, weights, and project status.
+        "409":
+          description: Utility, participant, or positive-utility precondition not satisfied.
+  /md-dshap/tasks/{task_id}:
+    get:
+      summary: Get MD-DShap task metadata
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Task metadata with participant_set, task_set, parameters, status, and snapshots.
+        "404":
+          description: MD-DShap task not found.
+  /md-dshap/tasks/{task_id}/results:
+    get:
+      summary: Get MD-DShap participant weight results
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Paged participant weights. Normalized weights sum to 1.000000.
+        "404":
+          description: MD-DShap task not found.
+  /md-dshap/tasks/{task_id}/marginal-traces:
+    get:
+      summary: Get MD-DShap marginal contribution trace rows
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Paged marginal trace rows for the task.
+        "404":
+          description: MD-DShap task not found.
 components:
   schemas:
     StandardResponse:
@@ -479,3 +535,24 @@ components:
           type: number
         scenario_factor:
           type: number
+    MdDshapTaskRunRequest:
+      type: object
+      properties:
+        algorithm_mode:
+          type: string
+          default: MD_DSHAP
+        seed:
+          type: integer
+          default: 42
+        sample_rounds:
+          type: integer
+          default: 64
+        epsilon:
+          type: number
+          default: 0.000001
+        baseline_enabled:
+          type: boolean
+          description: Defaults to true when participant_count is 8 or below.
+        save_marginal_detail:
+          type: boolean
+          default: true
