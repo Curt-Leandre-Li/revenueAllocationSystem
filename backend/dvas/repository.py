@@ -5,6 +5,44 @@ from pathlib import Path
 from .contracts import LOCAL_OPERATOR, SIMULATION_DISCLAIMER, utc_now
 
 
+def default_system_parameters(now=None):
+    now = now or utc_now()
+    definitions = [
+        (
+            "RISK_DISCLAIMER_TEXT",
+            "风险提示文本",
+            "TEXT",
+            SIMULATION_DISCLAIMER,
+            True,
+        ),
+        ("DEFAULT_SHUYUAN_BASE_PRICE", "默认数元基础价格", "NUMBER", 2.0, True),
+        ("DEFAULT_SCENARIO_COEFFICIENT", "默认场景系数", "NUMBER", 1.1, True),
+        ("DEFAULT_TECHNOLOGY_COEFFICIENT", "默认技术系数", "NUMBER", 1.05, True),
+        ("DEFAULT_EXPERT_COEFFICIENT", "默认专家系数", "NUMBER", 1.0, True),
+        ("DEFAULT_DEVELOPMENT_COEFFICIENT", "默认开发系数", "NUMBER", 0.98, True),
+        ("DEFAULT_MD_DSHAP_SEED", "默认 MD-DShap 随机种子", "INTEGER", 42, True),
+        ("DEFAULT_MD_DSHAP_SAMPLE_ROUNDS", "默认 MD-DShap 抽样轮次", "INTEGER", 64, True),
+        ("DEFAULT_MD_DSHAP_EPSILON", "默认 MD-DShap 收敛阈值", "NUMBER", 0.000001, True),
+        ("AMOUNT_DISPLAY_PRECISION", "金额显示精度", "INTEGER", 2, False),
+        ("WEIGHT_DISPLAY_PRECISION", "权重显示精度", "INTEGER", 6, False),
+    ]
+    return {
+        code: {
+            "parameter_code": code,
+            "parameter_name": name,
+            "parameter_type": parameter_type,
+            "default_value": default_value,
+            "current_value": default_value,
+            "scope": "P0_LOCAL",
+            "editable": editable,
+            "version_no": 1,
+            "latest_version_id": None,
+            "updated_at": now,
+        }
+        for code, name, parameter_type, default_value, editable in definitions
+    }
+
+
 def initial_state():
     now = utc_now()
     return {
@@ -45,6 +83,8 @@ def initial_state():
         "constraint_apply_traces": {},
         "report_records": {},
         "export_files": {},
+        "system_parameters": default_system_parameters(now),
+        "parameter_versions": {},
         "snapshots": {},
         "audit_logs": {},
     }
@@ -71,9 +111,22 @@ class InMemoryRepository:
         self.state.setdefault("constraint_apply_traces", {})
         self.state.setdefault("report_records", {})
         self.state.setdefault("export_files", {})
+        self.state.setdefault("system_parameters", {})
+        self.state.setdefault("parameter_versions", {})
         self.state.setdefault("snapshots", {})
         self.state["project"].setdefault("current_algorithm_task_id", None)
         self.state["project"].setdefault("current_allocation_id", None)
+        self._seed_system_parameters()
+
+    def _seed_system_parameters(self):
+        defaults = default_system_parameters()
+        changed = False
+        for code, parameter in defaults.items():
+            if code not in self.state["system_parameters"]:
+                self.state["system_parameters"][code] = parameter
+                changed = True
+        if changed:
+            self.save()
 
     def next_id(self, prefix):
         current = self.state["counters"].get(prefix, 0) + 1
@@ -350,10 +403,42 @@ class InMemoryRepository:
             items = [item for item in items if item["report_id"] == report_id]
         return sorted(items, key=lambda item: (item["created_at"], item["export_file_id"]))
 
+    def put_system_parameter(self, parameter):
+        self.state["system_parameters"][parameter["parameter_code"]] = copy.deepcopy(parameter)
+        self.save()
+        return copy.deepcopy(parameter)
+
+    def get_system_parameter(self, parameter_code):
+        parameter = self.state["system_parameters"].get(parameter_code)
+        return copy.deepcopy(parameter) if parameter else None
+
+    def list_system_parameters(self):
+        return sorted(
+            [copy.deepcopy(item) for item in self.state["system_parameters"].values()],
+            key=lambda item: item["parameter_code"],
+        )
+
+    def put_parameter_version(self, parameter_version):
+        self.state["parameter_versions"][parameter_version["version_id"]] = copy.deepcopy(
+            parameter_version
+        )
+        self.save()
+        return copy.deepcopy(parameter_version)
+
+    def list_parameter_versions(self, parameter_code=None):
+        items = [copy.deepcopy(item) for item in self.state["parameter_versions"].values()]
+        if parameter_code:
+            items = [item for item in items if item["parameter_code"] == parameter_code]
+        return sorted(items, key=lambda item: (item["created_at"], item["version_id"]))
+
     def put_audit_log(self, audit_log):
         self.state["audit_logs"][audit_log["log_id"]] = copy.deepcopy(audit_log)
         self.save()
         return copy.deepcopy(audit_log)
+
+    def get_audit_log(self, log_id):
+        audit_log = self.state["audit_logs"].get(log_id)
+        return copy.deepcopy(audit_log) if audit_log else None
 
     def list_audit_logs(self):
         return sorted(

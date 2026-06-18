@@ -53,12 +53,259 @@ def write_audit(
     return audit_log
 
 
+def parameter_current_value(repository, parameter_code, default):
+    parameter = repository.get_system_parameter(parameter_code)
+    if not parameter:
+        return default
+    return parameter.get("current_value", default)
+
+
 class ProjectService:
     def __init__(self, repository):
         self.repository = repository
 
     def current_project(self):
         return self.repository.get_project()
+
+
+class SystemParameterService:
+    POSITIVE_NUMBER_CODES = {
+        "DEFAULT_SHUYUAN_BASE_PRICE",
+        "DEFAULT_SCENARIO_COEFFICIENT",
+        "DEFAULT_TECHNOLOGY_COEFFICIENT",
+        "DEFAULT_EXPERT_COEFFICIENT",
+        "DEFAULT_DEVELOPMENT_COEFFICIENT",
+        "DEFAULT_MD_DSHAP_EPSILON",
+    }
+
+    def __init__(self, repository):
+        self.repository = repository
+
+    def list(self):
+        return table_page(self.repository.list_system_parameters())
+
+    def detail(self, parameter_code):
+        return self._parameter(parameter_code)
+
+    def update(self, parameter_code, payload):
+        parameter = self._parameter(parameter_code)
+        if not parameter["editable"]:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "系统参数不可编辑",
+                field_errors=[{"field": "parameter_code", "reason": "该参数不可编辑"}],
+            )
+        if "current_value" not in payload:
+            raise ApiError(
+                "DVAS_REQUIRED_FIELD_MISSING",
+                "系统参数值不能为空",
+                field_errors=[{"field": "current_value", "reason": "current_value 为必填字段"}],
+            )
+        current_value = self._normalize_value(parameter, payload["current_value"])
+        return self._write_parameter_version(
+            parameter,
+            current_value=current_value,
+            operation_type="UPDATE_PARAMETER",
+        )
+
+    def restore_default(self, parameter_code):
+        parameter = self._parameter(parameter_code)
+        if not parameter["editable"]:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "系统参数不可编辑",
+                field_errors=[{"field": "parameter_code", "reason": "该参数不可编辑"}],
+            )
+        return self._write_parameter_version(
+            parameter,
+            current_value=copy.deepcopy(parameter["default_value"]),
+            operation_type="RESTORE_DEFAULT",
+        )
+
+    def _parameter(self, parameter_code):
+        parameter = self.repository.get_system_parameter(parameter_code)
+        if not parameter:
+            raise ApiError("DVAS_NOT_FOUND", "系统参数不存在", status=404)
+        return parameter
+
+    def _write_parameter_version(self, parameter, current_value, operation_type):
+        now = utc_now()
+        version_no = int(parameter["version_no"]) + 1
+        snapshot_id = self.repository.next_id("snapshot")
+        version_id = self.repository.next_id("parameter_version")
+        updated = {
+            **parameter,
+            "current_value": current_value,
+            "version_no": version_no,
+            "latest_version_id": version_id,
+            "updated_at": now,
+        }
+        version = {
+            "version_id": version_id,
+            "project_id": self.repository.get_project()["project_id"],
+            "parameter_code": parameter["parameter_code"],
+            "parameter_name": parameter["parameter_name"],
+            "parameter_type": parameter["parameter_type"],
+            "default_value": copy.deepcopy(parameter["default_value"]),
+            "previous_value": copy.deepcopy(parameter["current_value"]),
+            "current_value": copy.deepcopy(current_value),
+            "version_no": version_no,
+            "operation_type": operation_type,
+            "snapshot_id": snapshot_id,
+            "updated_by": LOCAL_OPERATOR,
+            "created_at": now,
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+        }
+        snapshot = {
+            "snapshot_id": snapshot_id,
+            "project_id": version["project_id"],
+            "snapshot_type": "PARAMETER",
+            "content_json": {"parameter": updated, "version": version},
+            "checksum": stable_checksum({"parameter": updated, "version": version}),
+            "created_by": LOCAL_OPERATOR,
+            "created_at": now,
+        }
+        self.repository.put_snapshot(snapshot)
+        self.repository.put_parameter_version(version)
+        self.repository.put_system_parameter(updated)
+        write_audit(
+            self.repository,
+            module_code="SYS",
+            menu_code="NAV_SYSTEM_PARAMETER",
+            operation_type=operation_type,
+            object_type="system_parameter",
+            object_id=parameter["parameter_code"],
+            status="SUCCESS",
+            parameter_snapshot_id=snapshot_id,
+            before_value_json=parameter,
+            after_value_json=updated,
+        )
+        return updated
+
+    def _normalize_value(self, parameter, raw_value):
+        parameter_code = parameter["parameter_code"]
+        parameter_type = parameter["parameter_type"]
+        if parameter_type == "TEXT":
+            if not isinstance(raw_value, str) or not raw_value.strip():
+                raise ApiError(
+                    "DVAS_FACTOR_INVALID",
+                    "系统参数值不合法",
+                    field_errors=[{"field": "current_value", "reason": f"{parameter_code} 不能为空"}],
+                )
+            return raw_value
+        if parameter_type == "INTEGER":
+            try:
+                value = int(raw_value)
+            except (TypeError, ValueError) as exc:
+                raise ApiError(
+                    "DVAS_FACTOR_INVALID",
+                    "系统参数值不合法",
+                    field_errors=[{"field": "current_value", "reason": f"{parameter_code} 必须是整数"}],
+                ) from exc
+            if parameter_code == "DEFAULT_MD_DSHAP_SAMPLE_ROUNDS" and value <= 0:
+                raise ApiError(
+                    "DVAS_FACTOR_INVALID",
+                    "系统参数值不合法",
+                    field_errors=[{"field": "current_value", "reason": f"{parameter_code} 必须大于 0"}],
+                )
+            if parameter_code == "DEFAULT_MD_DSHAP_SEED" and value < 0:
+                raise ApiError(
+                    "DVAS_FACTOR_INVALID",
+                    "系统参数值不合法",
+                    field_errors=[{"field": "current_value", "reason": f"{parameter_code} 必须大于等于 0"}],
+                )
+            if parameter_code == "AMOUNT_DISPLAY_PRECISION" and value != 2:
+                raise ApiError(
+                    "DVAS_FACTOR_INVALID",
+                    "系统参数值不合法",
+                    field_errors=[{"field": "current_value", "reason": "金额显示精度必须保持为 2"}],
+                )
+            if parameter_code == "WEIGHT_DISPLAY_PRECISION" and value != 6:
+                raise ApiError(
+                    "DVAS_FACTOR_INVALID",
+                    "系统参数值不合法",
+                    field_errors=[{"field": "current_value", "reason": "权重显示精度必须保持为 6"}],
+                )
+            return value
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "系统参数值不合法",
+                field_errors=[{"field": "current_value", "reason": f"{parameter_code} 必须是数字"}],
+            ) from exc
+        if parameter_code in self.POSITIVE_NUMBER_CODES and value <= 0:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "系统参数值不合法",
+                field_errors=[{"field": "current_value", "reason": f"{parameter_code} 必须大于 0"}],
+            )
+        return round(value, 6)
+
+
+class AuditLogService:
+    FILTER_FIELDS = {"module_code", "operation_type", "object_type", "object_id", "status"}
+
+    def __init__(self, repository):
+        self.repository = repository
+
+    def list(self, filters):
+        items = self.repository.list_audit_logs()
+        for field in self.FILTER_FIELDS:
+            value = filters.get(field)
+            if value:
+                items = [item for item in items if str(item.get(field)) == str(value)]
+        limit = self._limit(filters.get("limit"))
+        if limit is not None:
+            items = items[:limit]
+        return table_page(items)
+
+    def detail(self, log_id):
+        audit_log = self.repository.get_audit_log(log_id)
+        if not audit_log:
+            raise ApiError("DVAS_NOT_FOUND", "审计日志不存在", status=404)
+        snapshot_refs = []
+        snapshots = {}
+        for field in ["input_snapshot_id", "parameter_snapshot_id", "result_snapshot_id"]:
+            snapshot_id = audit_log.get(field)
+            if not snapshot_id:
+                continue
+            snapshot = self.repository.get_snapshot(snapshot_id)
+            snapshot_refs.append(
+                {
+                    "field": field,
+                    "snapshot_id": snapshot_id,
+                    "available": snapshot is not None,
+                }
+            )
+            if snapshot:
+                snapshots[snapshot_id] = snapshot
+        return {
+            "audit_log": audit_log,
+            "snapshot_refs": snapshot_refs,
+            "snapshots": snapshots,
+            "empty_state": None if snapshot_refs else "该审计日志未关联快照",
+        }
+
+    def _limit(self, raw_limit):
+        if raw_limit in (None, ""):
+            return None
+        try:
+            limit = int(raw_limit)
+        except (TypeError, ValueError) as exc:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "审计日志查询参数不合法",
+                field_errors=[{"field": "limit", "reason": "limit 必须是正整数"}],
+            ) from exc
+        if limit <= 0:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "审计日志查询参数不合法",
+                field_errors=[{"field": "limit", "reason": "limit 必须是正整数"}],
+            )
+        return limit
 
 
 class DashboardService:
@@ -945,12 +1192,32 @@ class ShuyuanMeteringService:
         version_no = len(self.repository.list_shuyuan_meterings()) + 1
         call_count = int(payload.get("call_count", sum(item.get("sample_count", 0) for item in resources)))
         parameters = {
-            "base_price": self._number(payload, "base_price", 2.0),
-            "scenario_coefficient": self._number(payload, "scenario_coefficient", 1.1),
+            "base_price": self._number(
+                payload,
+                "base_price",
+                parameter_current_value(self.repository, "DEFAULT_SHUYUAN_BASE_PRICE", 2.0),
+            ),
+            "scenario_coefficient": self._number(
+                payload,
+                "scenario_coefficient",
+                parameter_current_value(self.repository, "DEFAULT_SCENARIO_COEFFICIENT", 1.1),
+            ),
             "quality_coefficient": self._number(payload, "quality_coefficient", quality["quality_factor"]),
-            "technology_coefficient": self._number(payload, "technology_coefficient", 1.05),
-            "expert_coefficient": self._number(payload, "expert_coefficient", 1.0),
-            "development_coefficient": self._number(payload, "development_coefficient", 0.98),
+            "technology_coefficient": self._number(
+                payload,
+                "technology_coefficient",
+                parameter_current_value(self.repository, "DEFAULT_TECHNOLOGY_COEFFICIENT", 1.05),
+            ),
+            "expert_coefficient": self._number(
+                payload,
+                "expert_coefficient",
+                parameter_current_value(self.repository, "DEFAULT_EXPERT_COEFFICIENT", 1.0),
+            ),
+            "development_coefficient": self._number(
+                payload,
+                "development_coefficient",
+                parameter_current_value(self.repository, "DEFAULT_DEVELOPMENT_COEFFICIENT", 0.98),
+            ),
             "call_count": call_count,
         }
         raw_total = self._metering_amount(parameters, call_count)
@@ -1595,9 +1862,21 @@ class MdDshapService:
     def _parameters(self, payload, participant_count):
         return {
             "algorithm_mode": payload.get("algorithm_mode", "MD_DSHAP"),
-            "seed": self._int(payload, "seed", 42),
-            "sample_rounds": self._int(payload, "sample_rounds", 64),
-            "epsilon": self._number(payload, "epsilon", 0.000001),
+            "seed": self._int(
+                payload,
+                "seed",
+                parameter_current_value(self.repository, "DEFAULT_MD_DSHAP_SEED", 42),
+            ),
+            "sample_rounds": self._int(
+                payload,
+                "sample_rounds",
+                parameter_current_value(self.repository, "DEFAULT_MD_DSHAP_SAMPLE_ROUNDS", 64),
+            ),
+            "epsilon": self._number(
+                payload,
+                "epsilon",
+                parameter_current_value(self.repository, "DEFAULT_MD_DSHAP_EPSILON", 0.000001),
+            ),
             "baseline_enabled": self._bool(
                 payload,
                 "baseline_enabled",

@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
   title: DVAS P0 Local API
-  version: 0.6.0
+  version: 0.7.0
   description: >
-    BE-00 through BE-08 local demo API contract. Results are simulation
+    BE-00 through BE-09 local demo API contract. Results are simulation
     references only and are not legal settlement, statutory settlement,
     payment instructions, contract performance, or authority approval.
 servers:
@@ -535,6 +535,108 @@ paths:
           description: Report record plus audit_log.jsonl export file metadata.
         "409":
           description: Audit log precondition is not satisfied.
+  /system/parameters:
+    get:
+      summary: List P0 system parameters
+      responses:
+        "200":
+          description: Paged default and current parameter values.
+  /system/parameters/{parameter_code}:
+    get:
+      summary: Get a P0 system parameter
+      parameters:
+        - name: parameter_code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Parameter code, values, scope, editability, and version metadata.
+        "404":
+          description: Parameter not found.
+    put:
+      summary: Update an editable P0 system parameter
+      parameters:
+        - name: parameter_code
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SystemParameterUpdateRequest"
+      responses:
+        "200":
+          description: Updated parameter plus new version metadata.
+        "404":
+          description: Parameter not found.
+        "422":
+          description: Parameter is not editable or value validation failed.
+  /system/parameters/{parameter_code}/restore-default:
+    post:
+      summary: Restore an editable P0 system parameter to its default value
+      parameters:
+        - name: parameter_code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Restored parameter plus new version metadata.
+        "404":
+          description: Parameter not found.
+        "422":
+          description: Parameter is not editable.
+  /audit-logs:
+    get:
+      summary: Query P0 audit logs
+      parameters:
+        - name: module_code
+          in: query
+          schema:
+            type: string
+        - name: operation_type
+          in: query
+          schema:
+            type: string
+        - name: object_type
+          in: query
+          schema:
+            type: string
+        - name: object_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Paged audit log records. Querying is read-only.
+  /audit-logs/{log_id}:
+    get:
+      summary: Get P0 audit log detail with related snapshots when available
+      parameters:
+        - name: log_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Audit log detail plus snapshot references and available snapshot content.
+        "404":
+          description: Audit log not found.
 components:
   schemas:
     StandardResponse:
@@ -771,3 +873,12 @@ components:
           default: MD_DSHAP_WEIGHT_WITH_CONSTRAINTS
         weight_task_id:
           type: string
+    SystemParameterUpdateRequest:
+      type: object
+      required: [current_value]
+      properties:
+        current_value:
+          oneOf:
+            - type: string
+            - type: number
+            - type: integer

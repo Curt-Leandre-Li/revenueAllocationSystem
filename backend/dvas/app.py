@@ -1,10 +1,11 @@
 import json
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from .contracts import API_PREFIX, ApiError, error_response, ok_response
 from .repository import JsonFileRepository
 from .services import (
     AllocationService,
+    AuditLogService,
     ContributionService,
     ContractConstraintService,
     DashboardService,
@@ -16,6 +17,7 @@ from .services import (
     ReportService,
     ResourceService,
     ShuyuanMeteringService,
+    SystemParameterService,
     UtilityService,
 )
 
@@ -36,11 +38,17 @@ class DvasApplication:
         self.constraint_service = ContractConstraintService(self.repository)
         self.allocation_service = AllocationService(self.repository)
         self.report_service = ReportService(self.repository)
+        self.system_parameter_service = SystemParameterService(self.repository)
+        self.audit_log_service = AuditLogService(self.repository)
 
     def handle(self, method, path, body=None):
         trace_id = None
         try:
-            data = self._dispatch(method.upper(), self._normalize_path(path), body or {})
+            method = method.upper()
+            payload = body or {}
+            if method == "GET":
+                payload = {**self._query_params(path), **payload}
+            data = self._dispatch(method, self._normalize_path(path), payload)
             return ok_response(data, trace_id=trace_id)
         except ApiError as error:
             return error_response(error, trace_id=trace_id)
@@ -211,6 +219,23 @@ class DvasApplication:
             return self.report_service.generate_json()
         if method == "POST" and segments == ["reports", "audit-log"]:
             return self.report_service.export_audit_log()
+        if method == "GET" and segments == ["system", "parameters"]:
+            return self.system_parameter_service.list()
+        if method == "GET" and len(segments) == 3 and segments[:2] == ["system", "parameters"]:
+            return self.system_parameter_service.detail(segments[2])
+        if method == "PUT" and len(segments) == 3 and segments[:2] == ["system", "parameters"]:
+            return self.system_parameter_service.update(segments[2], body)
+        if (
+            method == "POST"
+            and len(segments) == 4
+            and segments[:2] == ["system", "parameters"]
+            and segments[3] == "restore-default"
+        ):
+            return self.system_parameter_service.restore_default(segments[2])
+        if method == "GET" and segments == ["audit-logs"]:
+            return self.audit_log_service.list(body)
+        if method == "GET" and len(segments) == 2 and segments[0] == "audit-logs":
+            return self.audit_log_service.detail(segments[1])
         raise ApiError("DVAS_NOT_FOUND", "接口不存在", status=404)
 
     def _normalize_path(self, path):
@@ -219,6 +244,11 @@ class DvasApplication:
         if not normalized.startswith(API_PREFIX):
             raise ApiError("DVAS_NOT_FOUND", "接口不存在", status=404)
         return normalized
+
+    def _query_params(self, path):
+        parsed = urlparse(path)
+        params = parse_qs(parsed.query, keep_blank_values=True)
+        return {key: values[-1] if values else "" for key, values in params.items()}
 
     def _json_headers(self):
         return {

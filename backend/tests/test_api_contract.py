@@ -268,6 +268,11 @@ class DvasApiContractTests(unittest.TestCase):
             "/reports/csv",
             "/reports/json",
             "/reports/audit-log",
+            "/system/parameters",
+            "/system/parameters/DEFAULT_SHUYUAN_BASE_PRICE",
+            "/system/parameters/DEFAULT_SHUYUAN_BASE_PRICE/restore-default",
+            "/audit-logs",
+            "/audit-logs/audit_000001",
         ]
 
         for path in public_paths:
@@ -308,6 +313,11 @@ class DvasApiContractTests(unittest.TestCase):
         self.assertIn("/reports/csv", path_lines)
         self.assertIn("/reports/json", path_lines)
         self.assertIn("/reports/audit-log", path_lines)
+        self.assertIn("/system/parameters", path_lines)
+        self.assertIn("/system/parameters/{parameter_code}", path_lines)
+        self.assertIn("/system/parameters/{parameter_code}/restore-default", path_lines)
+        self.assertIn("/audit-logs", path_lines)
+        self.assertIn("/audit-logs/{log_id}", path_lines)
         self.assertNotIn("/reports/pdf", path_lines)
         self.assertNotIn("/reports/{report_id}/pdf", path_lines)
 
@@ -1077,6 +1087,208 @@ class DvasApiContractTests(unittest.TestCase):
         self.assertEqual(generated["report"]["report_id"], record["report_id"])
         self.assertEqual("JSON", record["file_format"])
         self.assertTrue(record["source_snapshot_id"].startswith("snapshot_"))
+
+    def test_system_parameters_returns_default_p0_parameters(self):
+        data = self.assert_ok(self.request("GET", "/api/v1/system/parameters"))
+
+        codes = {item["parameter_code"] for item in data["items"]}
+        self.assertIn("RISK_DISCLAIMER_TEXT", codes)
+        self.assertIn("DEFAULT_SHUYUAN_BASE_PRICE", codes)
+        self.assertIn("DEFAULT_MD_DSHAP_SAMPLE_ROUNDS", codes)
+        self.assertIn("AMOUNT_DISPLAY_PRECISION", codes)
+        parameter = next(
+            item for item in data["items"] if item["parameter_code"] == "DEFAULT_SHUYUAN_BASE_PRICE"
+        )
+        self.assertEqual("默认数元基础价格", parameter["parameter_name"])
+        self.assertEqual("NUMBER", parameter["parameter_type"])
+        self.assertEqual(2.0, parameter["default_value"])
+        self.assertEqual(2.0, parameter["current_value"])
+        self.assertEqual("P0_LOCAL", parameter["scope"])
+        self.assertTrue(parameter["editable"])
+        self.assertEqual(1, parameter["version_no"])
+        self.assertIn("updated_at", parameter)
+
+        detail = self.assert_ok(
+            self.request("GET", "/api/v1/system/parameters/DEFAULT_SHUYUAN_BASE_PRICE")
+        )
+        self.assertEqual(parameter["parameter_code"], detail["parameter_code"])
+
+    def test_system_parameter_update_validates_positive_numeric_rules(self):
+        invalid = self.request(
+            "PUT",
+            "/api/v1/system/parameters/DEFAULT_SCENARIO_COEFFICIENT",
+            {"current_value": 0},
+        )
+        self.assert_error_envelope(invalid, "DVAS_FACTOR_INVALID")
+        self.assertEqual(
+            [{"field": "current_value", "reason": "DEFAULT_SCENARIO_COEFFICIENT 必须大于 0"}],
+            invalid["field_errors"],
+        )
+
+        updated = self.assert_ok(
+            self.request(
+                "PUT",
+                "/api/v1/system/parameters/DEFAULT_SCENARIO_COEFFICIENT",
+                {"current_value": 1.25},
+            )
+        )
+
+        self.assertEqual(1.25, updated["current_value"])
+        self.assertEqual(2, updated["version_no"])
+        self.assertTrue(updated["latest_version_id"].startswith("parameter_version_"))
+        versions = self.repository.list_parameter_versions("DEFAULT_SCENARIO_COEFFICIENT")
+        self.assertEqual(1, len(versions))
+        self.assertEqual(1.25, versions[0]["current_value"])
+        self.assertTrue(versions[0]["snapshot_id"].startswith("snapshot_"))
+
+    def test_system_parameter_update_rejects_non_editable_and_unknown_parameters(self):
+        non_editable = self.request(
+            "PUT",
+            "/api/v1/system/parameters/AMOUNT_DISPLAY_PRECISION",
+            {"current_value": 3},
+        )
+        missing = self.request(
+            "PUT",
+            "/api/v1/system/parameters/UNKNOWN_PARAMETER",
+            {"current_value": 1},
+        )
+
+        self.assert_error_envelope(non_editable, "DVAS_FACTOR_INVALID")
+        self.assertEqual(
+            [{"field": "parameter_code", "reason": "该参数不可编辑"}],
+            non_editable["field_errors"],
+        )
+        self.assert_error_envelope(missing, "DVAS_NOT_FOUND")
+
+    def test_system_parameter_restore_default_creates_new_version(self):
+        self.assert_ok(
+            self.request(
+                "PUT",
+                "/api/v1/system/parameters/DEFAULT_MD_DSHAP_SAMPLE_ROUNDS",
+                {"current_value": 128},
+            )
+        )
+
+        restored = self.assert_ok(
+            self.request(
+                "POST",
+                "/api/v1/system/parameters/DEFAULT_MD_DSHAP_SAMPLE_ROUNDS/restore-default",
+                {},
+            )
+        )
+
+        self.assertEqual(restored["default_value"], restored["current_value"])
+        self.assertEqual(3, restored["version_no"])
+        versions = self.repository.list_parameter_versions("DEFAULT_MD_DSHAP_SAMPLE_ROUNDS")
+        self.assertEqual(2, len(versions))
+        self.assertEqual("RESTORE_DEFAULT", versions[-1]["operation_type"])
+
+    def test_system_parameter_updates_do_not_mutate_historical_results(self):
+        scenario, simulated = self.run_demo_to_allocated()
+        report = self.assert_ok(self.request("POST", "/api/v1/reports/json", {}))
+        before_results = self.assert_ok(
+            self.request(
+                "GET",
+                f"/api/v1/allocation-scenarios/{scenario['allocation_id']}/results",
+            )
+        )["items"]
+        before_report_record = self.assert_ok(self.request("GET", "/api/v1/reports"))["items"][0]
+
+        self.assert_ok(
+            self.request(
+                "PUT",
+                "/api/v1/system/parameters/DEFAULT_SHUYUAN_BASE_PRICE",
+                {"current_value": 9.5},
+            )
+        )
+
+        after_results = self.assert_ok(
+            self.request(
+                "GET",
+                f"/api/v1/allocation-scenarios/{scenario['allocation_id']}/results",
+            )
+        )["items"]
+        after_report_record = self.assert_ok(self.request("GET", "/api/v1/reports"))["items"][0]
+
+        self.assertEqual(simulated["results"], before_results)
+        self.assertEqual(before_results, after_results)
+        self.assertEqual(report["report"]["checksum"], after_report_record["checksum"])
+        self.assertEqual(before_report_record, after_report_record)
+
+    def test_audit_logs_list_and_detail_after_p0_chain_include_snapshots(self):
+        self.run_demo_to_allocated()
+        self.assert_ok(self.request("POST", "/api/v1/reports/json", {}))
+
+        logs = self.assert_ok(self.request("GET", "/api/v1/audit-logs"))
+
+        self.assertGreater(logs["total"], 0)
+        self.assertTrue(any(item["module_code"] == "ALLOC" for item in logs["items"]))
+        self.assertTrue(any(item["module_code"] == "REPORT" for item in logs["items"]))
+        result_log = next(item for item in logs["items"] if item.get("result_snapshot_id"))
+        detail = self.assert_ok(self.request("GET", f"/api/v1/audit-logs/{result_log['log_id']}"))
+
+        self.assertEqual(result_log["log_id"], detail["audit_log"]["log_id"])
+        self.assertIn("snapshot_refs", detail)
+        self.assertIn("snapshots", detail)
+        self.assertTrue(any(snapshot["snapshot_id"] == result_log["result_snapshot_id"] for snapshot in detail["snapshot_refs"]))
+        self.assertIn(result_log["result_snapshot_id"], detail["snapshots"])
+
+    def test_audit_log_detail_not_found_uses_standard_error_envelope(self):
+        response = self.request("GET", "/api/v1/audit-logs/audit_missing")
+
+        self.assert_error_envelope(response, "DVAS_NOT_FOUND")
+
+    def test_audit_log_query_filters_are_read_only(self):
+        self.run_demo_to_allocated()
+        self.assert_ok(self.request("POST", "/api/v1/reports/json", {}))
+        before_status = self.assert_ok(self.request("GET", "/api/v1/projects/current"))[
+            "project_status"
+        ]
+
+        allocation_logs = self.assert_ok(
+            self.request("GET", "/api/v1/audit-logs?module_code=ALLOC")
+        )
+        export_logs = self.assert_ok(
+            self.request("GET", "/api/v1/audit-logs?operation_type=GENERATE_JSON_EXPORT")
+        )
+        limited_logs = self.assert_ok(self.request("GET", "/api/v1/audit-logs?limit=1"))
+        after_status = self.assert_ok(self.request("GET", "/api/v1/projects/current"))[
+            "project_status"
+        ]
+
+        self.assertGreater(allocation_logs["total"], 0)
+        self.assertTrue(all(item["module_code"] == "ALLOC" for item in allocation_logs["items"]))
+        self.assertEqual(1, export_logs["total"])
+        self.assertEqual("GENERATE_JSON_EXPORT", export_logs["items"][0]["operation_type"])
+        self.assertEqual(1, limited_logs["total"])
+        self.assertEqual(before_status, after_status)
+
+    def test_system_management_openapi_and_forbidden_p1_routes(self):
+        openapi_text = Path("backend/openapi.yaml").read_text(encoding="utf-8").lower()
+        path_lines = [
+            line.strip().rstrip(":")
+            for line in openapi_text.splitlines()
+            if line.startswith("  /")
+        ]
+
+        for expected_path in [
+            "/system/parameters",
+            "/system/parameters/{parameter_code}",
+            "/system/parameters/{parameter_code}/restore-default",
+            "/audit-logs",
+            "/audit-logs/{log_id}",
+        ]:
+            self.assertIn(expected_path, path_lines)
+        for forbidden in [
+            "pdf",
+            "login",
+            "rbac",
+            "/system/users",
+            "async",
+            "tenant",
+        ]:
+            with self.subTest(forbidden=forbidden):
+                self.assertFalse(any(forbidden in path for path in path_lines))
 
     def test_p0_backend_complete_chain_reaches_exported_with_all_exports(self):
         start = self.assert_ok(self.request("GET", "/api/v1/projects/current"))
