@@ -1,4 +1,9 @@
 import copy
+import csv
+import hashlib
+import io
+import json
+from pathlib import Path
 
 from .contracts import (
     LOCAL_OPERATOR,
@@ -69,6 +74,8 @@ class DashboardService:
         utility_count = len(self.repository.list_utility_records())
         weight_count = len(self.repository.list_md_dshap_tasks())
         allocation_count = len(self.repository.list_allocation_scenarios())
+        report_count = len(self.repository.list_report_records())
+        export_file_count = len(self.repository.list_export_files())
         preconditions = self.preconditions()
         return {
             **project,
@@ -80,6 +87,8 @@ class DashboardService:
                 "utility_count": utility_count,
                 "weight_count": weight_count,
                 "allocation_count": allocation_count,
+                "report_count": report_count,
+                "export_file_count": export_file_count,
                 "audit_log_count": len(self.repository.list_audit_logs()),
             },
             "risk_notices": [
@@ -112,6 +121,8 @@ class DashboardService:
         has_confirmed_allocation = any(
             item["status"] == "CONFIRMED" for item in self.repository.list_allocation_scenarios()
         )
+        has_report_record = bool(self.repository.list_report_records())
+        has_export_file = bool(self.repository.list_export_files())
         mds_ready, mds_reason = self._mds_ready_reason(project)
         preconditions = [
             {
@@ -163,6 +174,16 @@ class DashboardService:
                 "code": "HAS_CONFIRMED_ALLOCATION",
                 "passed": has_confirmed_allocation,
                 "message": "已锁定模拟参考方案" if has_confirmed_allocation else "待锁定模拟参考方案",
+            },
+            {
+                "code": "HAS_REPORT_RECORD",
+                "passed": has_report_record,
+                "message": "已生成报告记录" if has_report_record else "待生成报告记录",
+            },
+            {
+                "code": "HAS_EXPORT_FILE",
+                "passed": has_export_file,
+                "message": "已生成导出文件" if has_export_file else "待生成导出文件",
             },
         ]
         available_actions = ["SYS-002", "DATA-002", "DATA-003"]
@@ -252,6 +273,8 @@ class DashboardService:
             return {"label": "锁定模拟参考方案", "button_code": "ALLOC-009"}
         if project_status == "CONFIRMED":
             return {"label": "查看已确认模拟参考方案", "button_code": "ALLOC-010"}
+        if project_status == "EXPORTED":
+            return {"label": "查看报告与审计导出", "button_code": "REPORT-001"}
         return {"label": "查看当前状态", "button_code": "SYS-001"}
 
     def _gate_action(self, available_actions, disabled_actions, button_code, passed, reason):
@@ -2256,3 +2279,608 @@ class AllocationService:
             "created_by": LOCAL_OPERATOR,
             "created_at": now,
         }
+
+
+class ReportService:
+    EXTENDED_DISCLAIMER = (
+        "系统输出仅为模拟参考，非法律结算 / 非法定结算结果，不构成付款指令、资产评估报告或正式审计报告。"
+    )
+
+    def __init__(self, repository):
+        self.repository = repository
+
+    def list(self):
+        return table_page(self.repository.list_report_records())
+
+    def generate_markdown(self):
+        context = self._final_export_context()
+        context["project"] = self.repository.update_project(project_status="EXPORTED")
+        content = self._markdown_content(context)
+        return self._persist_report(
+            report_type="P0_MARKDOWN_REPORT",
+            primary_file_name="p0_simulation_reference_report.md",
+            file_format="MARKDOWN",
+            files=[("p0_simulation_reference_report.md", content)],
+            context=context,
+            operation_type="GENERATE_MARKDOWN_REPORT",
+        )
+
+    def generate_csv(self):
+        context = self._final_export_context()
+        context["project"] = self.repository.update_project(project_status="EXPORTED")
+        files = self._csv_files(context)
+        return self._persist_report(
+            report_type="P0_CSV_EXPORT",
+            primary_file_name="source_level_allocation.csv",
+            file_format="CSV",
+            files=files,
+            context=context,
+            operation_type="GENERATE_CSV_EXPORT",
+        )
+
+    def generate_json(self):
+        context = self._final_export_context()
+        context["project"] = self.repository.update_project(project_status="EXPORTED")
+        payload = self._json_payload(context)
+        content = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+        return self._persist_report(
+            report_type="P0_JSON_EXPORT",
+            primary_file_name="p0_simulation_reference_export.json",
+            file_format="JSON",
+            files=[("p0_simulation_reference_export.json", content)],
+            context=context,
+            operation_type="GENERATE_JSON_EXPORT",
+        )
+
+    def export_audit_log(self):
+        audit_logs = self.repository.list_audit_logs()
+        if not audit_logs:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "暂无审计日志可导出",
+                field_errors=[{"field": "audit_log", "reason": "暂无审计日志可导出"}],
+            )
+        context = self._optional_export_context()
+        if context["allocation"] and context["allocation_results"]:
+            context["project"] = self.repository.update_project(project_status="EXPORTED")
+        lines = [
+            json.dumps(record, ensure_ascii=False, sort_keys=True)
+            for record in self._audit_jsonl_records(audit_logs)
+        ]
+        content = "\n".join(lines) + "\n"
+        return self._persist_report(
+            report_type="P0_AUDIT_LOG_EXPORT",
+            primary_file_name="audit_log.jsonl",
+            file_format="JSONL",
+            files=[("audit_log.jsonl", content)],
+            context=context,
+            operation_type="EXPORT_AUDIT_LOG",
+        )
+
+    def _final_export_context(self):
+        context = self._optional_export_context()
+        project = context["project"]
+        if project["project_status"] not in {"ALLOCATED", "CONFIRMED", "EXPORTED"}:
+            raise self._allocation_precondition_error()
+        if not context["allocation"] or not context["allocation_results"]:
+            raise self._allocation_precondition_error()
+        return context
+
+    def _optional_export_context(self):
+        project = self.repository.get_project()
+        packages = self.repository.list_data_packages()
+        resources = self.repository.list_data_resources()
+        parties = self.repository.list_parties()
+        quality = self._latest(self.repository.list_quality_assessments())
+        metering = self._latest(self.repository.list_shuyuan_meterings())
+        utility = self._latest(self.repository.list_utility_records())
+        md_task = self._latest_md_task(project)
+        allocation = self._latest_allocation(project)
+        allocation_results = self._latest_version_rows(
+            self.repository.list_allocation_results(allocation["allocation_id"])
+            if allocation
+            else []
+        )
+        constraint_traces = self._latest_version_rows(
+            self.repository.list_constraint_apply_traces(allocation["allocation_id"])
+            if allocation
+            else []
+        )
+        return {
+            "project": project,
+            "packages": packages,
+            "resources": resources,
+            "parties": parties,
+            "quality": quality,
+            "quality_details": self.repository.get_quality_details(quality["assessment_id"])
+            if quality
+            else [],
+            "metering": metering,
+            "metering_details": self.repository.get_shuyuan_metering_details(metering["metering_id"])
+            if metering
+            else [],
+            "contribution_records": self._latest_contribution_records(),
+            "utility": utility,
+            "utility_traces": self.repository.get_utility_traces(utility["utility_id"]) if utility else [],
+            "md_task": md_task,
+            "md_results": self.repository.list_md_dshap_results(md_task["task_id"]) if md_task else [],
+            "allocation": allocation,
+            "allocation_results": allocation_results,
+            "constraint_traces": constraint_traces,
+            "snapshots": self.repository.list_snapshots(),
+        }
+
+    def _allocation_precondition_error(self):
+        return ApiError(
+            "DVAS_PRECONDITION_NOT_MET",
+            "请先完成收益分配模拟",
+            field_errors=[{"field": "allocation_result", "reason": "请先完成收益分配模拟"}],
+        )
+
+    def _persist_report(
+        self,
+        report_type,
+        primary_file_name,
+        file_format,
+        files,
+        context,
+        operation_type,
+    ):
+        now = utc_now()
+        project = context["project"]
+        report_id = self.repository.next_id("report")
+        report_dir = self._export_root() / report_id
+        report_dir.mkdir(parents=True, exist_ok=False)
+        export_files = []
+        for file_name, content in files:
+            file_path = report_dir / file_name
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            raw_content = content.encode("utf-8")
+            file_path.write_bytes(raw_content)
+            export_files.append(
+                {
+                    "export_file_id": self.repository.next_id("export_file"),
+                    "report_id": report_id,
+                    "project_id": project["project_id"],
+                    "file_name": file_name,
+                    "file_format": self._format_for_file(file_name, file_format),
+                    "file_path": str(file_path),
+                    "checksum": hashlib.sha256(raw_content).hexdigest(),
+                    "byte_size": len(raw_content),
+                    "created_by": LOCAL_OPERATOR,
+                    "created_at": now,
+                    "simulation_disclaimer": SIMULATION_DISCLAIMER,
+                }
+            )
+        primary = next(item for item in export_files if item["file_name"] == primary_file_name)
+        source_snapshot_id = self._source_snapshot_id(context)
+        report_snapshot_id = self.repository.next_id("snapshot")
+        report_snapshot = self._snapshot(
+            report_snapshot_id,
+            "REPORT",
+            {
+                "report_id": report_id,
+                "report_type": report_type,
+                "file_names": [item["file_name"] for item in export_files],
+                "source_snapshot_id": source_snapshot_id,
+            },
+            now,
+        )
+        report = {
+            "report_id": report_id,
+            "project_id": project["project_id"],
+            "report_type": report_type,
+            "file_name": primary["file_name"],
+            "file_format": file_format,
+            "file_path": primary["file_path"],
+            "checksum": primary["checksum"],
+            "created_by": LOCAL_OPERATOR,
+            "created_at": now,
+            "source_snapshot_id": source_snapshot_id,
+            "report_snapshot_id": report_snapshot_id,
+            "export_file_ids": [item["export_file_id"] for item in export_files],
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+        }
+        self.repository.put_snapshot(report_snapshot)
+        self.repository.put_report_record(report)
+        self.repository.put_export_files(export_files)
+        write_audit(
+            self.repository,
+            module_code="REPORT",
+            menu_code="NAV_REPORT_EXPORT",
+            operation_type=operation_type,
+            object_type="report_record",
+            object_id=report_id,
+            status="SUCCESS",
+            input_snapshot_id=context["project"].get("current_input_snapshot_id"),
+            result_snapshot_id=report_snapshot_id,
+            after_value_json={"report": report, "export_files": export_files},
+        )
+        return {
+            "project_id": project["project_id"],
+            "project_status": project["project_status"],
+            "report": report,
+            "export_files": export_files,
+        }
+
+    def _markdown_content(self, context):
+        project = context["project"]
+        package_count = len(context["packages"])
+        resource_count = len(context["resources"])
+        party_count = len(context["parties"])
+        quality = context["quality"] or {}
+        metering = context["metering"] or {}
+        utility = context["utility"] or {}
+        md_task = context["md_task"] or {}
+        allocation = context["allocation"] or {}
+        lines = [
+            "# 数据收益分配系统 P0 模拟参考报告",
+            "",
+            "## 项目概览",
+            f"- 项目ID: {project['project_id']}",
+            f"- 项目名称: {project['project_name']}",
+            f"- 当前状态: {project['project_status']}",
+            "",
+            "## 模拟参考声明",
+            f"- {self.EXTENDED_DISCLAIMER}",
+            "",
+            "## 数据包与资源摘要",
+            f"- 数据包数量: {package_count}",
+            f"- 数据资源数量: {resource_count}",
+            f"- 参与方数量: {party_count}",
+            "",
+            "## 质量评估摘要",
+            f"- 质量评分: {quality.get('quality_score', 'N/A')}",
+            f"- 质量等级: {quality.get('quality_level', 'N/A')}",
+            f"- 质量因子: {quality.get('quality_factor', 'N/A')}",
+            "",
+            "## 数元计量摘要",
+            f"- 数元计量ID: {metering.get('metering_id', 'N/A')}",
+            f"- 计量金额: {self._amount_text(metering.get('metering_amount'))}",
+            "",
+            "## 贡献度与效用摘要",
+            f"- 贡献记录数: {len(context['contribution_records'])}",
+            f"- 效用ID: {utility.get('utility_id', 'N/A')}",
+            f"- 效用值: {utility.get('utility_value', 'N/A')}",
+            "",
+            "## MD-DShap 权重摘要",
+            f"- 任务ID: {md_task.get('task_id', 'N/A')}",
+            f"- 算法版本: {md_task.get('algorithm_version', 'N/A')}",
+        ]
+        for result in context["md_results"]:
+            lines.append(
+                f"- {result['party_name']}: {float(result['normalized_weight']):.6f}"
+            )
+        lines.extend(
+            [
+                "",
+                "## 收益分配模拟结果摘要",
+                f"- 模拟方案ID: {allocation.get('allocation_id', 'N/A')}",
+                f"- 数据源收益池: {self._amount_text(allocation.get('data_provider_revenue_pool'))}",
+            ]
+        )
+        for result in context["allocation_results"]:
+            lines.append(
+                f"- {result['party_name']}: {float(result['post_constraint_amount']):.2f}"
+            )
+        lines.extend(
+            [
+                "",
+                "## 合同约束调整追踪摘要",
+                f"- 约束调整记录数: {len(context['constraint_traces'])}",
+            ]
+        )
+        for trace in context["constraint_traces"]:
+            lines.append(
+                f"- {trace['party_id']}: {trace['reason']}，调整 {float(trace['adjustment_amount']):.2f}"
+            )
+        lines.extend(
+            [
+                "",
+                "## 假设与审计说明",
+                "- P0 报告基于本地 JSON 状态、输入快照、参数快照、结果快照与审计日志生成。",
+                "- 历史报告与导出文件不会静默覆盖；每次导出生成新的 report_id 与 checksum。",
+                f"- 生成时间: {utc_now()}",
+                "",
+            ]
+        )
+        return "\n".join(lines)
+
+    def _csv_files(self, context):
+        files = [
+            (
+                "source_level_allocation.csv",
+                self._csv_content(
+                    [
+                        "allocation_id",
+                        "party_id",
+                        "party_name",
+                        "raw_weight",
+                        "normalized_weight",
+                        "pre_constraint_amount",
+                        "post_constraint_amount",
+                        "constraint_adjustment_reason",
+                    ],
+                    [
+                        {
+                            "allocation_id": row["allocation_id"],
+                            "party_id": row["party_id"],
+                            "party_name": row["party_name"],
+                            "raw_weight": self._weight_text(row["raw_weight"]),
+                            "normalized_weight": self._weight_text(row["normalized_weight"]),
+                            "pre_constraint_amount": self._amount_text(row["pre_constraint_amount"]),
+                            "post_constraint_amount": self._amount_text(row["post_constraint_amount"]),
+                            "constraint_adjustment_reason": row["constraint_adjustment_reason"],
+                        }
+                        for row in context["allocation_results"]
+                    ],
+                ),
+            )
+        ]
+        if context["quality"]:
+            files.append(
+                (
+                    "quality_assessment_summary.csv",
+                    self._csv_content(
+                        [
+                            "assessment_id",
+                            "quality_score",
+                            "quality_level",
+                            "quality_factor",
+                            "output_snapshot_id",
+                        ],
+                        [
+                            {
+                                "assessment_id": context["quality"]["assessment_id"],
+                                "quality_score": self._amount_text(context["quality"]["quality_score"]),
+                                "quality_level": context["quality"]["quality_level"],
+                                "quality_factor": self._weight_text(context["quality"]["quality_factor"]),
+                                "output_snapshot_id": context["quality"]["output_snapshot_id"],
+                            }
+                        ],
+                    ),
+                )
+            )
+        if context["metering_details"]:
+            files.append(
+                (
+                    "shuyuan_metering_detail.csv",
+                    self._csv_content(
+                        [
+                            "metering_id",
+                            "resource_id",
+                            "party_id",
+                            "party_name",
+                            "valid_units",
+                            "metering_amount",
+                        ],
+                        [
+                            {
+                                "metering_id": context["metering"]["metering_id"],
+                                "resource_id": row["resource_id"],
+                                "party_id": row["party_id"],
+                                "party_name": row["party_name"],
+                                "valid_units": row["valid_units"],
+                                "metering_amount": self._amount_text(row["metering_amount"]),
+                            }
+                            for row in context["metering_details"]
+                        ],
+                    ),
+                )
+            )
+        if context["md_results"]:
+            files.append(
+                (
+                    "md_dshap_weights.csv",
+                    self._csv_content(
+                        [
+                            "task_id",
+                            "party_id",
+                            "party_name",
+                            "participant_weight",
+                            "normalized_weight",
+                            "baseline_weight",
+                            "weight_diff",
+                        ],
+                        [
+                            {
+                                "task_id": row["task_id"],
+                                "party_id": row["party_id"],
+                                "party_name": row["party_name"],
+                                "participant_weight": self._weight_text(row["participant_weight"]),
+                                "normalized_weight": self._weight_text(row["normalized_weight"]),
+                                "baseline_weight": self._optional_weight_text(row["baseline_weight"]),
+                                "weight_diff": self._optional_weight_text(row["weight_diff"]),
+                            }
+                            for row in context["md_results"]
+                        ],
+                    ),
+                )
+            )
+        if context["constraint_traces"]:
+            files.append(
+                (
+                    "constraint_apply_trace.csv",
+                    self._csv_content(
+                        [
+                            "allocation_id",
+                            "constraint_id",
+                            "party_id",
+                            "before_amount",
+                            "after_amount",
+                            "adjustment_amount",
+                            "reason",
+                            "version_no",
+                        ],
+                        [
+                            {
+                                "allocation_id": row["allocation_id"],
+                                "constraint_id": row["constraint_id"],
+                                "party_id": row["party_id"],
+                                "before_amount": self._amount_text(row["before_amount"]),
+                                "after_amount": self._amount_text(row["after_amount"]),
+                                "adjustment_amount": self._amount_text(row["adjustment_amount"]),
+                                "reason": row["reason"],
+                                "version_no": row["version_no"],
+                            }
+                            for row in context["constraint_traces"]
+                        ],
+                    ),
+                )
+            )
+        return files
+
+    def _json_payload(self, context):
+        project = context["project"]
+        allocation = context["allocation"]
+        return {
+            "project_id": project["project_id"],
+            "scenario_id": allocation["allocation_id"] if allocation else None,
+            "allocation_id": allocation["allocation_id"] if allocation else None,
+            "generated_at": utc_now(),
+            "project_status": project["project_status"],
+            "input_snapshot_refs": self._snapshot_refs(context, {"INPUT"}),
+            "parameter_snapshot_refs": self._snapshot_refs(context, {"PARAMETER"}),
+            "result_snapshot_refs": self._snapshot_refs(
+                context,
+                {"RESULT", "ALGORITHM_AUDIT", "REPORT"},
+            ),
+            "quality_result": {
+                "assessment": context["quality"],
+                "details": context["quality_details"],
+            },
+            "metering_result": {
+                "metering": context["metering"],
+                "details": context["metering_details"],
+            },
+            "utility_result": {
+                "utility": context["utility"],
+                "trace": context["utility_traces"],
+            },
+            "md_dshap_result": {
+                "task": context["md_task"],
+                "results": context["md_results"],
+            },
+            "allocation_result": context["allocation_results"],
+            "constraint_trace": context["constraint_traces"],
+            "assumptions": [
+                "P0 本地演示使用确定性骨架公式和本地 JSON 状态。",
+                "MD-DShap 为权重层输出，收益分配模拟结果仅供审计说明参考。",
+            ],
+            "disclaimer": self.EXTENDED_DISCLAIMER,
+        }
+
+    def _audit_jsonl_records(self, audit_logs):
+        records = []
+        for audit_log in audit_logs:
+            records.append({"record_type": "audit_log", **audit_log})
+        for report in self.repository.list_report_records():
+            records.append({"record_type": "report_record", **report})
+        for export_file in self.repository.list_export_files():
+            records.append({"record_type": "export_file", **export_file})
+        return records
+
+    def _csv_content(self, headers, rows):
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=headers)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+        return output.getvalue()
+
+    def _latest(self, items):
+        return items[-1] if items else None
+
+    def _latest_md_task(self, project):
+        task_id = project.get("current_algorithm_task_id")
+        task = self.repository.get_md_dshap_task(task_id) if task_id else None
+        if task:
+            return task
+        return self._latest(self.repository.list_md_dshap_tasks())
+
+    def _latest_allocation(self, project):
+        allocation_id = project.get("current_allocation_id")
+        allocation = self.repository.get_allocation_scenario(allocation_id) if allocation_id else None
+        if allocation:
+            return allocation
+        return self._latest(self.repository.list_allocation_scenarios())
+
+    def _latest_contribution_records(self):
+        records = self.repository.list_contribution_records()
+        if not records:
+            return []
+        latest_run_id = records[-1]["contribution_run_id"]
+        return [item for item in records if item["contribution_run_id"] == latest_run_id]
+
+    def _latest_version_rows(self, rows):
+        if not rows:
+            return []
+        latest_version = max(int(row.get("version_no", 0)) for row in rows)
+        return [row for row in rows if int(row.get("version_no", 0)) == latest_version]
+
+    def _source_snapshot_id(self, context):
+        allocation = context.get("allocation") or {}
+        return (
+            allocation.get("result_snapshot_id")
+            or context["project"].get("current_input_snapshot_id")
+            or self.repository.next_id("snapshot")
+        )
+
+    def _snapshot_refs(self, context, snapshot_types):
+        refs = []
+        seen = set()
+        for snapshot in context["snapshots"]:
+            if snapshot["snapshot_type"] not in snapshot_types:
+                continue
+            snapshot_id = snapshot["snapshot_id"]
+            if snapshot_id in seen:
+                continue
+            seen.add(snapshot_id)
+            refs.append(
+                {
+                    "snapshot_id": snapshot_id,
+                    "snapshot_type": snapshot["snapshot_type"],
+                    "checksum": snapshot["checksum"],
+                    "created_at": snapshot["created_at"],
+                }
+            )
+        return refs
+
+    def _snapshot(self, snapshot_id, snapshot_type, content, now):
+        return {
+            "snapshot_id": snapshot_id,
+            "project_id": self.repository.get_project()["project_id"],
+            "snapshot_type": snapshot_type,
+            "content_json": copy.deepcopy(content),
+            "checksum": stable_checksum(content),
+            "created_by": LOCAL_OPERATOR,
+            "created_at": now,
+        }
+
+    def _export_root(self):
+        return Path(getattr(self.repository, "runtime_dir", "backend/runtime")) / "exports"
+
+    def _format_for_file(self, file_name, default):
+        suffix = Path(file_name).suffix.lower()
+        if suffix == ".md":
+            return "MARKDOWN"
+        if suffix == ".csv":
+            return "CSV"
+        if suffix == ".json":
+            return "JSON"
+        if suffix == ".jsonl":
+            return "JSONL"
+        return default
+
+    def _amount_text(self, value):
+        if value is None:
+            return "N/A"
+        return f"{float(value):.2f}"
+
+    def _weight_text(self, value):
+        return f"{float(value):.6f}"
+
+    def _optional_weight_text(self, value):
+        if value is None:
+            return ""
+        return self._weight_text(value)

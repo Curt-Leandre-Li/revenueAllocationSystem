@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
   title: DVAS P0 Local API
-  version: 0.5.0
+  version: 0.6.0
   description: >
-    BE-00 through BE-07 local demo API contract. Results are simulation
+    BE-00 through BE-08 local demo API contract. Results are simulation
     references only and are not legal settlement, statutory settlement,
     payment instructions, contract performance, or authority approval.
 servers:
@@ -497,6 +497,44 @@ paths:
           description: Paged allocation result rows across simulation versions.
         "404":
           description: Allocation scenario not found.
+  /reports:
+    get:
+      summary: List generated P0 report and export records
+      responses:
+        "200":
+          description: Paged report records with file metadata and checksums.
+  /reports/markdown:
+    post:
+      summary: Generate a P0 Markdown simulation reference report
+      responses:
+        "200":
+          description: Report record plus Markdown export file metadata.
+        "409":
+          description: Allocation result precondition is not satisfied.
+  /reports/csv:
+    post:
+      summary: Generate P0 CSV export files
+      responses:
+        "200":
+          description: Report record plus CSV export file metadata, including source_level_allocation.csv.
+        "409":
+          description: Allocation result precondition is not satisfied.
+  /reports/json:
+    post:
+      summary: Generate a structured P0 JSON result export
+      responses:
+        "200":
+          description: Report record plus parseable JSON export file metadata.
+        "409":
+          description: Allocation result precondition is not satisfied.
+  /reports/audit-log:
+    post:
+      summary: Generate P0 audit log JSONL export
+      responses:
+        "200":
+          description: Report record plus audit_log.jsonl export file metadata.
+        "409":
+          description: Audit log precondition is not satisfied.
 components:
   schemas:
     StandardResponse:

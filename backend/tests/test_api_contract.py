@@ -1,4 +1,5 @@
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -8,8 +9,13 @@ from backend.dvas.repository import InMemoryRepository
 
 class DvasApiContractTests(unittest.TestCase):
     def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
         self.repository = InMemoryRepository()
+        self.repository.runtime_dir = Path(self.temp_dir.name)
         self.app = DvasApplication(self.repository)
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
 
     def request(self, method, path, body=None):
         return self.app.handle(method, path, body)
@@ -66,6 +72,24 @@ class DvasApiContractTests(unittest.TestCase):
     def run_demo_to_weights(self):
         self.run_demo_to_utility()
         return self.assert_ok(self.request("POST", "/api/v1/md-dshap/tasks", {}))
+
+    def run_demo_to_allocated(self):
+        self.run_demo_to_weights()
+        scenario = self.assert_ok(
+            self.request(
+                "POST",
+                "/api/v1/allocation-scenarios",
+                {"total_revenue": 1000, "priority_allocation_amount": 100},
+            )
+        )
+        simulated = self.assert_ok(
+            self.request(
+                "POST",
+                f"/api/v1/allocation-scenarios/{scenario['allocation_id']}/simulate",
+                {},
+            )
+        )
+        return scenario, simulated
 
     def test_current_project_starts_as_draft_with_stable_envelope(self):
         data = self.assert_ok(self.request("GET", "/api/v1/projects/current"))
@@ -226,6 +250,11 @@ class DvasApiContractTests(unittest.TestCase):
             "/contract-constraints",
             "/allocation-scenarios",
             "/allocation-scenarios/allocation_000001/results",
+            "/reports",
+            "/reports/markdown",
+            "/reports/csv",
+            "/reports/json",
+            "/reports/audit-log",
         ]
 
         for path in public_paths:
@@ -261,6 +290,13 @@ class DvasApiContractTests(unittest.TestCase):
         self.assertIn("/allocation-scenarios/{allocation_id}/simulate", path_lines)
         self.assertIn("/allocation-scenarios/{allocation_id}/lock", path_lines)
         self.assertIn("/allocation-scenarios/{allocation_id}/results", path_lines)
+        self.assertIn("/reports", path_lines)
+        self.assertIn("/reports/markdown", path_lines)
+        self.assertIn("/reports/csv", path_lines)
+        self.assertIn("/reports/json", path_lines)
+        self.assertIn("/reports/audit-log", path_lines)
+        self.assertNotIn("/reports/pdf", path_lines)
+        self.assertNotIn("/reports/{report_id}/pdf", path_lines)
 
     def test_quick_run_skeleton_returns_explainable_precondition_failure(self):
         response = self.request("POST", "/api/v1/dashboard/quick-run")
@@ -909,10 +945,130 @@ class DvasApiContractTests(unittest.TestCase):
         self.assertEqual(len(first["results"]) + len(second["results"]), all_results["total"])
         self.assertNotEqual(first["results"][0]["result_id"], second["results"][0]["result_id"])
 
-    def test_reports_export_pdf_endpoints_not_implemented_in_be07(self):
+    def test_report_markdown_requires_allocation_result(self):
+        self.run_demo_to_weights()
+
+        response = self.request("POST", "/api/v1/reports/markdown", {})
+
+        self.assertFalse(response["success"])
+        self.assertEqual("DVAS_PRECONDITION_NOT_MET", response["code"])
+        self.assertEqual(
+            [{"field": "allocation_result", "reason": "请先完成收益分配模拟"}],
+            response["field_errors"],
+        )
+
+    def test_markdown_report_generation_creates_record_file_and_checksum(self):
+        self.run_demo_to_allocated()
+
+        data = self.assert_ok(self.request("POST", "/api/v1/reports/markdown", {}))
+
+        report = data["report"]
+        self.assertTrue(report["report_id"].startswith("report_"))
+        self.assertEqual("MARKDOWN", report["file_format"])
+        self.assertEqual(64, len(report["checksum"]))
+        self.assertTrue(Path(report["file_path"]).exists())
+        markdown = Path(report["file_path"]).read_text(encoding="utf-8")
+        self.assertIn("# 数据收益分配系统 P0 模拟参考报告", markdown)
+        self.assertIn("非法律结算", markdown)
+        self.assertIn("项目概览", markdown)
+        self.assertIn("收益分配模拟结果摘要", markdown)
+
+        reports = self.assert_ok(self.request("GET", "/api/v1/reports"))
+        self.assertEqual(1, reports["total"])
+        self.assertEqual(report["report_id"], reports["items"][0]["report_id"])
+        self.assertEqual(report["checksum"], data["export_files"][0]["checksum"])
+
+    def test_csv_export_creates_source_level_allocation_with_formatting(self):
+        self.run_demo_to_allocated()
+
+        data = self.assert_ok(self.request("POST", "/api/v1/reports/csv", {}))
+
+        export_by_name = {Path(item["file_name"]).name: item for item in data["export_files"]}
+        self.assertIn("source_level_allocation.csv", export_by_name)
+        source_file = Path(export_by_name["source_level_allocation.csv"]["file_path"])
+        rows = source_file.read_text(encoding="utf-8").splitlines()
+        self.assertGreaterEqual(len(rows), 2)
+        header = rows[0].split(",")
+        first_row = dict(zip(header, rows[1].split(",")))
+        self.assertEqual("post_constraint_amount", header[header.index("post_constraint_amount")])
+        self.assertRegex(first_row["post_constraint_amount"], r"^-?\d+\.\d{2}$")
+        self.assertRegex(first_row["normalized_weight"], r"^-?\d+\.\d{6}$")
+
+    def test_json_export_is_parseable_and_includes_snapshots_and_results(self):
+        scenario, simulated = self.run_demo_to_allocated()
+
+        data = self.assert_ok(self.request("POST", "/api/v1/reports/json", {}))
+        export_file = Path(data["report"]["file_path"])
+        payload = json.loads(export_file.read_text(encoding="utf-8"))
+
+        self.assertEqual(self.repository.get_project()["project_id"], payload["project_id"])
+        self.assertEqual(scenario["allocation_id"], payload["allocation_id"])
+        self.assertEqual("EXPORTED", payload["project_status"])
+        self.assertIn("input_snapshot_refs", payload)
+        self.assertIn("parameter_snapshot_refs", payload)
+        self.assertIn("result_snapshot_refs", payload)
+        self.assertEqual(simulated["results"], payload["allocation_result"])
+        self.assertIn("非法律结算", payload["disclaimer"])
+
+    def test_audit_log_export_creates_jsonl_records(self):
+        self.run_demo_to_allocated()
+
+        data = self.assert_ok(self.request("POST", "/api/v1/reports/audit-log", {}))
+
+        lines = Path(data["report"]["file_path"]).read_text(encoding="utf-8").splitlines()
+        self.assertGreater(len(lines), 0)
+        records = [json.loads(line) for line in lines]
+        self.assertTrue(all(isinstance(record, dict) for record in records))
+        self.assertTrue(any(record.get("record_type") == "audit_log" for record in records))
+        self.assertTrue(any(record.get("module_code") == "ALLOC" for record in records))
+        self.assertTrue(all("status" in record for record in records if record.get("record_type") == "audit_log"))
+
+    def test_report_reexport_creates_new_report_without_overwriting_history(self):
+        self.run_demo_to_allocated()
+
+        first = self.assert_ok(self.request("POST", "/api/v1/reports/markdown", {}))
+        second = self.assert_ok(self.request("POST", "/api/v1/reports/markdown", {}))
+
+        self.assertNotEqual(first["report"]["report_id"], second["report"]["report_id"])
+        self.assertNotEqual(first["report"]["file_path"], second["report"]["file_path"])
+        self.assertTrue(Path(first["report"]["file_path"]).exists())
+        self.assertTrue(Path(second["report"]["file_path"]).exists())
+        reports = self.assert_ok(self.request("GET", "/api/v1/reports"))
+        self.assertEqual(2, reports["total"])
+
+    def test_successful_export_transitions_project_and_dashboard_preconditions(self):
+        self.run_demo_to_allocated()
+
+        self.assert_ok(self.request("POST", "/api/v1/reports/csv", {}))
+
+        project = self.assert_ok(self.request("GET", "/api/v1/projects/current"))
+        preconditions = self.assert_ok(self.request("GET", "/api/v1/dashboard/preconditions"))
+        self.assertEqual("EXPORTED", project["project_status"])
+        self.assertIn(
+            {"code": "HAS_REPORT_RECORD", "passed": True, "message": "已生成报告记录"},
+            preconditions["preconditions"],
+        )
+        self.assertIn(
+            {"code": "HAS_EXPORT_FILE", "passed": True, "message": "已生成导出文件"},
+            preconditions["preconditions"],
+        )
+
+    def test_reports_list_returns_generated_report_records(self):
+        self.run_demo_to_allocated()
+        generated = self.assert_ok(self.request("POST", "/api/v1/reports/json", {}))
+
+        reports = self.assert_ok(self.request("GET", "/api/v1/reports"))
+
+        self.assertEqual(1, reports["total"])
+        record = reports["items"][0]
+        self.assertEqual(generated["report"]["report_id"], record["report_id"])
+        self.assertEqual("JSON", record["file_format"])
+        self.assertTrue(record["source_snapshot_id"].startswith("snapshot_"))
+
+    def test_reports_pdf_endpoints_not_implemented_in_be08(self):
         for method, path in [
-            ("GET", "/api/v1/reports"),
             ("POST", "/api/v1/reports/export"),
+            ("POST", "/api/v1/reports/pdf"),
             ("GET", "/api/v1/reports/report_000001/pdf"),
         ]:
             with self.subTest(path=path):

@@ -43,13 +43,16 @@ def initial_state():
         "allocation_scenarios": {},
         "allocation_results": {},
         "constraint_apply_traces": {},
+        "report_records": {},
+        "export_files": {},
         "snapshots": {},
         "audit_logs": {},
     }
 
 
 class InMemoryRepository:
-    def __init__(self, state=None):
+    def __init__(self, state=None, runtime_dir="backend/runtime"):
+        self.runtime_dir = Path(runtime_dir)
         self.state = copy.deepcopy(state) if state is not None else initial_state()
         self.state.setdefault("quality_assessments", {})
         self.state.setdefault("quality_details", {})
@@ -66,6 +69,8 @@ class InMemoryRepository:
         self.state.setdefault("allocation_scenarios", {})
         self.state.setdefault("allocation_results", {})
         self.state.setdefault("constraint_apply_traces", {})
+        self.state.setdefault("report_records", {})
+        self.state.setdefault("export_files", {})
         self.state.setdefault("snapshots", {})
         self.state["project"].setdefault("current_algorithm_task_id", None)
         self.state["project"].setdefault("current_allocation_id", None)
@@ -117,6 +122,12 @@ class InMemoryRepository:
     def get_snapshot(self, snapshot_id):
         snapshot = self.state["snapshots"].get(snapshot_id)
         return copy.deepcopy(snapshot) if snapshot else None
+
+    def list_snapshots(self):
+        return sorted(
+            [copy.deepcopy(item) for item in self.state["snapshots"].values()],
+            key=lambda item: item["created_at"],
+        )
 
     def put_validation_result(self, validation_result):
         self.state["validation_results"][validation_result["package_id"]] = copy.deepcopy(
@@ -316,6 +327,29 @@ class InMemoryRepository:
             items = [item for item in items if item["allocation_id"] == allocation_id]
         return sorted(items, key=lambda item: (item["version_no"], item["trace_id"]))
 
+    def put_report_record(self, report):
+        self.state["report_records"][report["report_id"]] = copy.deepcopy(report)
+        self.save()
+        return copy.deepcopy(report)
+
+    def list_report_records(self):
+        return sorted(
+            [copy.deepcopy(item) for item in self.state["report_records"].values()],
+            key=lambda item: item["created_at"],
+        )
+
+    def put_export_files(self, export_files):
+        for export_file in export_files:
+            self.state["export_files"][export_file["export_file_id"]] = copy.deepcopy(export_file)
+        self.save()
+        return copy.deepcopy(export_files)
+
+    def list_export_files(self, report_id=None):
+        items = [copy.deepcopy(item) for item in self.state["export_files"].values()]
+        if report_id:
+            items = [item for item in items if item["report_id"] == report_id]
+        return sorted(items, key=lambda item: (item["created_at"], item["export_file_id"]))
+
     def put_audit_log(self, audit_log):
         self.state["audit_logs"][audit_log["log_id"]] = copy.deepcopy(audit_log)
         self.save()
@@ -338,7 +372,7 @@ class JsonFileRepository(InMemoryRepository):
             state = json.loads(self.path.read_text(encoding="utf-8"))
         else:
             state = initial_state()
-        super().__init__(state)
+        super().__init__(state, runtime_dir=self.path.parent)
 
     def save(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)

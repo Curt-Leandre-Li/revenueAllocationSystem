@@ -13,6 +13,7 @@ from .services import (
     PartyService,
     ProjectService,
     QualityAssessmentService,
+    ReportService,
     ResourceService,
     ShuyuanMeteringService,
     UtilityService,
@@ -34,6 +35,7 @@ class DvasApplication:
         self.md_dshap_service = MdDshapService(self.repository)
         self.constraint_service = ContractConstraintService(self.repository)
         self.allocation_service = AllocationService(self.repository)
+        self.report_service = ReportService(self.repository)
 
     def handle(self, method, path, body=None):
         trace_id = None
@@ -199,6 +201,16 @@ class DvasApplication:
             and segments[2] == "results"
         ):
             return self.allocation_service.results(segments[1])
+        if method == "GET" and segments == ["reports"]:
+            return self.report_service.list()
+        if method == "POST" and segments == ["reports", "markdown"]:
+            return self.report_service.generate_markdown()
+        if method == "POST" and segments == ["reports", "csv"]:
+            return self.report_service.generate_csv()
+        if method == "POST" and segments == ["reports", "json"]:
+            return self.report_service.generate_json()
+        if method == "POST" and segments == ["reports", "audit-log"]:
+            return self.report_service.export_audit_log()
         raise ApiError("DVAS_NOT_FOUND", "接口不存在", status=404)
 
     def _normalize_path(self, path):
