@@ -7,12 +7,13 @@ import {
   sectionIdForRoute,
 } from "./routes";
 import { fieldLabels } from "../domain/fieldMap";
-import { formatApiError } from "../domain/backendAdapter";
+import { formatApiError } from "../domain/api";
 import { dispatchWorkbenchAction } from "../domain/services";
 import { projectStatusLabels } from "../domain/status";
 import {
   createWorkbenchStore,
   loadBackendWorkbenchStore,
+  shouldAttemptBackendSync,
 } from "../domain/store";
 import type { WorkbenchStore } from "../domain/store";
 import type { ActionDefinition, ActionPayload, DataRow, RoutePath } from "../domain/types";
@@ -41,12 +42,15 @@ export function AppShell() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
-    const backendSyncRequested = new URLSearchParams(window.location.search).get("backend") === "1";
-    if (!backendSyncRequested) {
+    if (!shouldAttemptBackendSync(window.location.search)) {
       return undefined;
     }
 
     let mounted = true;
+    setStore((current) => ({
+      ...current,
+      lastMessage: "正在读取后端只读工作区数据。",
+    }));
     void loadBackendWorkbenchStore().then((nextStore) => {
       if (mounted) {
         setStore(nextStore);

@@ -4,6 +4,7 @@ import {
   ActionButton,
   DetailDrawer,
   DrawerSection,
+  EmptyGuide,
   ExportFieldList,
   MetricCard,
   PageHeader,
@@ -17,6 +18,7 @@ export function AuditPage({ route, snapshot, onAction }: PageProps) {
   const [drawer, setDrawer] = useState<"" | "log" | "snapshot" | "export">("");
   const mock = getMockWorkspace(snapshot);
   const logs = mock.auditLogs.slice(0, 50);
+  const failureCount = logs.filter((log) => log.status === "失败").length;
   const snapshotTypeLabels: Record<string, string> = {
     INPUT: "输入快照",
     PARAMETER: "参数快照",
@@ -39,7 +41,7 @@ export function AuditPage({ route, snapshot, onAction }: PageProps) {
 
       <div className="metricGrid four">
         <MetricCard item={{ label: "最近日志", value: String(logs.length), hint: "默认最近 50 条", tone: "neutral" }} />
-        <MetricCard item={{ label: "失败日志", value: "1", hint: "不允许遗漏", tone: "warning" }} />
+        <MetricCard item={{ label: "失败日志", value: String(failureCount), hint: "不允许遗漏", tone: failureCount ? "warning" : "success" }} />
         <MetricCard item={{ label: "快照记录", value: String(mock.snapshots.length), hint: "输入/参数/输出", tone: "success" }} />
         <MetricCard item={{ label: "导出记录", value: String(mock.exports.length), hint: "可生成审计导出", tone: "neutral" }} />
       </div>
@@ -74,30 +76,41 @@ export function AuditPage({ route, snapshot, onAction }: PageProps) {
             <table className="dataTable phase2Table">
               <thead><tr><th>操作</th><th>对象</th><th>操作人</th><th>状态</th><th>时间</th><th>摘要</th><th>操作</th></tr></thead>
               <tbody>
-                {logs.map((log) => (
-                  <tr key={`${log.operation}-${log.createdAt}`}>
-                    <td>{log.operation}</td>
-                    <td>{log.objectType}</td>
-                    <td>{log.operator}</td>
-                    <td><span className={`tag ${log.status === "失败" ? "danger" : "success"}`}>{log.status}</span></td>
-                    <td>{log.createdAt}</td>
-                    <td>{log.summary}</td>
-                    <td>
-                      <div className="rowAction">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onAction(actionRegistry["AUD-006"]);
-                            setDrawer("log");
-                          }}
-                        >
-                          日志详情
-                        </button>
-                        <button type="button" onClick={() => setDrawer("snapshot")}>快照详情</button>
-                      </div>
+                {logs.length > 0 ? (
+                  logs.map((log) => (
+                    <tr key={`${log.operation}-${log.createdAt}`}>
+                      <td>{log.operation}</td>
+                      <td>{log.objectType}</td>
+                      <td>{log.operator}</td>
+                      <td><span className={`tag ${log.status === "失败" ? "danger" : "success"}`}>{log.status}</span></td>
+                      <td>{log.createdAt}</td>
+                      <td>{log.summary}</td>
+                      <td>
+                        <div className="rowAction">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onAction(actionRegistry["AUD-006"]);
+                              setDrawer("log");
+                            }}
+                          >
+                            日志详情
+                          </button>
+                          <button type="button" onClick={() => setDrawer("snapshot")}>快照详情</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={7}>
+                      <EmptyGuide
+                        title="暂无审计日志"
+                        description="执行数据接入、计算或导出操作后，审计记录会在此展示。"
+                      />
                     </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>

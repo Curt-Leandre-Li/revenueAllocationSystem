@@ -9,20 +9,60 @@ import {
   RiskNotice,
   WorkbenchCard,
 } from "../../ui";
+import type { DataRow } from "../../domain/types";
 import { getMockWorkspace } from "../phase2aUtils";
 import type { PageProps } from "../pageTypes";
 
 const roleTabs = ["全部", "数据源主体", "运营方 / 技术服务方 / 中试基地", "专家方", "合同主体", "停用主体"];
-const parties = [
+interface PartyListItem {
+  name: string;
+  type: string;
+  dataProvider: string;
+  mds: string;
+  resources: number;
+  status: string;
+  summary: string;
+}
+
+const fallbackParties: PartyListItem[] = [
   { name: "数据源主体甲", type: "数据提供方", dataProvider: "是", mds: "是", resources: 3, status: "有效" },
   { name: "数据源主体乙", type: "数据提供方", dataProvider: "是", mds: "是", resources: 2, status: "有效" },
   { name: "运营服务方", type: "运营方", dataProvider: "否", mds: "否", resources: 0, status: "合同优先" },
   { name: "技术服务方", type: "技术服务方", dataProvider: "否", mds: "否", resources: 0, status: "合同优先" },
   { name: "外部专家组", type: "专家方", dataProvider: "否", mds: "否", resources: 0, status: "有效" },
-];
+].map((party) => ({
+  ...party,
+  summary: party.mds === "是" ? "数据贡献主体，进入权重层候选" : "非数据贡献主体，合同优先或约束处理",
+}));
+
+function readCell(row: DataRow, key: string, fallback = "") {
+  const value = row[key];
+  return value === undefined || value === null || value === "" ? fallback : String(value);
+}
+
+function partyFromRow(row: DataRow, index: number): PartyListItem {
+  const dataProvider = readCell(row, "is_data_provider", "否");
+  const mds = readCell(row, "include_in_md_dshap", dataProvider === "是" ? "是" : "否");
+  return {
+    name: readCell(row, "party_name", `参与方 ${index + 1}`),
+    type: readCell(row, "party_type", "未分类"),
+    dataProvider,
+    mds,
+    resources: Number(readCell(row, "linked_resource_count", "0")) || 0,
+    status: readCell(row, "status", "有效"),
+    summary: readCell(
+      row,
+      "contribution_summary",
+      mds === "是" ? "数据贡献主体，进入权重层候选" : "非数据贡献主体，合同优先或约束处理",
+    ),
+  };
+}
 
 export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageProps) {
   const mock = getMockWorkspace(snapshot);
+  const pageData = snapshot.pages[route.path];
+  const parties =
+    pageData.rows.length > 0 ? pageData.rows.map(partyFromRow) : fallbackParties;
   const [activeTab, setActiveTab] = useState("全部");
   const [drawer, setDrawer] = useState<"" | "form" | "contribution" | "link">("");
   const filteredParties =
@@ -34,6 +74,8 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
           ? parties.filter((party) => party.status === "停用")
           : parties.filter((party) => activeTab.includes(party.type) || party.status === "合同优先");
   const dataProviderCount = parties.filter((party) => party.dataProvider === "是").length;
+  const mdsCount = parties.filter((party) => party.mds === "是").length;
+  const disabledCount = parties.filter((party) => party.status === "停用").length;
 
   return (
     <div className="pageWorkspace phase2Page partiesPage">
@@ -49,9 +91,9 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
       <div className="metricGrid five">
         <MetricCard item={{ label: "主体总数", value: String(parties.length), hint: "含合同优先主体", tone: "neutral" }} />
         <MetricCard item={{ label: "数据源主体", value: String(dataProviderCount), hint: "默认进入算法权重池", tone: "success" }} />
-        <MetricCard item={{ label: "非数据主体", value: "3", hint: "按合同优先处理", tone: "neutral" }} />
-        <MetricCard item={{ label: "权重池主体", value: String(mock.dataProviders.filter((item) => item.includeInMDDShap).length), hint: "仅数据提供方", tone: "success" }} />
-        <MetricCard item={{ label: "停用主体", value: "0", hint: "不参与后续计算", tone: "neutral" }} />
+        <MetricCard item={{ label: "非数据主体", value: String(parties.length - dataProviderCount), hint: "按合同优先处理", tone: "neutral" }} />
+        <MetricCard item={{ label: "权重池主体", value: String(mdsCount || mock.dataProviders.filter((item) => item.includeInMDDShap).length), hint: "仅数据提供方", tone: "success" }} />
+        <MetricCard item={{ label: "停用主体", value: String(disabledCount), hint: "不参与后续计算", tone: "neutral" }} />
       </div>
 
       <RiskNotice compact />
@@ -109,7 +151,7 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
                     <td>{party.dataProvider}</td>
                     <td><span className={`tag ${party.mds === "是" ? "success" : "neutral"}`}>{party.mds}</span></td>
                     <td>{party.resources}</td>
-                    <td>{party.status}</td>
+                    <td title={party.summary}>{party.status}</td>
                     <td>
                       <div className="rowAction">
                         <button

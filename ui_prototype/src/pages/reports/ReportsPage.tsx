@@ -4,6 +4,7 @@ import {
   ActionButton,
   DetailDrawer,
   DrawerSection,
+  EmptyGuide,
   ExportFieldList,
   PageHeader,
   RiskNotice,
@@ -19,6 +20,7 @@ export function ReportsPage({ route, snapshot, onAction }: PageProps) {
   const [drawer, setDrawer] = useState<"" | "fields" | "record">("");
   const mock = getMockWorkspace(snapshot);
   const latestReport = mock.reports[0];
+  const hasReports = mock.reports.length > 0;
 
   return (
     <div className="pageWorkspace phase2Page reportsPage">
@@ -57,8 +59,9 @@ export function ReportsPage({ route, snapshot, onAction }: PageProps) {
             <span>报告名称</span>
             <h2>{latestReport?.name ?? "收益分配模拟报告"}</h2>
             <p>
-              本报告汇总数据包、资源主体归属、质量评估、数元计量、MD-DShap 权重和收益分配模拟结果。
-              所有结果仅作模拟参考，不构成法律结算、法定结算或付款指令。
+              {hasReports
+                ? "本报告汇总数据包、资源主体归属、质量评估、数元计量、MD-DShap 权重和收益分配模拟结果。所有结果仅作模拟参考，不构成法律结算、法定结算或付款指令。"
+                : "当前后端未返回报告记录。完成收益分配模拟后，可在此生成 Markdown、CSV、JSON 或 JSONL 报告。"}
             </p>
             <dl className="businessDetail compact">
               <div>
@@ -155,13 +158,20 @@ export function ReportsPage({ route, snapshot, onAction }: PageProps) {
 
         <SectionCard title="历史版本" description="报告和导出文件按生成时间保留。">
           <div className="compactList">
-            {mock.reports.map((item) => (
-              <article key={`${item.name}-${item.createdAt}`}>
-                <strong>{item.name}</strong>
-                <span>{item.type} / {item.status}</span>
-                <small>{item.createdAt}</small>
-              </article>
-            ))}
+            {hasReports ? (
+              mock.reports.map((item) => (
+                <article key={`${item.name}-${item.createdAt}`}>
+                  <strong>{item.name}</strong>
+                  <span>{item.type} / {item.status}</span>
+                  <small>{item.createdAt}</small>
+                </article>
+              ))
+            ) : (
+              <EmptyGuide
+                title="暂无报告记录"
+                description="完成收益分配模拟并生成报告后，历史版本会在此展示。"
+              />
+            )}
           </div>
         </SectionCard>
       </div>

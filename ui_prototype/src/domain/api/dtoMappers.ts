@@ -698,11 +698,78 @@ function auditStatusLabel(value: unknown) {
 }
 
 function operationLabel(value: unknown) {
-  return stringValue(value).replace(/_/g, " ").toLowerCase();
+  const labels: Record<string, string> = {
+    INITIALIZE_DEMO_CASE: "初始化演示数据",
+    UPLOAD_JSON: "上传 JSON 数据包",
+    READ_PROJECT: "读取项目状态",
+    READ_DASHBOARD: "读取首页总览",
+    READ_DATA_PACKAGE: "读取数据包",
+    READ_DATA_RESOURCE: "读取数据资源",
+    READ_PARTY: "读取参与方",
+    READ_REPORT: "读取报告记录",
+    READ_AUDIT_LOG: "读取审计日志",
+    CREATE_PARTY: "新增参与方",
+    UPDATE_PARTY: "编辑参与方",
+    DISABLE_PARTY: "停用参与方",
+    BIND_RESOURCE_PARTY: "绑定资源主体",
+    UPDATE_RESOURCE_CALCULATION: "更新资源计算设置",
+    RUN_QUALITY_ASSESSMENT: "运行质量评估",
+    RUN_SHUYUAN_METERING: "运行数元计量",
+    RUN_CONTRIBUTION: "运行贡献度计算",
+    RUN_UTILITY: "运行效用计算",
+    RUN_MD_DSHAP: "启动 MD-DShap 计算",
+    RERUN_MD_DSHAP: "重新计算 MD-DShap",
+    VIEW_MD_DSHAP_TRACE: "查看边际贡献明细",
+    CREATE_ALLOCATION_SCENARIO: "创建收益分配方案",
+    SIMULATE_ALLOCATION: "执行收益分配模拟",
+    LOCK_ALLOCATION: "锁定参考方案",
+    APPLY_CONSTRAINT: "应用合同约束",
+    GENERATE_REPORT: "生成报告",
+    GENERATE_MARKDOWN_REPORT: "导出 Markdown 报告",
+    GENERATE_CSV_EXPORT: "导出 CSV 明细",
+    GENERATE_JSON_EXPORT: "导出 JSON 结果",
+    EXPORT_RESOURCE_SUMMARY: "导出资源摘要",
+    EXPORT_AUDIT_LOG: "导出审计日志",
+    UPDATE_PARAMETER: "更新系统参数",
+    RESTORE_DEFAULT: "恢复默认参数",
+  };
+  const key = stringValue(value);
+  return labels[key] ?? "已记录操作";
 }
 
 function objectTypeLabel(value: unknown) {
-  return stringValue(value, "业务对象");
+  const labels: Record<string, string> = {
+    PROJECT: "项目",
+    DATA_PACKAGE: "数据包",
+    DATA_RESOURCE: "数据资源",
+    RESOURCE_FIELD: "资源字段",
+    PARTY: "参与方",
+    RESOURCE_PARTY_RELATION: "资源主体关系",
+    QUALITY_ASSESSMENT: "质量评估",
+    SHUYUAN_METERING: "数元计量",
+    UTILITY_RESULT: "效用计算结果",
+    MD_DSHAP_TASK: "MD-DShap 任务",
+    MD_DSHAP_RESULT: "MD-DShap 权重结果",
+    MD_DSHAP_TRACE: "边际贡献明细",
+    ALLOCATION_SCENARIO: "收益分配方案",
+    ALLOCATION_RESULT: "收益分配结果",
+    CONSTRAINT_RULE: "合同约束",
+    REPORT_RECORD: "报告记录",
+    EXPORT_FILE: "导出文件",
+    AUDIT_LOG: "审计日志",
+    PARAMETER: "系统参数",
+    USER: "用户",
+    project: "项目",
+    data_package: "数据包",
+    data_resource: "数据资源",
+    party: "参与方",
+    resource_party_relation: "资源主体关系",
+    report_record: "报告记录",
+    export_file: "导出文件",
+    audit_log: "审计日志",
+  };
+  const key = stringValue(value);
+  return labels[key] ?? "业务对象";
 }
 
 function snakeToCamel(value: string) {

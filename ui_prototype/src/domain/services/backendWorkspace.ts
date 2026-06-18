@@ -70,7 +70,13 @@ const preconditionLabels: Record<
 };
 
 export function shouldUseBackend() {
-  return isDvasBackendEnabled();
+  if (isDvasBackendEnabled()) {
+    return true;
+  }
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return new URLSearchParams(window.location.search).get("backend") === "1";
 }
 
 export async function loadBackendWorkspaceSnapshot(
@@ -134,10 +140,16 @@ export async function refreshStoreFromBackend(
 ): Promise<WorkbenchStore> {
   const result = await loadBackendWorkspaceSnapshot(store.snapshot);
   if (result.ok && result.data) {
+    const lastSyncAt = result.data.backend?.lastSyncedAt ?? new Date().toISOString();
     return {
       ...store,
       snapshot: result.data,
       lastMessage: `${successMessage}（数据来源：后端）`,
+      dataSource: {
+        mode: "backend",
+        lastSyncAt,
+        backendAvailable: true,
+      },
     };
   }
 
@@ -145,7 +157,12 @@ export async function refreshStoreFromBackend(
   return {
     ...fallback,
     snapshot: markSnapshotSource(fallback.snapshot, "mock_fallback"),
-    lastMessage: `后端请求失败，已回退本地模拟：${result.error?.errorMessage ?? "未知错误"}`,
+    lastMessage: `后端请求失败，已回退本地模拟数据。位置：workspace refresh。建议：${result.error?.repairSuggestion ?? "确认后端服务已启动后刷新页面。"}`,
+    dataSource: {
+      mode: "mock_fallback",
+      lastError: result.error,
+      backendAvailable: false,
+    },
   };
 }
 
@@ -212,8 +229,8 @@ function buildMockState(
     dataProviders: data.parties.map((party) =>
       mapPartyToProviderOption(party, linkedResourceCount(party.partyId, data.resources)),
     ),
-    reports: data.reports.length ? data.reports : base.reports,
-    auditLogs: data.auditLogs.length ? data.auditLogs : base.auditLogs,
+    reports: data.reports,
+    auditLogs: data.auditLogs,
   };
 }
 

@@ -36,6 +36,17 @@ const homeSections = [
 ];
 
 function RecentReportList({ reports }: { reports: ReportRecord[] }) {
+  if (reports.length === 0) {
+    return (
+      <div className="compactList">
+        <article>
+          <strong>暂无报告记录</strong>
+          <span>完成收益分配模拟后可生成报告</span>
+          <small>等待生成</small>
+        </article>
+      </div>
+    );
+  }
   return (
     <div className="compactList">
       {reports.slice(0, 3).map((report) => (
@@ -50,6 +61,17 @@ function RecentReportList({ reports }: { reports: ReportRecord[] }) {
 }
 
 function RecentAuditList({ auditLogs }: { auditLogs: AuditLogRecord[] }) {
+  if (auditLogs.length === 0) {
+    return (
+      <div className="compactList">
+        <article>
+          <strong>暂无审计日志</strong>
+          <span>执行数据接入、计算或导出后生成</span>
+          <small>等待操作</small>
+        </article>
+      </div>
+    );
+  }
   return (
     <div className="compactList">
       {auditLogs.slice(0, 4).map((log) => (
@@ -85,6 +107,8 @@ export function OverviewPage({
 }: PageProps) {
   const [riskOpen, setRiskOpen] = useState(false);
   const mock = getMockWorkspace(snapshot);
+  const pageData = snapshot.pages[route.path];
+  const pageMetrics = new Map(pageData.metrics.map((item) => [item.label, item]));
   const resources = mock.resources;
   const blockedResources = resources.filter(isResourceBlocked).length;
   const poolCount = mock.dataProviders.filter((party) => party.includeInMDDShap).length;
@@ -111,20 +135,20 @@ export function OverviewPage({
   const metricItems = [
     {
       label: "数据包",
-      value: "2",
-      hint: "演示数据与上传候选",
+      value: pageMetrics.get("数据包")?.value ?? "2",
+      hint: pageMetrics.get("数据包")?.hint ?? "演示数据与上传候选",
       tone: "neutral" as const,
     },
     {
       label: "数据资源",
-      value: String(resources.length),
-      hint: `${resources.filter((item) => item.includeInCalculation).length} 个进入后续计算`,
+      value: pageMetrics.get("数据资源")?.value ?? String(resources.length),
+      hint: pageMetrics.get("数据资源")?.hint ?? `${resources.filter((item) => item.includeInCalculation).length} 个进入后续计算`,
       tone: "success" as const,
     },
     {
       label: "参与方",
-      value: "5",
-      hint: "3 个数据源主体，2 个合同优先主体",
+      value: pageMetrics.get("参与方")?.value ?? "5",
+      hint: pageMetrics.get("参与方")?.hint ?? "3 个数据源主体，2 个合同优先主体",
       tone: "neutral" as const,
     },
     {
@@ -142,7 +166,7 @@ export function OverviewPage({
     {
       label: "报告状态",
       value: reportReady,
-      hint: "Markdown/CSV/JSON/JSONL",
+      hint: pageMetrics.get("报告状态")?.hint ?? "Markdown/CSV/JSON/JSONL",
       tone: "success" as const,
     },
   ];

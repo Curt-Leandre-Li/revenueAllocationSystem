@@ -178,7 +178,12 @@ async function readResourceDetailFromBackend(
     return {
       ...fallbackStore,
       snapshot: markSnapshotSource(fallbackStore.snapshot, "mock_fallback"),
-      lastMessage: `后端资源详情读取失败，已回退本地模拟：${normalized.errorMessage}`,
+      lastMessage: `后端资源详情读取失败，已回退本地模拟数据。位置：resource detail read。建议：${normalized.repairSuggestion ?? "确认后端服务已启动后重试。"}`,
+      dataSource: {
+        mode: "mock_fallback" as const,
+        lastError: normalized,
+        backendAvailable: false,
+      },
     };
   }
 }

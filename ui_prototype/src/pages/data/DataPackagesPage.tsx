@@ -11,9 +11,24 @@ import {
   TechnicalDetails,
   WorkbenchCard,
 } from "../../ui";
+import type { DataRow, MetricItem } from "../../domain/types";
 import type { PageProps } from "../pageTypes";
 
-const dataPackages = [
+interface PackageListItem {
+  name: string;
+  source: string;
+  status: string;
+  fileName: string;
+  fileSize: string;
+  receivedAt: string;
+  active: boolean;
+  resourceCount: string;
+  partyCount: string;
+  repairSuggestion: string;
+  errorField: string;
+}
+
+const fallbackDataPackages: PackageListItem[] = [
   {
     name: "演示项目数据包",
     source: "演示数据",
@@ -22,6 +37,10 @@ const dataPackages = [
     fileSize: "1.8 MB",
     receivedAt: "2026-06-18 09:30",
     active: true,
+    resourceCount: "4",
+    partyCount: "5",
+    repairSuggestion: "可进入资源管理",
+    errorField: "无",
   },
   {
     name: "上传候选数据包",
@@ -31,10 +50,14 @@ const dataPackages = [
     fileSize: "942 KB",
     receivedAt: "待上传",
     active: false,
+    resourceCount: "0",
+    partyCount: "0",
+    repairSuggestion: "按失败字段修复后重新上传",
+    errorField: "待校验",
   },
 ];
 
-const validationIssues = [
+const fallbackValidationIssues = [
   {
     problem: "participants 缺失",
     location: "participants[2].party_type",
@@ -55,10 +78,56 @@ const validationIssues = [
   },
 ];
 
+const fallbackMetrics: MetricItem[] = [
+  { label: "数据包", value: "2", hint: "演示与上传候选", tone: "neutral" },
+  { label: "校验通过", value: "1", hint: "可生成输入快照", tone: "success" },
+  { label: "校验失败", value: "1", hint: "包含字段修复建议", tone: "warning" },
+  { label: "输入快照", value: "1", hint: "最近一次有效接入", tone: "success" },
+];
+
+function readCell(row: DataRow, key: string, fallback = "") {
+  const value = row[key];
+  return value === undefined || value === null || value === "" ? fallback : String(value);
+}
+
+function packageFromRow(row: DataRow, index: number): PackageListItem {
+  const status = readCell(row, "validation_status", "待校验");
+  const accessStatus = readCell(row, "access_status");
+  const active = status.includes("通过") || status.includes("有效") || accessStatus.includes("接入");
+  return {
+    name: readCell(row, "package_name", `数据包 ${index + 1}`),
+    source: readCell(row, "source_type", "本地模拟"),
+    status,
+    fileName: readCell(row, "file_name", "-"),
+    fileSize: readCell(row, "file_size", "-"),
+    receivedAt: readCell(row, "created_at", "-"),
+    active,
+    resourceCount: readCell(row, "resource_count", "0"),
+    partyCount: readCell(row, "party_count", "0"),
+    repairSuggestion: readCell(row, "repair_suggestion", active ? "可进入资源管理" : "按失败字段修复后重新上传"),
+    errorField: readCell(row, "error_field", active ? "无" : "未提供"),
+  };
+}
+
 export function DataPackagesPage({ route, snapshot, onAction, onNavigate }: PageProps) {
   const [drawer, setDrawer] = useState<"" | "preview" | "failure">("");
   const [uploadState, setUploadState] = useState("等待选择 UTF-8 JSON 文件");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pageData = snapshot.pages[route.path];
+  const dataPackages =
+    pageData.rows.length > 0 ? pageData.rows.map(packageFromRow) : fallbackDataPackages;
+  const metrics = pageData.metrics.length > 0 ? pageData.metrics : fallbackMetrics;
+  const selectedPackage = dataPackages[0] ?? fallbackDataPackages[0];
+  const validationIssues =
+    dataPackages
+      .filter((item) => !item.active || item.errorField !== "无")
+      .map((item) => ({
+        problem: item.status,
+        location: item.errorField,
+        type: item.active ? "提醒" : "校验失败",
+        suggestion: item.repairSuggestion,
+      }));
+  const visibleIssues = validationIssues.length > 0 ? validationIssues : fallbackValidationIssues;
 
   function handleFile(file?: File) {
     if (!file) {
@@ -84,10 +153,9 @@ export function DataPackagesPage({ route, snapshot, onAction, onNavigate }: Page
       />
 
       <div className="metricGrid four">
-        <MetricCard item={{ label: "数据包", value: "2", hint: "演示与上传候选", tone: "neutral" }} />
-        <MetricCard item={{ label: "校验通过", value: "1", hint: "可生成输入快照", tone: "success" }} />
-        <MetricCard item={{ label: "校验失败", value: "1", hint: "包含字段修复建议", tone: "warning" }} />
-        <MetricCard item={{ label: "输入快照", value: "1", hint: "最近一次有效接入", tone: "success" }} />
+        {metrics.slice(0, 4).map((item) => (
+          <MetricCard item={item} key={item.label} />
+        ))}
       </div>
 
       <div className="phase2bTwoCol">
@@ -168,14 +236,14 @@ export function DataPackagesPage({ route, snapshot, onAction, onNavigate }: Page
         >
           <div className="validationSummary">
             <article className="success">
-              <strong>演示项目数据包</strong>
-              <span>校验通过 / 已生成输入快照</span>
-              <p>包含资源清单、参与方、质量输入和收益池。</p>
+              <strong>{selectedPackage.name}</strong>
+              <span>{selectedPackage.status} / {selectedPackage.active ? "已生成输入快照" : "未生成有效数据包"}</span>
+              <p>包含资源 {selectedPackage.resourceCount} 个，参与方 {selectedPackage.partyCount} 个。</p>
             </article>
             <article className="warning">
-              <strong>上传候选数据包</strong>
-              <span>校验失败 / 未生成有效数据包</span>
-              <p>存在必要字段缺失、负收益和重复参与方。</p>
+              <strong>{visibleIssues[0]?.problem ?? "暂无失败记录"}</strong>
+              <span>{visibleIssues[0]?.location ?? "无"} / {visibleIssues[0]?.type ?? "通过"}</span>
+              <p>{visibleIssues[0]?.suggestion ?? "当前没有需要修复的校验问题。"}</p>
             </article>
           </div>
         </WorkbenchCard>
@@ -214,7 +282,7 @@ export function DataPackagesPage({ route, snapshot, onAction, onNavigate }: Page
               </tr>
             </thead>
             <tbody>
-              {dataPackages.map((item) => (
+            {dataPackages.map((item) => (
                 <tr key={item.name}>
                   <td><strong>{item.name}</strong></td>
                   <td>{item.source}</td>
@@ -248,10 +316,10 @@ export function DataPackagesPage({ route, snapshot, onAction, onNavigate }: Page
       >
         <DrawerSection title="数据包概览">
           <dl className="businessDetail compact">
-            <div><dt>数据包名称</dt><dd>演示项目数据包</dd></div>
-            <div><dt>校验状态</dt><dd>校验通过</dd></div>
-            <div><dt>资源数量</dt><dd>4</dd></div>
-            <div><dt>参与方数量</dt><dd>5</dd></div>
+            <div><dt>数据包名称</dt><dd>{selectedPackage.name}</dd></div>
+            <div><dt>校验状态</dt><dd>{selectedPackage.status}</dd></div>
+            <div><dt>资源数量</dt><dd>{selectedPackage.resourceCount}</dd></div>
+            <div><dt>参与方数量</dt><dd>{selectedPackage.partyCount}</dd></div>
           </dl>
         </DrawerSection>
         <DrawerSection title="字段摘要">
@@ -281,7 +349,7 @@ export function DataPackagesPage({ route, snapshot, onAction, onNavigate }: Page
       >
         <DrawerSection title="失败原因与修复建议">
           <div className="issueList">
-            {validationIssues.map((issue) => (
+            {visibleIssues.map((issue) => (
               <article key={issue.location}>
                 <strong>{issue.problem}</strong>
                 <dl className="businessDetail compact">
