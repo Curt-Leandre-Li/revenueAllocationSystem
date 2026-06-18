@@ -8,7 +8,7 @@ export const QualityService: MockDomainService = {
   handleAction(store, action) {
     if (
       store.snapshot.backend?.connected &&
-      (action.id === "QUAL-003" || action.id === "QUAL-006")
+      (action.id === "QUAL-003" || action.id === "QUAL-009")
     ) {
       return runQualityAssessmentFromBackend(store, action.label);
     }

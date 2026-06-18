@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
-import { menuGroups } from "./menu";
-import { getRoute, resolveRoute, routeComponents } from "./routes";
+import {
+  canonicalLocationForPathname,
+  getRoute,
+  resolveRoute,
+  routeComponents,
+  sectionIdForRoute,
+} from "./routes";
 import { fieldLabels } from "../domain/fieldMap";
 import { formatApiError } from "../domain/backendAdapter";
 import { dispatchWorkbenchAction } from "../domain/services";
@@ -11,7 +16,7 @@ import {
 } from "../domain/store";
 import type { WorkbenchStore } from "../domain/store";
 import type { ActionDefinition, ActionPayload, DataRow, RoutePath } from "../domain/types";
-import { ConfirmModal, DetailDrawer, TraceDrawer } from "../ui";
+import { ConfirmModal, DetailDrawer, SideNav, TraceDrawer } from "../ui";
 import { WorkbenchPage } from "../pages/WorkbenchPage";
 
 interface RowDetail {
@@ -32,6 +37,8 @@ export function AppShell() {
   const [confirmAction, setConfirmAction] = useState<PendingConfirmation | null>(null);
   const [traceOpen, setTraceOpen] = useState(false);
   const [rowDetail, setRowDetail] = useState<RowDetail | null>(null);
+  const [sideNavCollapsed, setSideNavCollapsed] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     const backendSyncRequested = new URLSearchParams(window.location.search).get("backend") === "1";
@@ -51,18 +58,26 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
-    const resolvedPath = resolveRoute(window.location.pathname);
-    if (window.location.pathname !== resolvedPath) {
-      window.history.replaceState({}, "", resolvedPath);
+    const canonicalLocation = canonicalLocationForPathname(window.location.pathname);
+    const currentLocation = `${window.location.pathname}${window.location.hash}`;
+    const isDashboardSectionHash =
+      window.location.pathname === "/dashboard/overview" &&
+      ["#overview", "#process", "#risk", "#one-click"].includes(window.location.hash);
+    if (currentLocation !== canonicalLocation && !isDashboardSectionHash) {
+      window.history.replaceState({}, "", canonicalLocation);
     }
   }, []);
 
   useEffect(() => {
-    const handlePopState = () => {
+    const syncActivePath = () => {
       setActivePath(resolveRoute(window.location.pathname));
     };
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
+    window.addEventListener("popstate", syncActivePath);
+    window.addEventListener("hashchange", syncActivePath);
+    return () => {
+      window.removeEventListener("popstate", syncActivePath);
+      window.removeEventListener("hashchange", syncActivePath);
+    };
   }, []);
 
   const route = getRoute(activePath);
@@ -71,8 +86,11 @@ export function AppShell() {
 
   function navigate(path: RoutePath) {
     const resolvedPath = resolveRoute(path);
+    const sectionId = sectionIdForRoute(path);
+    const targetLocation = sectionId ? `${resolvedPath}#${sectionId}` : resolvedPath;
     setActivePath(resolvedPath);
-    window.history.pushState({}, "", resolvedPath);
+    window.history.pushState({}, "", targetLocation);
+    window.dispatchEvent(new Event("hashchange"));
   }
 
   function handleAction(action: ActionDefinition, payload?: ActionPayload) {
@@ -112,40 +130,24 @@ export function AppShell() {
   }
 
   return (
-    <div className="appShell">
-      <aside className="sidebar">
-        <div className="brandBlock">
-          <div className="brandMark">DV</div>
-          <div>
-            <strong>数据收益分配系统</strong>
-            <span>模拟与审计说明工作区</span>
-          </div>
-        </div>
-
-        <nav className="navTree" aria-label="左侧导航">
-          {menuGroups.map((group) => (
-            <section className="navGroup" key={group.label}>
-              <h2>{group.label}</h2>
-              <div className="navItems">
-                {group.items.map((item) => (
-                  <button
-                    className={item.path === activePath ? "active" : ""}
-                    key={item.path}
-                    type="button"
-                    onClick={() => navigate(item.path)}
-                  >
-                    <span>{item.label}</span>
-                    {item.phase === "P1" ? <small>P1</small> : null}
-                  </button>
-                ))}
-              </div>
-            </section>
-          ))}
-        </nav>
-      </aside>
-
+    <div className={`appShell${sideNavCollapsed ? " sideNavCollapsed" : ""}`}>
+      <SideNav
+        activePath={activePath}
+        collapsed={sideNavCollapsed}
+        mobileOpen={mobileNavOpen}
+        onCollapseChange={setSideNavCollapsed}
+        onMobileOpenChange={setMobileNavOpen}
+        onNavigate={navigate}
+      />
       <main className="workspace">
         <section className="topbar" aria-label="项目状态栏">
+          <button
+            className="mobileMenuButton"
+            type="button"
+            onClick={() => setMobileNavOpen(true)}
+          >
+            菜单
+          </button>
           <div>
             <strong>{store.snapshot.projectName}</strong>
             <span>{store.snapshot.scenarioName}</span>
@@ -179,8 +181,13 @@ export function AppShell() {
       </main>
 
       <DetailDrawer
+        footerNote="仅展示主业务字段；工程字段通过追溯抽屉查看。"
+        objectType="业务记录"
         open={Boolean(rowDetail)}
+        size="md"
+        subtitle={route.label}
         title={rowDetail?.title ?? "详情"}
+        variant="detail"
         onClose={() => setRowDetail(null)}
       >
         <dl className="businessDetail">
@@ -197,7 +204,10 @@ export function AppShell() {
 
       <TraceDrawer
         details={pageData.technicalDetails}
+        footerNote="工程字段默认折叠，仅用于审计追溯和问题定位。"
+        objectType="审计追溯"
         open={traceOpen}
+        summary="当前页面的输入、参数、输出和工程标识只用于审计追溯，不在主业务界面展示。"
         title={`${route.label}追溯`}
         onClose={() => setTraceOpen(false)}
       />

@@ -3,16 +3,18 @@ import { actionRegistry } from "../../domain/actionRegistry";
 import {
   ActionButton,
   DetailDrawer,
+  DrawerSection,
+  ExportFieldList,
   MetricCard,
   PageHeader,
   PreconditionPanel,
   RiskNotice,
   SectionCard,
   TechnicalDetails,
+  TraceDrawer,
   WorkbenchCard,
 } from "../../ui";
 import {
-  formatPercent,
   formatWeight,
   getMockWorkspace,
   isResourceBlocked,
@@ -343,90 +345,181 @@ export function MDDShapPage({ route, snapshot, onAction }: PageProps) {
         <p>MD-DShap 输出的是数据源主体权重，不是最终付款指令、真实财务结算或合同履约依据。</p>
       </section>
 
-      <DetailDrawer open={drawer === "progress"} title="计算进度" onClose={() => setDrawer("")}>
-        <div className="progressDetail">
-          <strong>{latestTask.taskName}</strong>
-          <p>算法模式：{latestTask.algorithmMode}</p>
-          <p>状态：{latestTask.status}</p>
-          <p>进度：{latestTask.progress}%</p>
+      <TraceDrawer
+        footerNote="进度 trace 仅用于说明模拟计算链路，不作为付款或结算依据。"
+        input={{
+          参与方集合: `${mock.mdsParticipants.length} 个数据提供方`,
+          任务集合: `${mock.resources.filter((item) => item.includeInCalculation).length} 个资源效用任务`,
+        }}
+        objectType="算法任务"
+        open={drawer === "progress"}
+        output={{
+          任务状态: latestTask.status,
+          归一化权重合计: hasWeights ? formatWeight(weightTotal) : "待计算",
+        }}
+        parameters={{
+          采样轮数: sampleRounds,
+          收敛阈值: epsilon,
+          seed,
+          保存边际贡献明细: saveMarginalDetail ? "是" : "否",
+        }}
+        snapshots={[
+          { name: "输入快照", status: "已生成", createdAt: latestTask.createdAt },
+          { name: "权重输出快照", status: hasWeights ? "已生成" : "待生成" },
+          { name: "算法审计快照", status: hasWeights ? "已生成" : "待生成" },
+        ]}
+        statusTag={latestTask.status}
+        subtitle={latestTask.taskName}
+        summary="展示 MD-DShap 任务从输入、参数到输出快照的模拟执行过程。"
+        technicalDetails={{
+          task_id: "mds-task-phase2a",
+          output_snapshot_id: "snapshot-mds-output-phase2a",
+          algorithm_version: "md-dshap-demo-v1",
+        }}
+        title="计算进度"
+        onClose={() => setDrawer("")}
+      />
+
+      <TraceDrawer
+        footerNote="边际贡献 trace 用于解释权重来源，工程快照信息在技术详情中折叠展示。"
+        formula="边际贡献 = 加入后的效用值 - 加入前的效用值"
+        objectType="边际贡献"
+        open={drawer === "trace"}
+        output={{
+          归一化权重合计: hasWeights ? formatWeight(weightTotal) : "待计算",
+          任务状态: latestTask.status,
+        }}
+        parameters={{
+          采样轮数: sampleRounds,
+          收敛阈值: epsilon,
+        }}
+        statusTag={hasWeights ? "已生成" : "待生成"}
+        subtitle="展示参与方加入任务集合前后的效用差值。"
+        summary="边际贡献明细用于解释 MD-DShap 权重计算过程，不直接生成最终分配金额。"
+        technicalDetails={{
+          trace_id: "mds-trace-phase2a",
+          task_id: "mds-task-phase2a",
+          algorithm_version: "md-dshap-demo-v1",
+        }}
+        title="边际贡献明细"
+        traceColumns={[
+          { key: "coalitionLabel", label: "参与方集合" },
+          { key: "partyName", label: "本次参与方" },
+          { key: "beforeValue", label: "计算前效用" },
+          { key: "afterValue", label: "计算后效用" },
+          { key: "marginalValue", label: "边际贡献" },
+        ]}
+        traceRows={mock.mdsTraces.map((trace) => ({
+          coalitionLabel: trace.coalition,
+          partyName: trace.partyName,
+          beforeValue: formatWeight(trace.vBefore),
+          afterValue: formatWeight(trace.vAfter),
+          marginalValue: formatWeight(trace.marginalContribution),
+        }))}
+        onClose={() => setDrawer("")}
+      />
+
+      <DetailDrawer
+        footerNote="权重合计必须为 1.000000；权重不是付款指令。"
+        objectType="权重结果"
+        open={drawer === "weights"}
+        size="lg"
+        statusTag={hasWeights ? "已生成" : "待生成"}
+        title="参与方权重"
+        variant="detail"
+        onClose={() => setDrawer("")}
+      >
+        <DrawerSection title="权重结果" description="页面显示 6 位小数。">
+          <ul className="plainList">
+            {mock.mdsWeights.map((weight) => (
+              <li key={weight.partyName}>
+                {weight.partyName}：{formatWeight(weight.normalizedWeight)}
+              </li>
+            ))}
+          </ul>
+        </DrawerSection>
+      </DetailDrawer>
+
+      <DetailDrawer
+        footerNote="复杂度优化说明用于算法审计解释，不改变权重计算边界。"
+        objectType="算法说明"
+        open={drawer === "complexity"}
+        size="md"
+        statusTag="说明"
+        title="复杂度优化说明"
+        variant="risk"
+        onClose={() => setDrawer("")}
+      >
+        <DrawerSection title="优化策略">
+          <ul className="plainList">
+            <li>使用多维任务集合减少全排列枚举压力。</li>
+            <li>通过 sample_rounds 控制近似采样轮次，通过 epsilon 控制收敛阈值。</li>
+            <li>保存边际贡献明细时仅保存脱敏后的参与方集合与效用差值。</li>
+            <li>Basic Shapley 仅用于 baseline_check，不作为默认最终模式。</li>
+          </ul>
+        </DrawerSection>
+      </DetailDrawer>
+
+      <DetailDrawer
+        footerNote="导出文件只包含算法结果摘要，不包含原始敏感数据。"
+        objectType="导出说明"
+        open={drawer === "export"}
+        size="md"
+        statusTag="已生成"
+        technicalDetails={
           <TechnicalDetails
             details={{
-              task_id: "mds-task-phase2a",
-              output_snapshot_id: "snapshot-mds-output-phase2a",
-              algorithm_version: "md-dshap-demo-v1",
+              file_name: "md_dshap_weights_phase2a.json",
+              file_type: "JSON",
+              checksum: "sha256:md-dshap-weights-demo",
             }}
           />
-        </div>
+        }
+        title="算法结果导出"
+        variant="export"
+        onClose={() => setDrawer("")}
+      >
+        <DrawerSection title="导出字段">
+          <ExportFieldList
+            fields={[
+              "algorithm_mode",
+              "party_name",
+              "normalized_weight",
+              "marginal_contribution",
+              "sample_rounds",
+              "epsilon",
+            ]}
+            note="结果边界：模拟参考，不是付款指令。"
+          />
+        </DrawerSection>
       </DetailDrawer>
 
-      <DetailDrawer open={drawer === "trace"} title="边际贡献明细" onClose={() => setDrawer("")}>
-        <div className="tableWrap">
-          <table className="dataTable phase2Table">
-            <thead>
-              <tr>
-                <th>coalition</th>
-                <th>参与方</th>
-                <th>v_before</th>
-                <th>v_after</th>
-                <th>marginal_contribution</th>
-              </tr>
-            </thead>
-            <tbody>
-              {mock.mdsTraces.map((trace) => (
-                <tr key={`${trace.coalition}-${trace.partyName}`}>
-                  <td>{trace.coalition}</td>
-                  <td>{trace.partyName}</td>
-                  <td>{formatWeight(trace.vBefore)}</td>
-                  <td>{formatWeight(trace.vAfter)}</td>
-                  <td>{formatWeight(trace.marginalContribution)}</td>
-                </tr>
-              ))}
-              {mock.mdsTraces.length === 0 ? (
-                <tr>
-                  <td colSpan={5}>尚未生成边际贡献明细。</td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </DetailDrawer>
-
-      <DetailDrawer open={drawer === "weights"} title="参与方权重" onClose={() => setDrawer("")}>
-        <p className="drawerIntro">权重合计必须为 1.000000，页面显示 6 位小数。</p>
-        <ul className="plainList">
-          {mock.mdsWeights.map((weight) => (
-            <li key={weight.partyName}>
-              {weight.partyName}：{formatWeight(weight.normalizedWeight)}
-            </li>
-          ))}
-        </ul>
-      </DetailDrawer>
-
-      <DetailDrawer open={drawer === "complexity"} title="复杂度优化说明" onClose={() => setDrawer("")}>
-        <ul className="plainList">
-          <li>使用多维任务集合减少全排列枚举压力。</li>
-          <li>通过 sample_rounds 控制近似采样轮次，通过 epsilon 控制收敛阈值。</li>
-          <li>保存边际贡献明细时仅保存脱敏后的 coalition 与效用差值。</li>
-          <li>Basic Shapley 仅用于 baseline_check，不作为默认最终模式。</li>
-        </ul>
-      </DetailDrawer>
-
-      <DetailDrawer open={drawer === "export"} title="算法结果导出" onClose={() => setDrawer("")}>
-        <p className="drawerIntro">已生成 md_dshap_weights_phase2a.json 模拟导出记录。</p>
-        <ul className="plainList">
-          <li>字段范围：算法模式、参与方权重、边际贡献摘要、参数版本</li>
-          <li>记录类型：export_file + report_record</li>
-          <li>结果边界：模拟参考，不是付款指令</li>
-        </ul>
-      </DetailDrawer>
-
-      <DetailDrawer open={drawer === "audit"} title="算法审计说明" onClose={() => setDrawer("")}>
-        <p className="drawerIntro">已生成 md_dshap_audit_report 模拟记录。</p>
-        <ul className="plainList">
-          <li>包含算法版本、参数、输入快照、输出快照和模拟边界</li>
-          <li>保留重新计算任务版本，不覆盖历史 task</li>
-          <li>所有导出和审计说明均为模拟参考</li>
-        </ul>
+      <DetailDrawer
+        footerNote="审计说明仅解释算法输入、参数、输出和模拟边界。"
+        objectType="算法审计说明"
+        open={drawer === "audit"}
+        size="lg"
+        statusTag="已生成"
+        technicalDetails={
+          <TechnicalDetails
+            details={{
+              report_type: "md_dshap_audit_report",
+              task_id: "mds-task-phase2a",
+              checksum: "sha256:md-dshap-audit-demo",
+            }}
+          />
+        }
+        title="算法审计说明"
+        variant="export"
+        onClose={() => setDrawer("")}
+      >
+        <DrawerSection title="审计内容">
+          <ul className="plainList">
+            <li>包含算法版本、参数、输入快照、输出快照和模拟边界。</li>
+            <li>保留重新计算任务版本，不覆盖历史任务。</li>
+            <li>所有导出和审计说明均为模拟参考。</li>
+          </ul>
+        </DrawerSection>
       </DetailDrawer>
     </div>
   );

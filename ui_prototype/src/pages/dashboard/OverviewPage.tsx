@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { actionRegistry } from "../../domain/actionRegistry";
 import { projectStatusLabels } from "../../domain/status";
 import type { AuditLogRecord, ReportRecord, SnapshotRecord } from "../../domain/types";
 import {
   ActionButton,
   DetailDrawer,
+  DrawerSection,
   MetricCard,
   PageHeader,
   RiskNotice,
@@ -25,6 +26,13 @@ const processSteps = [
   "MD-DShap",
   "收益分配",
   "报告审计",
+];
+
+const homeSections = [
+  { id: "overview", label: "首页总览" },
+  { id: "process", label: "流程入口" },
+  { id: "risk", label: "风险提示" },
+  { id: "one-click", label: "一键计算" },
 ];
 
 function RecentReportList({ reports }: { reports: ReportRecord[] }) {
@@ -81,6 +89,25 @@ export function OverviewPage({
   const blockedResources = resources.filter(isResourceBlocked).length;
   const poolCount = mock.dataProviders.filter((party) => party.includeInMDDShap).length;
   const reportReady = mock.reports.length > 0 ? "已有报告" : "待生成";
+  useEffect(() => {
+    function scrollToHash() {
+      const sectionId = window.location.hash.replace("#", "");
+      if (!sectionId) {
+        return;
+      }
+      window.setTimeout(() => {
+        document.getElementById(sectionId)?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 50);
+    }
+
+    scrollToHash();
+    window.addEventListener("hashchange", scrollToHash);
+    return () => window.removeEventListener("hashchange", scrollToHash);
+  }, []);
+
   const metricItems = [
     {
       label: "数据包",
@@ -131,7 +158,19 @@ export function OverviewPage({
         snapshot={snapshot}
       />
 
-      <div className="dashboardHero">
+      <nav className="inPageTabs" aria-label="系统首页内部区块">
+        {homeSections.map((item) => (
+          <a href={`#${item.id}`} key={item.id}>{item.label}</a>
+        ))}
+      </nav>
+
+      <section className="homeSection" id="overview">
+        <div className="sectionHeading">
+          <span className="eyebrow">首页总览</span>
+          <h2>项目状态与核心指标</h2>
+        </div>
+
+        <div className="dashboardHero">
         <section className="projectSnapshot">
           <div>
             <span className="eyebrow">当前项目</span>
@@ -205,8 +244,13 @@ export function OverviewPage({
           <MetricCard item={item} key={item.label} />
         ))}
       </div>
+      </section>
 
-      <div className="dashboardGrid">
+      <section className="homeSection" id="process">
+        <div className="sectionHeading">
+          <span className="eyebrow">流程入口</span>
+          <h2>完整链路推进入口</h2>
+        </div>
         <WorkbenchCard
           title="流程进度"
           description="完整链路按数据、计量、权重、分配、报告顺序推进。"
@@ -225,7 +269,14 @@ export function OverviewPage({
             ))}
           </div>
         </WorkbenchCard>
+      </section>
 
+      <section className="homeSection" id="risk">
+        <div className="sectionHeading">
+          <span className="eyebrow">风险提示</span>
+          <h2>模拟参考边界</h2>
+        </div>
+        <div className="dashboardGrid">
         <SectionCard title="风险提示" description="点击查看完整边界说明。">
           <RiskNotice compact />
           <button className="wideButton" type="button" onClick={() => setRiskOpen(true)}>
@@ -233,6 +284,47 @@ export function OverviewPage({
           </button>
         </SectionCard>
       </div>
+      </section>
+
+      <section className="homeSection" id="one-click">
+        <div className="sectionHeading">
+          <span className="eyebrow">一键计算</span>
+          <h2>完整链路计算与结果摘要</h2>
+        </div>
+        <WorkbenchCard
+          title="一键计算"
+          description="启动前检查资源主体绑定、质量评估、效用输入和算法参与方集合。"
+          actions={
+            <ActionButton
+              action={actionRegistry["SYS-004"]}
+              onClick={(action) => onAction(action)}
+            />
+          }
+        >
+          <div className="oneClickGrid">
+            <article>
+              <strong>前置条件检查</strong>
+              <span>{blockedResources ? "存在阻断" : "可继续执行"}</span>
+              <p>{blockedResources ? "仍有进入计算资源未绑定数据源主体。" : "资源、主体、效用和权重池条件已满足演示计算。"}</p>
+            </article>
+            <article>
+              <strong>失败节点</strong>
+              <span>{blockedResources ? "资源主体归属" : "暂无失败节点"}</span>
+              <p>失败节点会写入运行日志摘要，并保留阶段快照。</p>
+            </article>
+            <article>
+              <strong>运行日志摘要</strong>
+              <span>local_operator</span>
+              <p>完整链路计算会生成审计日志、算法快照和报告记录。</p>
+            </article>
+            <article>
+              <strong>结果摘要</strong>
+              <span>{projectStatusLabels[snapshot.status]}</span>
+              <p>结果仅作为模拟参考，不构成法律结算或付款指令。</p>
+            </article>
+          </div>
+        </WorkbenchCard>
+      </section>
 
       <div className="dashboardGrid">
         <SectionCard title="最近报告" description="报告记录包含字段范围和版本，不覆盖历史。">
@@ -249,19 +341,30 @@ export function OverviewPage({
       </div>
 
       <DetailDrawer
+        actions={[
+          {
+            label: "关闭",
+            onClick: () => setRiskOpen(false),
+          },
+        ]}
+        footerNote="风险说明用于限定模拟参考边界，不构成法律结算或付款依据。"
+        objectType="风险说明"
         open={riskOpen}
+        size="sm"
+        statusTag="模拟参考"
+        subtitle="适用于系统首页、报告导出和算法结果说明。"
         title="风险与合规边界"
+        variant="risk"
         onClose={() => setRiskOpen(false)}
       >
         <RiskNotice />
-        <div className="drawerSection">
-          <h3>本阶段不可作为</h3>
+        <DrawerSection title="本阶段不可作为">
           <ul className="plainList">
             <li>法律结算、法定结算或付款指令</li>
             <li>合同履约证明、税务、银行或电子签章依据</li>
             <li>生产级 RBAC、登录、PDF、异步队列能力证明</li>
           </ul>
-        </div>
+        </DrawerSection>
       </DetailDrawer>
     </div>
   );

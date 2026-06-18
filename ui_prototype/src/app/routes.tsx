@@ -5,10 +5,7 @@ import { ConstraintsPage } from "../pages/allocation/ConstraintsPage";
 import { DataPackagesPage } from "../pages/data/DataPackagesPage";
 import { DataPartiesPage } from "../pages/data/DataPartiesPage";
 import { DataResourcesPage } from "../pages/data/DataResourcesPage";
-import { OneClickPage } from "../pages/dashboard/OneClickPage";
 import { OverviewPage } from "../pages/dashboard/OverviewPage";
-import { ProcessPage } from "../pages/dashboard/ProcessPage";
-import { RiskPage } from "../pages/dashboard/RiskPage";
 import { QualityPage } from "../pages/measure/QualityPage";
 import { ShuyuanPage } from "../pages/measure/ShuyuanPage";
 import { UtilityPage } from "../pages/measure/UtilityPage";
@@ -22,7 +19,7 @@ import type { ComponentType } from "react";
 export const appRoutes: AppRoute[] = [
   {
     path: "/dashboard/overview",
-    label: "首页总览",
+    label: "系统首页",
     menuCode: "NAV_SYS_OVERVIEW",
     moduleCode: "SYS",
     phase: "P0",
@@ -196,11 +193,17 @@ export const appRoutes: AppRoute[] = [
 
 export const defaultRoutePath: RoutePath = "/dashboard/overview";
 
+export const dashboardSectionRouteMap: Record<string, { path: RoutePath; sectionId: string }> = {
+  "/dashboard/process": { path: "/dashboard/overview", sectionId: "process" },
+  "/dashboard/risk": { path: "/dashboard/overview", sectionId: "risk" },
+  "/dashboard/one-click": { path: "/dashboard/overview", sectionId: "one-click" },
+  "/dashboard/flow": { path: "/dashboard/overview", sectionId: "process" },
+  "/dashboard/quick-run": { path: "/dashboard/overview", sectionId: "one-click" },
+};
+
 export const compatibilityRouteMap: Record<string, RoutePath> = {
   "/": "/dashboard/overview",
   "/dashboard": "/dashboard/overview",
-  "/dashboard/flow": "/dashboard/process",
-  "/dashboard/quick-run": "/dashboard/one-click",
   "/data/ingestion": "/data/packages",
   "/metering/quality": "/measure/quality",
   "/metering/shuyuan": "/measure/shuyuan",
@@ -218,9 +221,9 @@ export const compatibilityRouteMap: Record<string, RoutePath> = {
 
 export const routeComponents: Record<RoutePath, ComponentType<PageProps>> = {
   "/dashboard/overview": OverviewPage,
-  "/dashboard/process": ProcessPage,
-  "/dashboard/risk": RiskPage,
-  "/dashboard/one-click": OneClickPage,
+  "/dashboard/process": OverviewPage,
+  "/dashboard/risk": OverviewPage,
+  "/dashboard/one-click": OverviewPage,
   "/data/packages": DataPackagesPage,
   "/data/resources": DataResourcesPage,
   "/data/parties": DataPartiesPage,
@@ -237,12 +240,36 @@ export const routeComponents: Record<RoutePath, ComponentType<PageProps>> = {
 };
 
 export function resolveRoute(pathname: string): RoutePath {
+  const dashboardSection = dashboardSectionRouteMap[pathname];
+  if (dashboardSection) {
+    return dashboardSection.path;
+  }
+
   const directRoute = appRoutes.find((route) => route.path === pathname);
   if (directRoute) {
     return directRoute.path;
   }
 
   return compatibilityRouteMap[pathname] ?? defaultRoutePath;
+}
+
+export function canonicalLocationForPathname(pathname: string) {
+  const dashboardSection = dashboardSectionRouteMap[pathname];
+  if (dashboardSection) {
+    return `${dashboardSection.path}#${dashboardSection.sectionId}`;
+  }
+
+  const compatibilityPath = compatibilityRouteMap[pathname];
+  if (compatibilityPath) {
+    return compatibilityPath;
+  }
+
+  const directRoute = appRoutes.find((route) => route.path === pathname);
+  return directRoute ? directRoute.path : defaultRoutePath;
+}
+
+export function sectionIdForRoute(path: RoutePath) {
+  return dashboardSectionRouteMap[path]?.sectionId;
 }
 
 export function getRoute(path: RoutePath) {

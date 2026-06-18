@@ -45,8 +45,268 @@ button:disabled {
 
 .appShell {
   display: grid;
-  grid-template-columns: 264px minmax(0, 1fr);
+  grid-template-columns: 260px minmax(0, 1fr);
   min-height: 100vh;
+  transition: grid-template-columns 180ms ease;
+}
+
+.appShell.sideNavCollapsed {
+  grid-template-columns: 76px minmax(0, 1fr);
+}
+
+.sideNavOverlay {
+  display: none;
+}
+
+.sideNav {
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100vh;
+  border-right: 1px solid var(--line);
+  background: #fff;
+  box-shadow: 0 0 0 rgba(15, 23, 42, 0);
+  transition: width 180ms ease, transform 180ms ease;
+}
+
+.sideNavHead {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 30px;
+  gap: 10px;
+  align-items: center;
+  min-height: 76px;
+  border-bottom: 1px solid var(--line);
+  padding: 14px 12px;
+}
+
+.sideNavBrandText {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.sideNavBrandText strong {
+  overflow: hidden;
+  color: #172033;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sideNavBrandText span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sideNavCollapse {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.sideNavBody {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  overflow-y: auto;
+  padding: 12px 10px 18px;
+}
+
+.sideNavGroupShell {
+  position: relative;
+}
+
+.sideNavPrimary,
+.sideNavChildren button,
+.sideNavFlyout button {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.sideNavPrimary {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-height: 40px;
+  border-radius: 8px;
+  padding: 7px 9px;
+}
+
+.sideNavPrimary::before,
+.sideNavChildren button::before {
+  position: absolute;
+  left: 0;
+  width: 3px;
+  border-radius: 999px;
+  background: transparent;
+  content: "";
+}
+
+.sideNavPrimary::before {
+  top: 8px;
+  bottom: 8px;
+}
+
+.sideNavPrimary:hover,
+.sideNavChildren button:hover,
+.sideNavFlyout button:hover {
+  border-color: #d9e6e4;
+  background: #f5faf9;
+}
+
+.sideNavGroupShell.activeParent > .sideNavPrimary {
+  border-color: #b9ded9;
+  background: #e8f6f4;
+  color: #07544f;
+  font-weight: 900;
+}
+
+.sideNavGroupShell.activeParent > .sideNavPrimary::before,
+.sideNavChildren button.active::before {
+  background: var(--teal);
+}
+
+.sideNavIcon {
+  width: 22px;
+  height: 22px;
+  color: #496174;
+}
+
+.activeParent .sideNavIcon {
+  color: var(--teal);
+}
+
+.sideNavLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sideNavChevron {
+  color: #7b8794;
+  font-weight: 900;
+}
+
+.p1Tag {
+  border: 1px solid #c9cfd8;
+  border-radius: 999px;
+  background: #f2f4f7;
+  color: #647084;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.sideNavChildren {
+  display: none;
+  gap: 3px;
+  padding: 4px 0 4px 36px;
+}
+
+.sideNavGroupShell.expanded .sideNavChildren {
+  display: grid;
+}
+
+.sideNavChildren button,
+.sideNavFlyout button {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-radius: 7px;
+  padding: 6px 8px;
+}
+
+.sideNavChildren button::before {
+  top: 7px;
+  bottom: 7px;
+}
+
+.sideNavChildren button.active,
+.sideNavFlyout button.active {
+  border-color: #b9ded9;
+  background: #e8f6f4;
+  color: #07544f;
+  font-weight: 900;
+}
+
+.sideNavFlyout,
+.sideNavTooltip {
+  display: none;
+}
+
+.sideNav.collapsed {
+  overflow: visible;
+}
+
+.sideNav.collapsed .sideNavHead {
+  grid-template-columns: 1fr;
+  justify-content: center;
+  justify-items: center;
+  gap: 8px;
+  min-height: 94px;
+  padding: 14px 10px;
+}
+
+.sideNav.collapsed .sideNavBrandText,
+.sideNav.collapsed .sideNavLabel,
+.sideNav.collapsed .sideNavChevron,
+.sideNav.collapsed .sideNavChildren,
+.sideNav.collapsed .p1Tag {
+  display: none;
+}
+
+.sideNav.collapsed .sideNavBody {
+  overflow: visible;
+  padding: 12px 10px;
+}
+
+.sideNav.collapsed .sideNavPrimary {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  min-height: 42px;
+  padding: 8px;
+}
+
+.sideNav.collapsed .sideNavGroupShell:hover .sideNavFlyout,
+.sideNav.collapsed .sideNavGroupShell:hover .sideNavTooltip {
+  position: absolute;
+  top: 0;
+  left: 58px;
+  z-index: 40;
+  display: grid;
+  min-width: 210px;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
+  padding: 10px;
+}
+
+.sideNavFlyout strong,
+.sideNavTooltip {
+  color: #172033;
+  font-weight: 900;
 }
 
 .sidebar {
@@ -147,6 +407,10 @@ button:disabled {
   padding: 16px 20px 28px;
 }
 
+.mobileMenuButton {
+  display: none;
+}
+
 .topbar {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) repeat(2, auto) auto auto;
@@ -200,6 +464,51 @@ button:disabled {
   display: grid;
   gap: 14px;
   padding-top: 14px;
+}
+
+.inPageTabs {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  padding: 8px;
+}
+
+.inPageTabs a {
+  border: 1px solid #d7e5e2;
+  border-radius: 999px;
+  background: #f7fbfa;
+  color: #0b5f59;
+  padding: 6px 12px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.inPageTabs a:hover {
+  border-color: #9bd4cc;
+  background: #e8f6f4;
+}
+
+.homeSection {
+  scroll-margin-top: 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.sectionHeading {
+  display: grid;
+  gap: 4px;
+}
+
+.sectionHeading h2 {
+  margin: 0;
+  color: #172033;
+  font-size: 20px;
 }
 
 .pageHeader {
@@ -585,9 +894,16 @@ button:disabled {
 }
 
 .technicalDetails summary {
+  display: grid;
+  gap: 2px;
   color: #455468;
   cursor: pointer;
   font-weight: 800;
+}
+
+.technicalDetails summary small {
+  color: var(--muted);
+  font-weight: 500;
 }
 
 .technicalDetails dl,
@@ -607,6 +923,12 @@ button:disabled {
 .technicalDetails dt,
 .businessDetail dt {
   color: var(--muted);
+}
+
+.technicalDetails dt small {
+  display: block;
+  color: #8090a3;
+  font-size: 11px;
 }
 
 .technicalDetails dd,
@@ -638,21 +960,95 @@ button:disabled {
 }
 
 .drawerPanel {
-  width: min(520px, 100vw);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(640px, 100vw);
   height: 100%;
-  overflow-y: auto;
+  overflow: hidden;
   border-left: 1px solid var(--line);
   background: #fff;
-  padding: 16px;
+  box-shadow: -18px 0 36px rgba(15, 23, 42, 0.14);
+}
+
+.drawerPanel-sm {
+  width: min(480px, 100vw);
+}
+
+.drawerPanel-md {
+  width: min(640px, 100vw);
+}
+
+.drawerPanel-lg {
+  width: min(820px, 100vw);
+}
+
+.drawerPanel-xl {
+  width: min(960px, 100vw);
+}
+
+.drawerPanel-fullscreen {
+  width: 100vw;
 }
 
 .drawerHead {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   border-bottom: 1px solid var(--line);
-  padding-bottom: 12px;
+  border-top: 4px solid var(--teal);
+  background: #fff;
+  padding: 14px 16px 12px;
+}
+
+.drawer-detail .drawerHead {
+  border-top-color: #0f766e;
+}
+
+.drawer-form .drawerHead {
+  border-top-color: #2563eb;
+}
+
+.drawer-trace .drawerHead {
+  border-top-color: #7c3aed;
+}
+
+.drawer-export .drawerHead {
+  border-top-color: #0284c7;
+}
+
+.drawer-risk .drawerHead {
+  border-top-color: #d97706;
+}
+
+.drawerTitleBlock {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.drawerMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.drawerMeta span,
+.drawerMeta code,
+.drawerMeta strong {
+  border: 1px solid #d7e1ed;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #435269;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.drawerMeta strong {
+  border-color: #bce1ca;
+  background: #ecfbf1;
+  color: #166534;
 }
 
 .drawerHead h2 {
@@ -660,13 +1056,98 @@ button:disabled {
   font-size: 20px;
 }
 
+.drawerHead p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.drawerHead button {
+  flex: 0 0 auto;
+}
+
 .drawerBody {
-  padding-top: 12px;
+  overflow-y: auto;
+  padding: 14px 16px 18px;
 }
 
 .drawerIntro {
   margin: 0;
   color: var(--muted);
+}
+
+.traceCompactGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.traceCompactGrid .drawerSection {
+  margin-top: 0;
+}
+
+.drawer-trace .drawerSection {
+  padding: 10px;
+}
+
+.drawer-trace .drawerSectionHead h3 {
+  font-size: 15px;
+}
+
+.drawer-trace .drawerSectionHead p {
+  font-size: 13px;
+}
+
+.drawer-trace .businessDetail.compact div {
+  grid-template-columns: 94px minmax(0, 1fr);
+}
+
+.drawer-trace .codeBlock {
+  padding: 8px;
+}
+
+.drawerFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  background: #fff;
+  padding: 12px 16px;
+}
+
+.drawerFooterNote {
+  min-width: 0;
+  color: var(--muted);
+}
+
+.drawerFooterActions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.drawerAction.primary {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: #fff;
+}
+
+.drawerAction.danger {
+  border-color: var(--red);
+  background: #fff1f1;
+  color: var(--red);
+}
+
+.drawerAction:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.drawerTechnical {
+  margin-top: 12px;
 }
 
 .modalBackdrop {
@@ -712,6 +1193,12 @@ button:disabled {
   border-color: var(--blue);
   background: var(--blue);
   color: #fff;
+}
+
+.modalActions .danger {
+  border-color: var(--red);
+  background: #fff1f1;
+  color: var(--red);
 }
 
 .phase2Page {
@@ -918,19 +1405,142 @@ button:disabled {
   font-weight: 800;
 }
 
-.drawerSection {
-  margin-top: 16px;
-}
-
-.drawerSection h3 {
-  margin: 0 0 8px;
-}
-
 .plainList {
   display: grid;
   gap: 8px;
   margin: 10px 0 0;
   padding-left: 18px;
+}
+
+.drawerSection {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #dfe7f0;
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.drawerSection + .drawerSection {
+  margin-top: 12px;
+}
+
+.drawerSectionHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.drawerSectionHead h3 {
+  margin: 0;
+  color: #172033;
+  font-size: 16px;
+}
+
+.drawerSectionHead p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.drawerSectionExtra {
+  flex: 0 0 auto;
+}
+
+.drawerSectionBody > p:first-child {
+  margin-top: 0;
+}
+
+.businessDetail.compact div {
+  grid-template-columns: 130px minmax(0, 1fr);
+}
+
+.codeBlock {
+  overflow-x: auto;
+  border: 1px solid #dbe4ef;
+  border-radius: 6px;
+  background: #f8fafc;
+  margin: 0;
+  padding: 10px;
+  color: #334155;
+}
+
+.drawerTableWrap {
+  max-height: 360px;
+  overflow: auto;
+}
+
+.drawerTable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.snapshotList {
+  display: grid;
+  gap: 8px;
+}
+
+.snapshotList article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  border: 1px solid #dfe7f0;
+  border-radius: 6px;
+  background: #f8fafc;
+  padding: 8px;
+}
+
+.snapshotList small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+
+.exportFieldList {
+  display: grid;
+  gap: 10px;
+}
+
+.exportFieldList p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.exportFieldList ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.exportFieldList li {
+  display: grid;
+  gap: 3px;
+  border: 1px solid #dfe7f0;
+  border-radius: 6px;
+  background: #f8fafc;
+  padding: 8px;
+}
+
+.exportFieldList span {
+  color: #172033;
+  font-weight: 800;
+}
+
+.exportFieldList small {
+  color: var(--muted);
+}
+
+.exportFieldList em {
+  justify-self: flex-start;
+  border-radius: 999px;
+  background: #fff7df;
+  color: #8a5200;
+  padding: 1px 7px;
+  font-style: normal;
+  font-weight: 800;
 }
 
 .blockingNotice,
@@ -1075,20 +1685,6 @@ button:disabled {
   gap: 8px;
 }
 
-.previewRows pre {
-  overflow-x: auto;
-  border: 1px solid #dbe4ef;
-  border-radius: 6px;
-  background: #f8fafc;
-  margin: 0;
-  padding: 10px;
-  color: #334155;
-}
-
-.wideModal {
-  width: min(620px, 100%);
-}
-
 .providerRatioGrid {
   display: grid;
   gap: 10px;
@@ -1180,18 +1776,348 @@ button:disabled {
   text-align: right;
 }
 
-.progressDetail {
+.oneClickGrid,
+.reportsGrid,
+.exportCards {
   display: grid;
+  gap: 12px;
+}
+
+.oneClickGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.oneClickGrid article,
+.exportCards article {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #dfe7f0;
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 12px;
+}
+
+.oneClickGrid article span,
+.exportCards article span {
+  color: var(--teal);
+  font-weight: 900;
+}
+
+.oneClickGrid article p,
+.exportCards article p,
+.mutedText {
+  margin: 0;
+  color: var(--muted);
+}
+
+.reportsGrid {
+  grid-template-columns: minmax(0, 1.15fr) minmax(340px, 0.85fr);
+  align-items: start;
+}
+
+.reportPreview {
+  display: grid;
+  gap: 10px;
+}
+
+.reportPreview span {
+  color: var(--muted);
+}
+
+.reportPreview h2 {
+  margin: 0;
+  color: #12314d;
+}
+
+.reportPreview p {
+  margin: 0;
+  color: #475569;
+}
+
+.exportCards {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.exportCards .p1Only {
+  background: #f4f6f8;
+  color: #647084;
+}
+
+.exportCards .p1Only span {
+  color: #647084;
+}
+
+.phase2bTwoCol {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(340px, 0.85fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.featureCardBody,
+.uploadDropZone,
+.validationSummary,
+.boundaryList,
+.issueList,
+.wizardSteps,
+.factorGrid,
+.dimensionGrid,
+.scorePanel,
+.allocationFormula,
+.formulaBox {
+  display: grid;
+  gap: 10px;
+}
+
+.featureCardBody p,
+.uploadDropZone span,
+.validationSummary p,
+.boundaryList span,
+.issueList span,
+.wizardSteps p,
+.scorePanel p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.uploadDropZone {
+  min-height: 132px;
+  place-items: center;
+  border: 1px dashed #9ecac5;
+  border-radius: 8px;
+  background: #f3fbfa;
+  padding: 18px;
+  text-align: center;
+}
+
+.validationSummary,
+.boundaryList,
+.issueList,
+.compactList {
+  align-content: start;
+}
+
+.validationSummary article,
+.boundaryList article,
+.issueList article,
+.wizardSteps article,
+.factorGrid article,
+.dimensionGrid article {
+  border: 1px solid #dfe7f0;
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.validationSummary article.success {
+  border-color: #b7dcc5;
+  background: #f0fbf4;
+}
+
+.validationSummary article.warning {
+  border-color: #f2d39a;
+  background: #fff8eb;
+}
+
+.chipList,
+.tabStrip,
+.checkList {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
-.progressDetail p {
-  margin: 0;
+.chipList span,
+.tabStrip button {
+  border: 1px solid #d7e5e2;
+  border-radius: 999px;
+  background: #f7fbfa;
+  color: #0b5f59;
+  padding: 6px 10px;
+  font-weight: 800;
 }
 
-@media (max-width: 1080px) {
+.tabStrip button.active {
+  border-color: #82c7bd;
+  background: #e5f5f2;
+}
+
+.wizardSteps {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.wizardSteps span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--teal);
+  color: #fff;
+  font-weight: 900;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.formGrid label,
+.filterBar label {
+  display: grid;
+  gap: 6px;
+  color: #334155;
+  font-weight: 800;
+}
+
+.formGrid input,
+.formGrid select,
+.formGrid textarea,
+.filterBar input,
+.filterBar select,
+textarea {
+  min-height: 36px;
+  width: 100%;
+  border: 1px solid #c7d2e0;
+  border-radius: 7px;
+  background: #fff;
+  color: var(--text);
+  padding: 7px 9px;
+}
+
+.checkList {
+  display: grid;
+}
+
+.checkList label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scorePanel {
+  border: 1px solid #dfe7f0;
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 14px;
+}
+
+.scorePanel strong {
+  color: var(--teal);
+  font-size: 34px;
+  line-height: 1;
+}
+
+.dimensionGrid,
+.factorGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.factorGrid article strong,
+.dimensionGrid article span {
+  color: var(--teal);
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.formulaBox,
+.allocationFormula {
+  border: 1px solid #dbe8f6;
+  border-radius: 8px;
+  background: #f6f9fd;
+  color: #334155;
+  padding: 14px;
+  font-weight: 800;
+}
+
+.successText {
+  margin: 0;
+  color: var(--green);
+  font-weight: 900;
+}
+
+@media (max-width: 1023px) {
   .appShell {
     grid-template-columns: 1fr;
+  }
+
+  .appShell.sideNavCollapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .sideNavOverlay.open {
+    position: fixed;
+    inset: 0;
+    z-index: 35;
+    display: block;
+    border: 0;
+    background: rgba(15, 23, 42, 0.35);
+  }
+
+  .sideNav,
+  .sideNav.collapsed {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 40;
+    width: min(280px, 86vw);
+    height: 100vh;
+    transform: translateX(-102%);
+    box-shadow: 18px 0 44px rgba(15, 23, 42, 0.18);
+  }
+
+  .sideNav.mobileOpen,
+  .sideNav.collapsed.mobileOpen {
+    transform: translateX(0);
+  }
+
+  .sideNav.collapsed .sideNavHead {
+    grid-template-columns: 38px minmax(0, 1fr);
+    justify-content: start;
+  }
+
+  .sideNav.collapsed .sideNavBrandText {
+    display: grid;
+  }
+
+  .sideNav.collapsed .sideNavLabel,
+  .sideNav.collapsed .sideNavChevron {
+    display: inline;
+  }
+
+  .sideNav.collapsed .p1Tag {
+    display: inline-block;
+  }
+
+  .sideNav.collapsed .sideNavCollapse {
+    display: none;
+  }
+
+  .sideNav.collapsed .sideNavBody {
+    overflow-y: auto;
+    padding: 12px 10px 18px;
+  }
+
+  .sideNav.collapsed .sideNavPrimary {
+    grid-template-columns: 28px minmax(0, 1fr) auto auto;
+    justify-items: stretch;
+    min-height: 40px;
+    padding: 7px 9px;
+  }
+
+  .sideNav.collapsed .sideNavGroupShell.expanded .sideNavChildren {
+    display: grid;
+  }
+
+  .sideNav.collapsed .sideNavGroupShell:hover .sideNavFlyout,
+  .sideNav.collapsed .sideNavGroupShell:hover .sideNavTooltip {
+    display: none;
+  }
+
+  .mobileMenuButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .sidebar {
@@ -1210,6 +2136,10 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .topbar {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
   .statusStepper,
   .metricsGrid,
   .metricGrid.six,
@@ -1218,9 +2148,39 @@ button:disabled {
   .dashboardHero,
   .dashboardGrid,
   .mdsGrid,
+  .reportsGrid,
+  .phase2bTwoCol,
   .filterBar,
   .projectSnapshot dl {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .oneClickGrid,
+  .exportCards,
+  .wizardSteps,
+  .dimensionGrid,
+  .factorGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .drawerPanel,
+  .drawerPanel-sm,
+  .drawerPanel-md,
+  .drawerPanel-lg,
+  .drawerPanel-xl,
+  .drawerPanel-fullscreen {
+    width: 100vw;
+  }
+
+  .drawerFooter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .drawerFooterActions {
+    justify-content: flex-start;
   }
 }
 
@@ -1237,6 +2197,14 @@ button:disabled {
   .dashboardHero,
   .dashboardGrid,
   .mdsGrid,
+  .reportsGrid,
+  .oneClickGrid,
+  .exportCards,
+  .phase2bTwoCol,
+  .wizardSteps,
+  .dimensionGrid,
+  .factorGrid,
+  .formGrid,
   .filterBar,
   .paramGrid,
   .processRail,
@@ -1246,5 +2214,18 @@ button:disabled {
 
   .cardActions {
     justify-content: flex-start;
+  }
+
+  .drawerHead,
+  .drawerBody,
+  .drawerFooter {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .exportFieldList ul,
+  .businessDetail div,
+  .businessDetail.compact div {
+    grid-template-columns: 1fr;
   }
 }

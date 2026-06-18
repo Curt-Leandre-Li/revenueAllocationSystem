@@ -134,12 +134,35 @@ export function writeMockServiceResult(
   store: WorkbenchStore,
   action: ActionDefinition,
 ): WorkbenchStore {
-  const snapshot = appendAudit(store.snapshot, {
+  let snapshot = appendAudit(store.snapshot, {
     operation: action.label,
     objectType: action.audit.objectType,
     status: "已记录",
     summary: action.sideEffect,
   });
+
+  if (action.permission === "CALCULATE") {
+    snapshot = appendSnapshot(snapshot, {
+      name: `${action.label}输出快照`,
+      type: `${action.moduleCode}_OUTPUT`,
+      status: "已生成",
+    });
+  }
+
+  if (action.permission === "EXPORT") {
+    snapshot = appendExport(snapshot, {
+      fileName: `${action.id.toLowerCase()}_mock_export.json`,
+      fileType: "JSON",
+      status: "已生成",
+      fieldScope: `${action.label}业务字段；不包含敏感原文和工程字段`,
+    });
+    snapshot = appendReport(snapshot, {
+      name: `${action.label}记录`,
+      type: action.id.toLowerCase(),
+      status: "已生成",
+      fieldScope: "模拟参考，非法律结算",
+    });
+  }
 
   return {
     ...store,

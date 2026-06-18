@@ -4,9 +4,10 @@ import type { ResourceInventoryRecord } from "../../domain/types";
 import {
   ActionButton,
   DetailDrawer,
+  DrawerSection,
+  ExportFieldList,
   MetricCard,
   PageHeader,
-  SectionCard,
   TechnicalDetails,
   WorkbenchCard,
 } from "../../ui";
@@ -48,6 +49,7 @@ export function DataResourcesPage({ route, snapshot, onAction }: PageProps) {
   const [missingRisk, setMissingRisk] = useState<FilterValue>("全部");
   const [detailKey, setDetailKey] = useState("");
   const [bindingKey, setBindingKey] = useState("");
+  const [bindingDirty, setBindingDirty] = useState(false);
   const [ratioDraft, setRatioDraft] = useState<Record<string, number>>({});
   const [exportOpen, setExportOpen] = useState(false);
 
@@ -102,6 +104,9 @@ export function DataResourcesPage({ route, snapshot, onAction }: PageProps) {
       draft[preferredProvider] = 100;
     }
     setRatioDraft(draft);
+    setBindingDirty(false);
+    setDetailKey("");
+    setExportOpen(false);
     setBindingKey(resource.resourceKey);
   }
 
@@ -119,6 +124,7 @@ export function DataResourcesPage({ route, snapshot, onAction }: PageProps) {
       providerName: providerSummary,
       splitRatio: 100,
     });
+    setBindingDirty(false);
     setBindingKey("");
   }
 
@@ -156,6 +162,8 @@ export function DataResourcesPage({ route, snapshot, onAction }: PageProps) {
           <ActionButton
             action={actionRegistry["RES-007"]}
             onClick={(action) => {
+              setDetailKey("");
+              setBindingKey("");
               onAction(action);
               setExportOpen(true);
             }}
@@ -290,13 +298,22 @@ export function DataResourcesPage({ route, snapshot, onAction }: PageProps) {
       </section>
 
       <DetailDrawer
+        footerNote="详情抽屉只展示业务概览；工程字段固定在底部技术详情中。"
+        objectType="数据资源"
         open={Boolean(selectedResource)}
+        size="lg"
+        statusTag={selectedResource?.status}
+        subtitle={selectedResource ? `${selectedResource.modality} / ${selectedResource.sampleCount.toLocaleString("zh-CN")} 条样本` : undefined}
+        technicalDetails={
+          selectedResource ? <TechnicalDetails details={selectedResource.technicalDetails} /> : null
+        }
         title="数据资源详情"
+        variant="detail"
         onClose={() => setDetailKey("")}
       >
         {selectedResource ? (
           <div className="resourceDetail">
-            <SectionCard title="资源概览">
+            <DrawerSection title="资源概览">
               <dl className="businessDetail">
                 <div>
                   <dt>资源名称</dt>
@@ -315,9 +332,9 @@ export function DataResourcesPage({ route, snapshot, onAction }: PageProps) {
                   <dd>{selectedResource.includeInCalculation ? "是" : "否"}</dd>
                 </div>
               </dl>
-            </SectionCard>
+            </DrawerSection>
 
-            <SectionCard title="字段统计">
+            <DrawerSection title="字段统计" description="仅展示统计口径，不展示敏感原文。">
               <div className="statChips">
                 {selectedResource.fieldStats.map((item) => (
                   <span key={item.label}>
@@ -325,17 +342,24 @@ export function DataResourcesPage({ route, snapshot, onAction }: PageProps) {
                   </span>
                 ))}
               </div>
-            </SectionCard>
+            </DrawerSection>
 
-            <SectionCard title="脱敏预览">
+            <DrawerSection title="脱敏预览" description="预览内容已脱敏，仅用于业务核对。">
               <div className="previewRows">
                 {selectedResource.previewRows.map((row, index) => (
-                  <pre key={index}>{JSON.stringify(row, null, 2)}</pre>
+                  <dl className="businessDetail compact" key={index}>
+                    {Object.entries(row).map(([key, value]) => (
+                      <div key={key}>
+                        <dt>{key}</dt>
+                        <dd>{String(value)}</dd>
+                      </div>
+                    ))}
+                  </dl>
                 ))}
               </div>
-            </SectionCard>
+            </DrawerSection>
 
-            <SectionCard title="主体归属和计算设置">
+            <DrawerSection title="主体归属和计算设置">
               <p>
                 当前主体：<strong>{selectedResource.providerName}</strong>
               </p>
@@ -347,20 +371,42 @@ export function DataResourcesPage({ route, snapshot, onAction }: PageProps) {
                     : "不进入后续计算"}
                 </strong>
               </p>
-            </SectionCard>
-
-            <TechnicalDetails details={selectedResource.technicalDetails} />
+            </DrawerSection>
           </div>
         ) : null}
       </DetailDrawer>
 
-      {bindingResource ? (
-        <div className="modalBackdrop" role="presentation">
-          <section className="confirmModal wideModal" role="dialog" aria-modal="true">
-            <h2>绑定数据源主体</h2>
-            <p>
-              资源：<strong>{bindingResource.name}</strong>
-            </p>
+      <DetailDrawer
+        actions={[
+          {
+            label: "取消",
+            onClick: () => setBindingKey(""),
+          },
+          {
+            label: "保存绑定",
+            type: "primary",
+            disabled: ratioTotal !== 100,
+            disabledReason: "拆分比例合计必须等于 100%",
+            onClick: saveBinding,
+          },
+        ]}
+        dirty={bindingDirty}
+        footerNote="保存后会更新资源与数据源主体关系，并写入审计日志。"
+        objectType="主体归属配置"
+        open={Boolean(bindingResource)}
+        size="lg"
+        statusTag={ratioTotal === 100 ? "可保存" : "待校验"}
+        subtitle={bindingResource ? `资源：${bindingResource.name}` : undefined}
+        title="绑定数据源主体"
+        variant="form"
+        onClose={() => setBindingKey("")}
+      >
+        {bindingResource ? (
+          <>
+            <DrawerSection
+              title="拆分比例"
+              description="选择一个或多个数据提供方，拆分比例合计必须等于 100%。"
+            >
             <div className="providerRatioGrid">
               {mock.dataProviders.map((provider) => (
                 <label key={provider.name}>
@@ -370,49 +416,67 @@ export function DataResourcesPage({ route, snapshot, onAction }: PageProps) {
                     max="100"
                     type="number"
                     value={ratioDraft[provider.name] ?? 0}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      setBindingDirty(true);
                       setRatioDraft((current) => ({
                         ...current,
                         [provider.name]: Number(event.target.value),
-                      }))
-                    }
+                      }));
+                    }}
                   />
                 </label>
               ))}
             </div>
             <p className={ratioTotal === 100 ? "ratioOk" : "ratioError"}>
-              当前 split_ratio 合计：{ratioTotal}%（必须等于 100%）
+              当前拆分比例合计：{ratioTotal}%（必须等于 100%）
             </p>
-            <div className="modalActions">
-              <button type="button" onClick={() => setBindingKey("")}>
-                取消
-              </button>
-              <button
-                className="primary"
-                disabled={ratioTotal !== 100}
-                type="button"
-                onClick={saveBinding}
-              >
-                保存绑定
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
+            </DrawerSection>
+
+            <DrawerSection title="保存影响">
+              <ul className="plainList">
+                <li>更新 data_resource_party_relation 模拟记录。</li>
+                <li>资源进入后续计算时，主体归属缺失阻断将解除。</li>
+                <li>保存动作会写入审计日志。</li>
+              </ul>
+            </DrawerSection>
+          </>
+        ) : null}
+      </DetailDrawer>
 
       <DetailDrawer
+        footerNote="导出动作已生成模拟导出记录和报告记录；敏感原文不进入文件。"
+        objectType="导出说明"
         open={exportOpen}
+        size="md"
+        statusTag="已生成"
+        technicalDetails={
+          <TechnicalDetails
+            details={{
+              file_name: "resource_summary_phase2a.csv",
+              file_type: "CSV",
+              checksum: "sha256:resource-summary-demo",
+            }}
+          />
+        }
         title="资源摘要导出"
+        variant="export"
         onClose={() => setExportOpen(false)}
       >
-        <p className="drawerIntro">
-          已生成 resource_summary.csv/json 模拟导出记录和报告记录。
-        </p>
-        <ul className="plainList">
-          <li>导出字段：资源名称、模态、字段数、样本数、缺失率、主体归属、计算设置</li>
-          <li>安全边界：不导出敏感原文，仅导出脱敏统计</li>
-          <li>记录位置：export_file 与 report_record 模拟记录</li>
-        </ul>
+        <DrawerSection title="导出结果" description="已生成 resource_summary.csv/json 模拟导出记录和报告记录。">
+          <ExportFieldList
+            fields={[
+              "resource_name",
+              "modality",
+              "field_count",
+              "sample_count",
+              "missing_rate",
+              "provider_party",
+              "include_in_calculation",
+              { key: "sensitive_field_count", sensitive: true },
+            ]}
+            note="不导出敏感原文，仅导出脱敏统计。"
+          />
+        </DrawerSection>
       </DetailDrawer>
     </div>
   );
