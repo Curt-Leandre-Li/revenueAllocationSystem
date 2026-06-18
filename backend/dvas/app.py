@@ -11,6 +11,7 @@ from .services import (
     DashboardService,
     DataIngestionService,
     MdDshapService,
+    NavigationService,
     PartyService,
     ProjectService,
     QualityAssessmentService,
@@ -26,6 +27,7 @@ class DvasApplication:
     def __init__(self, repository=None):
         self.repository = repository or JsonFileRepository()
         self.project_service = ProjectService(self.repository)
+        self.navigation_service = NavigationService()
         self.dashboard_service = DashboardService(self.repository)
         self.ingestion_service = DataIngestionService(self.repository)
         self.resource_service = ResourceService(self.repository)
@@ -75,11 +77,15 @@ class DvasApplication:
         segments = [segment for segment in path.removeprefix(API_PREFIX).split("/") if segment]
         if method == "GET" and segments == ["projects", "current"]:
             return self.project_service.current_project()
-        if method == "GET" and segments == ["dashboard", "overview"]:
+        if method == "GET" and segments == ["navigation", "menu-tree"]:
+            return self.navigation_service.menu_tree()
+        if method == "GET" and segments == ["navigation", "button-permissions"]:
+            return self.navigation_service.button_permissions()
+        if method == "GET" and segments == ["dashboard"]:
             return self.dashboard_service.overview()
         if method == "GET" and segments == ["dashboard", "preconditions"]:
             return self.dashboard_service.preconditions()
-        if method == "POST" and segments == ["dashboard", "quick-run"]:
+        if method == "POST" and segments == ["dashboard", "actions", "quick-run"]:
             return self.dashboard_service.quick_run()
         if method == "POST" and len(segments) == 3 and segments[:1] == ["demo-cases"] and segments[2] == "initialize":
             return self.ingestion_service.initialize_demo_case(segments[1])

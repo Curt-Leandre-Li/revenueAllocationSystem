@@ -54,9 +54,9 @@ All endpoints below are defined in `backend/openapi.yaml` and routed by `DvasApp
 | Method | Endpoint | Route function | Request DTO | Response DTO / data | Backend service | Data objects | Status / audit / snapshot / report side effects | Tested | Availability |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | GET | `/api/v1/projects/current` | `_dispatch` | query none | `AllocationProject` in standard envelope | `ProjectService.current_project` | allocation_project | read only | yes | P0 |
-| GET | `/api/v1/dashboard/overview` | `_dispatch` | query none | dashboard aggregate | `DashboardService.overview` | project, packages, resources, parties, audit_log | read only, returns available/disabled actions | yes | P0 |
+| GET | `/api/v1/dashboard` | `_dispatch` | query none | dashboard aggregate | `DashboardService.overview` | project, packages, resources, parties, audit_log | read only, returns available/disabled actions | yes | P0 |
 | GET | `/api/v1/dashboard/preconditions` | `_dispatch` | query none | preconditions/action state | `DashboardService.preconditions` | project, all current result tables | read only, state gate calculation | yes | P0 |
-| POST | `/api/v1/dashboard/quick-run` | `_dispatch` | none | precondition result | `DashboardService.quick_run` | project/preconditions | currently skeleton; returns structured failure until backend chain is complete | yes | P0 partial |
+| POST | `/api/v1/dashboard/actions/quick-run` | `_dispatch` | none | precondition result | `DashboardService.quick_run` | project/preconditions | action endpoint for `SYS-004`; not a page route | yes | P0 partial |
 | POST | `/api/v1/demo-cases/{demo_case_id}/initialize` | `_dispatch` | path `demo_case_id` | package, input_snapshot, resources, parties, project_status | `DataIngestionService.initialize_demo_case` | data_package, input_snapshot, data_resource, party, audit_log | status `INGESTED`; writes input snapshot and audit log | yes | P0 |
 | POST | `/api/v1/data-packages/upload` | `_dispatch` | `DataPackageUploadRequest` | package, validation_result, input_snapshot, resources, parties | `DataIngestionService.upload_json` | data_package, upload_validation_result, input_snapshot, data_resource, party | success writes valid package/snapshot; failure writes invalid package/validation result only | yes | P0 |
 | GET | `/api/v1/data-packages` | `_dispatch` | query none | `TablePage<DataPackage>` | `DataIngestionService.list_packages` | data_package | read only | yes | P0 |
@@ -113,11 +113,11 @@ Legend:
 
 | actionCode | label | page route | moduleCode | permission | handlerName / frontend service method | current mock behavior / store slice | proposed backend endpoint | backend endpoint status | request DTO | response DTO | status side effect | audit side effect | snapshot side effect | report/export side effect | difficulty | notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| SYS-002 | 选择演示数据 | `/dashboard/overview` | SYS | CREATE | `DashboardService.handleAction` | State+A+S; `snapshot.status`, `mock.snapshots`, `mock.auditLogs` | `POST /api/v1/demo-cases/{demo_case_id}/initialize` | EXISTING | path demo_case_id | project_status, package, input_snapshot, resources, parties | `INGESTED` | yes | input snapshot | no | READY | Same backend endpoint as DATA-002. |
-| SYS-004 | 执行完整链路计算 | `/dashboard/process`, `/dashboard/one-click` | SYS | CALCULATE | `DashboardService.handleAction` | State+A+S; `mock.mdsTasks`, weights, snapshots | `POST /api/v1/dashboard/quick-run` or orchestrated chain | PARTIAL | none today | precondition result | desired full chain to `WEIGHT_CALCULATED` or beyond | yes desired | multiple snapshots desired | no | NEEDS_BACKEND_ENDPOINT | Existing quick-run is skeleton/precondition response, not full-chain executor. |
-| SYS-005 | 查看风险边界 | `/dashboard/risk` | SYS | VIEW | `DashboardService.handleAction` | A only through generic mock if clicked; UI risk content | `GET /api/v1/dashboard/overview` plus `GET /api/v1/system/parameters/RISK_DISCLAIMER_TEXT` | EXISTING | none/path parameter | risk_notices / parameter | none | no for pure read | no | no | NEEDS_DTO_MAPPER | View-only can hydrate from dashboard risk notices and parameter detail. |
+| SYS-002 | 选择演示数据 | `/dashboard` | SYS | CREATE | `DashboardService.handleAction` | State+A+S; `snapshot.status`, `mock.snapshots`, `mock.auditLogs` | `POST /api/v1/demo-cases/{demo_case_id}/initialize` | EXISTING | path demo_case_id | project_status, package, input_snapshot, resources, parties | `INGESTED` | yes; `SYS` + `NAV_SYS_HOME` | input snapshot | no | READY | System-home demo selection writes home audit context by default. |
+| SYS-004 | 执行完整链路计算 | `/dashboard` | SYS | CALCULATE | `DashboardService.handleAction` | State+A+S; `mock.mdsTasks`, weights, snapshots | `POST /api/v1/dashboard/actions/quick-run` or orchestrated chain | PARTIAL | none today | precondition result | desired full chain to `WEIGHT_CALCULATED` or beyond | yes desired; `SYS` + `NAV_SYS_HOME` | multiple snapshots desired | no | NEEDS_BACKEND_ENDPOINT | Existing action endpoint is skeleton/precondition response, not full-chain executor. |
+| SYS-005 | 查看风险边界 | `/dashboard` | SYS | VIEW | `DashboardService.handleAction` | A only through generic mock if clicked; UI risk content | `GET /api/v1/dashboard` plus `GET /api/v1/system/parameters/RISK_DISCLAIMER_TEXT` | EXISTING | none/path parameter | risk_notices / parameter | none | optional; `SYS` + `NAV_SYS_HOME` if recorded | no | no | NEEDS_DTO_MAPPER | View-only can hydrate from dashboard risk notices and parameter detail. |
 | DATA-002 | 选择演示数据 | `/data/packages` | DATA | CREATE | `DataPackageService.handleAction` | A+S via generic mock or dormant backend helper | `POST /api/v1/demo-cases/{demo_case_id}/initialize` | EXISTING | path demo_case_id | package, input_snapshot, resources, parties | `INGESTED` | yes | input snapshot | no | READY | Current private helper already calls this when backend connected. |
-| DATA-003 | 上传 JSON | `/dashboard/overview`, `/data/packages` | DATA | CREATE | `DataPackageService.handleAction` | A+S generic mock or dormant `uploadDemoJson` helper | `POST /api/v1/data-packages/upload` | EXISTING | `DataPackageUploadRequest` | package, validation_result, input_snapshot, resources, parties | `INGESTED` on success | yes | input snapshot on success | no | NEEDS_DTO_MAPPER | Real upload must pass user JSON, not hardcoded demo payload. |
+| DATA-003 | 上传 JSON | `/dashboard`, `/data/packages` | DATA | CREATE | `DataPackageService.handleAction` | A+S generic mock or dormant `uploadDemoJson` helper | `POST /api/v1/data-packages/upload` | EXISTING | `DataPackageUploadRequest` | package, validation_result, input_snapshot, resources, parties | `INGESTED` on success | yes | input snapshot on success | no | NEEDS_DTO_MAPPER | Real upload must pass user JSON, not hardcoded demo payload. |
 | DATA-007 | 预览安全摘要 | `/data/packages` | DATA | VIEW | `DataPackageService.handleAction` | A read mock; page drawer | `GET /api/v1/data-packages/{package_id}` | EXISTING | path package_id | package, input_snapshot, validation_result, resources | none | optional read audit only if required | no | no | NEEDS_DTO_MAPPER | Safe preview must suppress sensitive raw content. |
 | DATA-008 | 查看失败详情 | `/data/packages` | DATA | VIEW | `DataPackageService.handleAction` | A read mock; failure drawer | `GET /api/v1/data-packages/{package_id}/validation-result` | EXISTING | path package_id | upload_validation_result | none | optional read audit | no | no | READY | Backend validation failure stores invalid package and validation result. |
 | DATA-009 | 停用数据包 | `/data/packages` | DATA | DELETE_DISABLE | `DataPackageService.handleAction` | A only; no package state mutation | `PATCH /api/v1/data-packages/{package_id}/status` | MISSING | package_id, status, reason | updated data_package | data package disabled | yes | no | no | NEEDS_BACKEND_ENDPOINT | No backend disable/delete package endpoint. |
@@ -166,7 +166,7 @@ Legend:
 | CONS-003 | 编辑约束 | `/allocation/constraints` | CONS | UPDATE | `ConstraintService.handleAction` | A generic mock | `PUT /api/v1/contract-constraints/{constraint_id}` | EXISTING | `ContractConstraintWriteRequest` | contract_constraint | increments version | yes | no | no | READY | |
 | CONS-004 | 删除/停用合同约束 | `/allocation/constraints` | CONS | DELETE_DISABLE | `ConstraintService.handleAction` | A generic mock | `PATCH /api/v1/contract-constraints/{constraint_id}/status` | EXISTING | `ContractConstraintStatusRequest` | contract_constraint | disabled/enabled | yes | no | no | READY | Physical delete remains out of P0 boundary. |
 | CONS-011 | 查看约束检查结果 | `/allocation/constraints` | CONS | VIEW | `ConstraintService.handleAction` | A read mock; trace drawer | `POST /api/v1/allocation-scenarios/{allocation_id}/simulate` then read returned traces | PARTIAL | allocation_id | constraint_traces in simulation response | none for pure check desired | yes if simulation | result snapshot if simulation | no | NEEDS_BACKEND_ENDPOINT | No pre-simulation check-only endpoint; results are produced during simulate. |
-| REP-001 | 预览报告 | `/dashboard/overview`, `/reports` | REP | VIEW | `ReportService.handleAction` | A read mock | `GET /api/v1/reports` plus report context endpoints | EXISTING | none | report records | none | optional read audit | no | no | NEEDS_DTO_MAPPER | Existing list lacks full preview body; preview can assemble from records/results. |
+| REP-001 | 预览报告 | `/dashboard`, `/reports` | REP | VIEW | `ReportService.handleAction` | A read mock | `GET /api/v1/reports` plus report context endpoints | EXISTING | none | report records | none | optional read audit | no | no | NEEDS_DTO_MAPPER | Existing list lacks full preview body; preview can assemble from records/results. |
 | REP-002 | 导出 Markdown | `/reports` | REP | EXPORT | `ReportService.handleAction` | A+S+R/E generic mock | `POST /api/v1/reports/markdown` | EXISTING | none | report/export files | `EXPORTED` | yes | report snapshot | yes | READY | P0 Markdown report implemented. |
 | REP-003 | 生成 PDF 报告 | `/reports` | REP | EXPORT | `ReportService.handleAction` | disabled P1 UI only | none | MOCK_ONLY_P1 | none | none | none | no | no | no | KEEP_MOCK_FOR_P1 | Tests assert PDF routes absent. |
 | REP-004 | 导出 CSV 明细 | `/reports` | REP | EXPORT | `ReportService.handleAction` | A+S+R/E generic mock | `POST /api/v1/reports/csv` | EXISTING | none | report/export files | `EXPORTED` | yes | report snapshot | yes | READY | Backend formats amounts 2 decimals and weights 6 decimals. |
@@ -186,7 +186,7 @@ Legend:
 
 | Frontend service file | Frontend method | Backend route/service | Request field mapping | Response field mapping | snake_case/camelCase | Enum conversion | Decimal/amount rule | Error handling rule | Fallback to mock allowed? |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `DashboardService.ts` | `handleAction` | `GET /dashboard/overview`, `GET /dashboard/preconditions`, `POST /demo-cases/{id}/initialize`, `POST /dashboard/quick-run` | `demoCaseId`, no current full-chain DTO | project status, metrics, risk notices, action gates | yes | project statuses to Chinese | counts integer | map `field_errors` to problem/location/repair | yes until quick-run complete |
+| `DashboardService.ts` | `handleAction` | `GET /dashboard`, `GET /dashboard/preconditions`, `POST /demo-cases/{id}/initialize`, `POST /dashboard/actions/quick-run` | `demoCaseId`, no current full-chain DTO | project status, metrics, risk notices, action gates | yes | project statuses to Chinese | counts integer | map `field_errors` to problem/location/repair | yes until quick-run complete |
 | `DataPackageService.ts` | `handleAction` | `POST /demo-cases/{id}/initialize`, `POST /data-packages/upload`, `GET /data-packages*` | UI file/JSON to `DataPackageUploadRequest` | package/resources/parties/validation | yes | source/status/modality labels | sizes/counts numeric | upload errors must show field and repair | yes for manual demo |
 | `ResourceService.ts` | `handleAction` | `GET /data-resources*`, `PUT /data-resources/{id}/party-relations` | `providerName` must map to `party_id`; split ratio percent to 0..1 | resource party relations to UI provider/split | yes | modality/status labels | split ratio precision 0..1 backend, percent in UI | invalid ratio field maps to binding form | yes for resource export/toggle |
 | `PartyService.ts` | `handleAction` | `GET/POST/PUT/PATCH /parties*`; relation via resource endpoint | UI type labels to backend `party_type`; include flag | party rows and status | yes | `DATA_PROVIDER`, `OPERATOR`, `TECH_SERVICE`, etc. | none | duplicate/last-provider errors show modal | yes for contribution summary |
@@ -205,7 +205,7 @@ Legend:
 
 | gap id | module | missing endpoint | required by actionCode | required backend table/service | expected request | expected response | priority | blocker level |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| GAP-API-001 | SYS | Full-chain `POST /api/v1/dashboard/quick-run` implementation | SYS-004 | DashboardService orchestration over data/quality/shuyuan/contribution/utility/mds/allocation | run_mode, demo_case_id, optional allocation inputs | chain status, completed stages, failure stage, snapshots | P0 | BLOCKS_FULL_CHAIN |
+| GAP-API-001 | SYS | Full-chain `POST /api/v1/dashboard/actions/quick-run` implementation | SYS-004 | DashboardService orchestration over data/quality/shuyuan/contribution/utility/mds/allocation | run_mode, demo_case_id, optional allocation inputs | chain status, completed stages, failure stage, snapshots | P0 | BLOCKS_FULL_CHAIN |
 | GAP-API-002 | DATA | `PATCH /api/v1/data-packages/{package_id}/status` | DATA-009 | data_package, audit_log | status, reason | updated package | P0 | BLOCKS_PAGE_ACTION |
 | GAP-API-003 | RES | Resource summary export endpoint | RES-007 | data_resource, report_record, export_file | filters, field scope, format | report_record, export_files | P0 | BLOCKS_PAGE_ACTION |
 | GAP-API-004 | RES | include_in_calculation update endpoint/field | RES-005 | data_resource | include_in_calculation | updated resource plus blocker reason | P0 | BLOCKS_PAGE_ACTION |
@@ -225,7 +225,7 @@ Legend:
 
 BLOCKS_FULL_CHAIN gaps:
 
-- `GAP-API-001`: `SYS-004` needs a full-chain backend quick-run implementation if Phase 2C expects one button to execute the complete chain through one API. The backend currently exposes the individual chain endpoints, but `/dashboard/quick-run` is still a skeleton/precondition response.
+- `GAP-API-001`: `SYS-004` needs a full-chain backend quick-run implementation if Phase 2C expects one button to execute the complete chain through one API. The backend currently exposes the individual chain endpoints, but `/dashboard/actions/quick-run` is still a skeleton/precondition response.
 
 ## Integration Order
 
@@ -234,7 +234,7 @@ BLOCKS_FULL_CHAIN gaps:
 - Directly connectable actions: `SYS-002`, `SYS-005`, `PARAM-001` for parameter-backed risk text.
 - Backend to supplement: `SYS-004` quick-run full implementation.
 - DTO mappers: project status, dashboard metrics, preconditions, available/disabled action IDs.
-- Acceptance path: `/dashboard/overview`, `/dashboard/process`, `/dashboard/one-click`.
+- Acceptance path: `/dashboard`.
 - Fallback: keep `SYS-004` mock orchestration until `GAP-API-001` closes.
 
 ### 2. DataPackage / Resource / Party
@@ -368,7 +368,7 @@ UI error rendering rule:
 The safest first integration batch is read-heavy plus already-tested creation/calculation endpoints:
 
 1. `GET /api/v1/projects/current`
-2. `GET /api/v1/dashboard/overview`
+2. `GET /api/v1/dashboard`
 3. `GET /api/v1/dashboard/preconditions`
 4. `POST /api/v1/demo-cases/{demo_case_id}/initialize` for `SYS-002` / `DATA-002`
 5. `POST /api/v1/data-packages/upload` for `DATA-003`

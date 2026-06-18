@@ -16,6 +16,49 @@ from .contracts import (
 from .demo_data import get_demo_case
 
 
+SYSTEM_HOME_MENU = {
+    "menu_id": "MENU_SYS_HOME",
+    "parent_id": None,
+    "menu_code": "NAV_SYS_HOME",
+    "menu_name": "系统首页",
+    "module_code": "SYS",
+    "route_path": "/dashboard",
+    "menu_level": 1,
+    "sort_no": 1,
+    "p0_required": True,
+    "p1_only": False,
+    "status": "ENABLED",
+    "children": [],
+}
+
+SYSTEM_HOME_BUTTON_PERMISSIONS = [
+    {
+        "button_code": "SYS-002",
+        "button_name": "选择演示数据",
+        "module_code": "SYS",
+        "menu_code": "NAV_SYS_HOME",
+        "menu_id": "MENU_SYS_HOME",
+        "permission_action": "CREATE",
+    },
+    {
+        "button_code": "SYS-004",
+        "button_name": "启动完整计算",
+        "module_code": "SYS",
+        "menu_code": "NAV_SYS_HOME",
+        "menu_id": "MENU_SYS_HOME",
+        "permission_action": "CALCULATE",
+    },
+    {
+        "button_code": "SYS-005",
+        "button_name": "查看系统风险提示",
+        "module_code": "SYS",
+        "menu_code": "NAV_SYS_HOME",
+        "menu_id": "MENU_SYS_HOME",
+        "permission_action": "VIEW",
+    },
+]
+
+
 def write_audit(
     repository,
     module_code,
@@ -66,6 +109,113 @@ class ProjectService:
 
     def current_project(self):
         return self.repository.get_project()
+
+
+class NavigationService:
+    def menu_tree(self):
+        return {
+            "items": [
+                copy.deepcopy(SYSTEM_HOME_MENU),
+                self._group(
+                    "MENU_GROUP_DATA",
+                    "NAV_GROUP_DATA",
+                    "数据管理",
+                    "DATA",
+                    "/data/ingestion",
+                    2,
+                    [
+                        self._leaf("MENU_DATA_PACKAGE", "NAV_DATA_PACKAGE", "数据接入管理", "DATA", "/data/ingestion", 21),
+                        self._leaf("MENU_DATA_RESOURCE", "NAV_DATA_RESOURCE", "数据资源管理", "RES", "/data/resources", 22),
+                        self._leaf("MENU_DATA_PARTY", "NAV_DATA_PARTY", "参与方管理", "PARTY", "/data/parties", 23),
+                    ],
+                ),
+                self._group(
+                    "MENU_GROUP_MEASURE",
+                    "NAV_GROUP_MEASURE",
+                    "数元贡献度计量",
+                    "QUAL",
+                    "/metering/quality",
+                    3,
+                    [
+                        self._leaf("MENU_MEASURE_QUALITY", "NAV_MEASURE_QUALITY", "质量评估管理", "QUAL", "/metering/quality", 31),
+                        self._leaf("MENU_MEASURE_SHUYUAN", "NAV_MEASURE_SHUYUAN", "数元计量管理", "DU", "/metering/shuyuan", 32),
+                        self._leaf("MENU_MEASURE_UTILITY", "NAV_MEASURE_UTILITY", "贡献度与效用计算", "UTIL", "/metering/utility", 33),
+                    ],
+                ),
+                self._group(
+                    "MENU_GROUP_ALLOCATION",
+                    "NAV_GROUP_ALLOCATION",
+                    "收益分配计算",
+                    "MDS",
+                    "/allocation/md-dshap",
+                    4,
+                    [
+                        self._leaf("MENU_ALLOC_MDS", "NAV_ALLOC_MDS", "MD-DShap 计算管理", "MDS", "/allocation/md-dshap", 41),
+                        self._leaf("MENU_ALLOC_SIMULATION", "NAV_ALLOC_SIMULATION", "收益分配模拟", "ALLOC", "/allocation/simulation", 42),
+                        self._leaf("MENU_ALLOC_CONSTRAINT", "NAV_ALLOC_CONSTRAINT", "合同约束管理", "CONS", "/allocation/constraints", 43),
+                    ],
+                ),
+                self._leaf("MENU_REPORT_EXPORT", "NAV_REPORT_EXPORT", "报告生成与导出", "REP", "/reports", 5),
+                self._group(
+                    "MENU_GROUP_SYSTEM",
+                    "NAV_GROUP_SYSTEM",
+                    "系统管理",
+                    "PARAM",
+                    "/system/parameters",
+                    6,
+                    [
+                        self._leaf("MENU_SYSTEM_PARAMETER", "NAV_SYSTEM_PARAMETER", "参数配置", "PARAM", "/system/parameters", 61),
+                        self._leaf("MENU_SYSTEM_USER", "NAV_SYSTEM_USER", "用户与权限管理（P1）", "USER", "/system/users", 62, p0_required=False, p1_only=True),
+                        self._leaf("MENU_SYSTEM_AUDIT", "NAV_SYSTEM_AUDIT", "审计日志管理", "AUD", "/system/audit", 63),
+                    ],
+                ),
+            ]
+        }
+
+    def button_permissions(self):
+        return table_page(copy.deepcopy(SYSTEM_HOME_BUTTON_PERMISSIONS))
+
+    def _group(self, menu_id, menu_code, menu_name, module_code, route_path, sort_no, children):
+        return {
+            "menu_id": menu_id,
+            "parent_id": None,
+            "menu_code": menu_code,
+            "menu_name": menu_name,
+            "module_code": module_code,
+            "route_path": route_path,
+            "menu_level": 1,
+            "sort_no": sort_no,
+            "p0_required": True,
+            "p1_only": False,
+            "status": "ENABLED",
+            "children": children,
+        }
+
+    def _leaf(
+        self,
+        menu_id,
+        menu_code,
+        menu_name,
+        module_code,
+        route_path,
+        sort_no,
+        p0_required=True,
+        p1_only=False,
+    ):
+        return {
+            "menu_id": menu_id,
+            "parent_id": None,
+            "menu_code": menu_code,
+            "menu_name": menu_name,
+            "module_code": module_code,
+            "route_path": route_path,
+            "menu_level": 2 if sort_no >= 10 else 1,
+            "sort_no": sort_no,
+            "p0_required": p0_required,
+            "p1_only": p1_only,
+            "status": "ENABLED",
+            "children": [],
+        }
 
 
 class SystemParameterService:
@@ -572,6 +722,7 @@ class DataIngestionService:
             parties=payload["parties"],
             demo_case_id=demo_case_id,
             scenario_name=payload.get("scenario_name"),
+            audit_context={"module_code": "SYS", "menu_code": "NAV_SYS_HOME"},
         )
 
     def upload_json(self, payload):
@@ -708,6 +859,7 @@ class DataIngestionService:
         demo_case_id=None,
         scenario_name=None,
         file_name=None,
+        audit_context=None,
     ):
         now = utc_now()
         project = self.repository.get_project()
@@ -761,9 +913,10 @@ class DataIngestionService:
             current_input_snapshot_id=snapshot_id,
             scenario_name=scenario_name or project["scenario_name"],
         )
+        audit_context = audit_context or {"module_code": "DATA", "menu_code": "NAV_DATA_PACKAGE"}
         self._audit(
-            module_code="DATA",
-            menu_code="NAV_DATA_PACKAGE",
+            module_code=audit_context["module_code"],
+            menu_code=audit_context["menu_code"],
             operation_type="INITIALIZE_DEMO" if source_type == "DEMO" else "UPLOAD_JSON",
             object_type="data_package",
             object_id=package_id,

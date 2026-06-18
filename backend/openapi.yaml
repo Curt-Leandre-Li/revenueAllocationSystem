@@ -15,7 +15,19 @@ paths:
       responses:
         "200":
           description: Standard response envelope containing AllocationProject.
-  /dashboard/overview:
+  /navigation/menu-tree:
+    get:
+      summary: Get current navigation menu tree
+      responses:
+        "200":
+          description: Menu tree with system home as one first-level node.
+  /navigation/button-permissions:
+    get:
+      summary: Get button-to-menu permission mapping
+      responses:
+        "200":
+          description: Paged button permission records.
+  /dashboard:
     get:
       summary: Get project status aggregation and next step
       responses:
@@ -27,7 +39,7 @@ paths:
       responses:
         "200":
           description: Preconditions plus available_actions and disabled_actions.
-  /dashboard/quick-run:
+  /dashboard/actions/quick-run:
     post:
       summary: One-click calculation entry skeleton
       responses:

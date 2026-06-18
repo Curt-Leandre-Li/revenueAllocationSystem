@@ -17,10 +17,10 @@ export interface MenuNode {
 
 export const sideNavMenuNodes: MenuNode[] = [
   {
-    menuCode: "NAV_SYS_OVERVIEW",
+    menuCode: "NAV_SYS_HOME",
     moduleCode: "SYS",
     label: "系统首页",
-    routePath: "/dashboard/overview",
+    routePath: "/dashboard",
     icon: "home",
     phase: "P0",
     sortNo: 10,
@@ -197,45 +197,8 @@ export const sideNavMenuNodes: MenuNode[] = [
   },
 ];
 
-export const dashboardInPageNodes: MenuNode[] = [
-  {
-    menuCode: "NAV_SYS_PROCESS",
-    moduleCode: "SYS",
-    label: "流程入口",
-    routePath: "/dashboard/process",
-    phase: "P0",
-    sortNo: 11,
-    visibleInSideNav: false,
-    inPageSection: true,
-    sectionId: "process",
-  },
-  {
-    menuCode: "NAV_SYS_RISK",
-    moduleCode: "SYS",
-    label: "风险提示",
-    routePath: "/dashboard/risk",
-    phase: "P0",
-    sortNo: 12,
-    visibleInSideNav: false,
-    inPageSection: true,
-    sectionId: "risk",
-  },
-  {
-    menuCode: "NAV_SYS_ONE_CLICK",
-    moduleCode: "SYS",
-    label: "一键计算",
-    routePath: "/dashboard/one-click",
-    phase: "P0",
-    sortNo: 13,
-    visibleInSideNav: false,
-    inPageSection: true,
-    sectionId: "one-click",
-  },
-];
-
 export const allMenuNodes: MenuNode[] = [
   ...sideNavMenuNodes,
-  ...dashboardInPageNodes,
 ];
 
 export function getSideNavNodes() {

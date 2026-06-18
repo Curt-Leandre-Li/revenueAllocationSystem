@@ -1,247 +1,98 @@
-# API And Data Contract
+# API And Data Contract Input
 
-This contract is a draft for coding. Backend work must follow it unless PM and user approve a change.
+This document is a V1.2 interface-contract input for future implementation. It
+does not claim that API endpoints or schemas are implemented.
 
-## Input JSON Draft
+## Contract Principles
 
-```json
-{
-  "package_id": "demo-package-001",
-  "scenario": {
-    "name": "Generic simulated data revenue allocation demo",
-    "is_simulated": true,
-    "description": "Generic sample for software copyright demonstration"
-  },
-  "participants": [
-    {
-      "participant_id": "provider_a",
-      "display_name": "Provider A",
-      "role": "data_provider"
-    }
-  ],
-  "data_units": [
-    {
-      "data_unit_id": "du_001",
-      "participant_id": "provider_a",
-      "token_count": 1200,
-      "quantity": 1,
-      "quality_inputs": {
-        "completeness": 0.95,
-        "validity": 0.9,
-        "consistency": 0.88,
-        "traceability": 0.92
-      },
-      "utility_inputs": {
-        "business_relevance": 0.8,
-        "reuse_potential": 0.7
-      }
-    }
-  ],
-  "contract_constraints": {
-    "currency": "CNY",
-    "revenue_pool": 100000,
-    "minimum_guarantees": {
-      "provider_a": 1000
-    },
-    "caps": {
-      "provider_a": 60000
-    },
-    "expert_confirmation_required": true,
-    "human_confirmation_required": true,
-    "manual_adjustment_note": "No manual adjustment applied in simulation."
-  }
-}
-```
+- Use stable string IDs for project, package, resource, party, task, result,
+  allocation, report, and snapshot objects.
+- P0 accepts demo data or JSON upload.
+- P0 records `local_operator` as operator.
+- All outputs must include simulation-reference and non-legal-settlement
+  boundary copy when user-facing.
+- Calculation APIs or local service functions must return structured failures
+  without partial misleading allocation output.
+- Recalculation creates new versions instead of overwriting historical records.
 
-## Output JSON Draft
+## Core Objects
 
-```json
-{
-  "package_id": "demo-package-001",
-  "ok": true,
-  "validation": {
-    "errors": [],
-    "warnings": []
-  },
-  "quality_results": [],
-  "metering_results": [],
-  "utility_results": [],
-  "contribution_results": [],
-  "allocation_reference": {
-    "currency": "CNY",
-    "revenue_pool": 100000,
-    "participant_allocations": [],
-    "confirmation_required": true
-  },
-  "report": {
-    "report_id": "report-demo-package-001",
-    "is_simulated": true,
-    "sections": []
-  }
-}
-```
+- `AllocationProject`
+- `DataPackage`
+- `InputSnapshot`
+- `DataResource`
+- `Party`
+- `QualityAssessment`
+- `ShuyuanMetering`
+- `ContributionRecord`
+- `UtilityRecord`
+- `MDDShapTask`
+- `MDDShapResult`
+- `ContractConstraint`
+- `AllocationScenario`
+- `AllocationResult`
+- `ReportRecord`
+- `ExportFile`
+- `AuditLog`
+- `SnapshotStore`
+- `SystemParameter`
 
-The empty arrays above indicate list positions in the envelope. Their item shapes are frozen below and must be used by backend and frontend work.
+## Service Method Input
 
-QualityResult:
+| Service | Future method examples |
+| --- | --- |
+| DataIngestionService | `select_demo_case`, `upload_json`, `validate_input`, `preview_package` |
+| ResourceService | `list_resources`, `bind_party`, `export_resource_summary` |
+| PartyService | `create_party`, `update_party`, `set_status`, `bind_resource` |
+| QualityService | `save_weights`, `evaluate`, `reevaluate`, `get_score_detail` |
+| ShuyuanService | `save_metering_params`, `calculate`, `get_detail` |
+| UtilityService | `calculate_contribution`, `configure_utility`, `calculate_utility`, `get_trace` |
+| MDDShapService | `start_task`, `get_progress`, `get_marginal_trace`, `get_weights`, `rerun`, `export_audit` |
+| AllocationService | `save_revenue_pool`, `save_priority_items`, `simulate`, `lock_scheme`, `compare_schemes` |
+| ConstraintService | `create_constraint`, `update_constraint`, `disable_constraint`, `apply_constraints` |
+| ReportService | `preview`, `export_markdown`, `export_csv`, `export_json`, `export_audit_log`, `export_pdf_p1` |
+| AuditService | `query_logs`, `get_snapshot`, `export_audit_log` |
 
-```json
-{
-  "data_unit_id": "du_001",
-  "participant_id": "provider_a",
-  "completeness": 0.95,
-  "validity": 0.9,
-  "consistency": 0.88,
-  "traceability": 0.92,
-  "quality_score": 0.9125,
-  "warnings": []
-}
-```
+## Calculation Request Envelope
 
-MeteringResult:
+Future calculation calls should carry:
 
-```json
-{
-  "data_unit_id": "du_001",
-  "participant_id": "provider_a",
-  "token_count": 1200,
-  "quantity": 1,
-  "metered_units": 1
-}
-```
+- `project_id`
+- `input_snapshot_id`
+- `parameter_snapshot_id`
+- `requested_by`
+- `run_mode`
+- `algorithm_mode`, default `MD_DSHAP` for algorithm tasks
+- `source_task_id` when rerunning
+- `recompute_reason` when rerunning
 
-UtilityResult:
+## Calculation Response Envelope
 
-```json
-{
-  "data_unit_id": "du_001",
-  "participant_id": "provider_a",
-  "business_relevance": 0.8,
-  "reuse_potential": 0.7,
-  "utility_score": 0.75
-}
-```
+Future calculation responses should carry:
 
-ContributionResult:
+- `status`
+- `result_id` or `task_id`
+- `output_snapshot_id`
+- `failure_reason`
+- `algorithm_version` where applicable
+- `trace_ref` where applicable
+- `simulation_disclaimer`
 
-```json
-{
-  "participant_id": "provider_a",
-  "base_signal": 0.684375,
-  "daus_score": 0.684375,
-  "shapley_weight": 1.0,
-  "contribution_reference": 1.0
-}
-```
+## Error Codes
 
-ParticipantAllocation:
+- `DVAS_INPUT_FORMAT_ERROR`
+- `DVAS_REQUIRED_FIELD_MISSING`
+- `DVAS_PERMISSION_DENIED`
+- `DVAS_PRECONDITION_NOT_MET`
+- `DVAS_WEIGHT_INVALID`
+- `DVAS_FACTOR_INVALID`
+- `DVAS_REVENUE_INVALID`
+- `DVAS_PRIORITY_EXCEEDS_REVENUE`
+- `DVAS_ALGORITHM_FAILED`
+- `DVAS_EXPORT_FAILED`
+- `DVAS_LOCKED_VERSION`
 
-```json
-{
-  "participant_id": "provider_a",
-  "base_amount": 100000,
-  "minimum_guarantee": 1000,
-  "cap": 60000,
-  "constraint_adjustment": -40000,
-  "final_allocation_reference": 60000,
-  "confirmation_required": true,
-  "warnings": [
-    "cap_applied",
-    "expert_confirmation_required",
-    "human_confirmation_required"
-  ]
-}
-```
+## P0/P1 Notes
 
-## API Draft
-
-- `POST /api/pipeline/validate`: validate an input package and return errors/warnings.
-- `POST /api/pipeline/run`: run the full deterministic pipeline and return artifacts.
-- `GET /api/reports/{report_id}`: return a generated report artifact if persisted in a later implementation.
-
-For the MVP, local function calls may be implemented before HTTP endpoints. The same contract names must be preserved.
-
-## Pipeline Input And Output
-
-Pipeline input:
-
-- `InputPackage`
-
-Pipeline output:
-
-- `ValidationResult`
-- `QualityResult[]`
-- `MeteringResult[]`
-- `UtilityResult[]`
-- `ContributionResult[]`
-- `AllocationReference`
-- `ReportArtifact`
-
-## Error Structure
-
-```json
-{
-  "code": "missing_required_field",
-  "message": "participant_id is required",
-  "path": "data_units[0].participant_id",
-  "severity": "error"
-}
-```
-
-Allowed severities:
-
-- `error`
-- `warning`
-
-## Report Structure
-
-```json
-{
-  "report_id": "report-demo-package-001",
-  "generated_at": "2026-06-16T00:00:00+08:00",
-  "is_simulated": true,
-  "title": "Data Revenue Allocation Simulation Report",
-  "summary": {},
-  "sections": [
-    {
-      "section_id": "input_summary",
-      "title": "Input Summary",
-      "items": []
-    }
-  ],
-  "warnings": [],
-  "audit_trace": []
-}
-```
-
-## Field Naming Rules
-
-- Use snake_case for JSON fields.
-- Use stable string IDs for package, participant, Data Unit, and report records.
-- Use `data_unit_id`, not Effective DU terminology.
-- Use `token_count` only for Token quantity when needed.
-- Use `allocation_reference`, not settlement or payment wording.
-- Use `is_simulated` for sample data boundary.
-
-## Required And Optional Field Matrix
-
-| Object | Field | Required | Default | Notes |
-| --- | --- | --- | --- | --- |
-| InputPackage | `package_id` | Yes | none | Stable string. |
-| Scenario | `is_simulated` | Yes | none | Must be `true` for MVP samples. |
-| Participant | `participant_id` | Yes | none | Must match Data Unit references. |
-| DataUnit | `data_unit_id` | Yes | none | Stable string. |
-| DataUnit | `token_count` | No | `0` | Token quantity only. |
-| DataUnit | `quantity` | Yes | none | Generic Data Unit quantity. |
-| ContractConstraints | `revenue_pool` | Yes | none | Simulated amount for reference calculation. |
-| ContractConstraints | `minimum_guarantees` | No | `{}` | Participant keyed values. |
-| ContractConstraints | `caps` | No | `{}` | Participant keyed values. |
-| ContractConstraints | `expert_confirmation_required` | No | `false` | Propagates to output warnings. |
-| ContractConstraints | `human_confirmation_required` | No | `false` | Propagates to output warnings. |
-
-## Example Data Boundary
-
-- Example data must be simulated.
-- Example data must not be described as real hospital data.
-- Example data must not be described as verified business settlement data.
-- Medical-looking examples require explicit labels that they are generic simulated examples.
+HTTP APIs are not required for P0 if local service functions provide the same
+contract. Login/RBAC and async progress are P1.

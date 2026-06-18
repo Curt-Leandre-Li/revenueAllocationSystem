@@ -1,137 +1,91 @@
 # Milestone Plan
 
-All dates use Beijing Time. The plan is a coding-readiness plan, not an implementation record.
+All milestones require user approval before implementation, commit, push, or
+phase freeze. This repository currently prioritizes documentation alignment.
 
-## Phase 0: Pre-Coding Freeze
-
-Input:
-
-- User-approved hard boundaries.
-- Current agent governance files.
-- Existing `system_scope.md` and `milestone_plan.md` drafts.
-- Orchestrator review from all project-scoped custom agents.
-
-Output:
-
-- Frozen scope, requirements, architecture, API/data contract, UI flow, allocation logic, test plan, compliance boundary, development task breakdown, and checklist.
-- Formal R&D archive deliverables under `docs/deliverables/`, including requirements, detailed design, database design, UI design, test plan, test report baseline, and administrator manual.
-
-Acceptance Criteria:
-
-- All eleven freeze documents exist under `docs/`.
-- All eight formal archive deliverables exist under `docs/deliverables/`.
-- The documents state what the MVP does and does not do.
-- Shapley, DAUS, contract constraints, simulated data, and medical sample boundaries are unambiguous.
-- `docs/pre_coding_freeze_checklist.md` states whether coding may start.
-
-## Phase 1: Core Data Structures And Pipeline
+## Phase 0A: V1.2 Documentation Alignment
 
 Input:
 
-- `docs/api_and_data_contract.md`
-- `docs/system_architecture.md`
-- `docs/development_task_breakdown.md`
+- Root V1.3 requirements update.
+- Root V1.1 detailed function design update.
+- Root V1.0 database/ER navigation update.
+- Existing `AGENTS.md`, `agents/*.md`, and `docs/**/*.md`.
 
 Output:
 
-- Repository package layout for core modules.
-- Data models for input package, participant, data unit, quality signal, utility signal, contribution result, contract constraint, allocation reference, and report artifact.
-- Deterministic pipeline skeleton with validation and artifact handoff points.
+- V1.2 project baseline.
+- Updated AGENTS and canonical agent role docs.
+- Updated navigation, algorithm, UI, database input, reporting contract,
+  acceptance, workflow, and compliance docs.
+- Drift checklist and remaining implementation TODOs.
 
-Acceptance Criteria:
+Acceptance:
 
-- No dependency is added without approval.
-- Schema names match the frozen API/data contract.
-- Invalid input returns structured errors.
-- Pipeline output can be inspected without frontend code.
+- Docs state the simulation-reference and non-legal-settlement boundary.
+- Navigation matches the six primary groups and required secondary pages.
+- MD-DShap is default; Basic Shapley is only baseline.
+- P0/P1 boundaries are explicit.
+- P0 exports are Markdown/CSV/JSON/JSONL; PDF is P1.
+- No product code, tests, dependencies, migrations, or runnable scripts are
+  changed.
 
-## Phase 2: Contribution Metering, Quality Assessment, And Utility Modeling
+## Phase 0B: Human Review And Freeze
 
 Input:
 
-- Phase 1 data structures.
-- `docs/allocation_logic_design.md`
-- `docs/test_plan.md`
+- Phase 0A documentation diff.
+- User review.
 
 Output:
 
-- Deterministic quality assessment logic.
-- Data Unit metering logic.
-- Utility modeling logic.
-- Unit tests for formula boundaries, missing fields, and stable repeat output.
+- Approved documentation baseline or follow-up doc corrections.
+- Explicit user decision on whether coding may begin.
 
-Acceptance Criteria:
+Acceptance:
 
-- Identical input produces identical output.
-- Formula assumptions are documented in code comments only where needed and in docs.
-- No hidden medical assumptions are introduced.
-- Results remain intermediate signals, not final business settlement.
+- User confirms the baseline or requests further doc updates.
+- Any implementation scope is separately authorized.
 
-## Phase 3: DAUS / Shapley / Contract Constraints
+## Future Phase 1: P0 Data And Contract Implementation
 
-Input:
+Potential scope after explicit approval:
 
-- Phase 2 contribution, quality, and utility signals.
-- Frozen contract constraint draft.
+- Data package, resource, party, snapshot, validation, and local operator
+  behavior.
+- No production login/RBAC, PDF, async queue, multi-tenant, tax, bank, or
+  payment behavior.
 
-Output:
+## Future Phase 2: P0 Calculation Chain
 
-- DAUS contribution signal.
-- Shapley weight reference.
-- Contract constraint application for minimum guarantee, cap, expert confirmation, and human confirmation flags.
-- Final allocation reference output.
+Potential scope after explicit approval:
 
-Acceptance Criteria:
+- Quality assessment.
+- Shuyuan metering.
+- Contribution and utility calculation.
+- MD-DShap weights and trace.
+- Allocation simulation and contract constraints.
 
-- Shapley is represented only as a computation-layer weight method.
-- Final allocation reference explicitly records applied constraints.
-- No MAR, Effective DU, or `token_weighting` main-flow term appears.
-- Edge cases for zero totals, caps, and confirmation-required outputs are tested.
+## Future Phase 3: P0 Reports And Audit
 
-## Phase 4: Report And Audit
+Potential scope after explicit approval:
 
-Input:
+- Markdown/CSV/JSON/JSONL export.
+- Report manifest, `report_id`, `checksum`.
+- Audit log and snapshot traceability.
 
-- Pipeline artifacts from Phases 1-3.
-- `docs/compliance_and_audit_boundary.md`
-- `docs/test_plan.md`
+## Future Phase 4: P0 UI
 
-Output:
+Potential scope after explicit approval:
 
-- Report data structure.
-- Audit summary with inputs, intermediate signals, formulas, constraints, warnings, and generated timestamp.
-- Simulated example report.
+- 1440x900 Chinese Web management backend following `docs/ui_design_spec.md`.
 
-Acceptance Criteria:
+## Future Phase 5: P1 Extensions
 
-- Report labels simulated examples as simulated.
-- Report does not claim real hospital or real business settlement results.
-- Audit trace links output fields back to input and intermediate artifacts.
-- Report validation checks are documented.
+Potential scope after explicit approval:
 
-## Phase 5: Lightweight Frontend Demo
-
-Input:
-
-- Frozen API/data contract.
-- Report artifact structure.
-- `docs/ui_flow.md`
-
-Output:
-
-- Lightweight demo UI for input review, pipeline execution, signal inspection, allocation reference, report display, and export entry point.
-
-Acceptance Criteria:
-
-- UI uses only approved API fields.
-- UI does not invent backend schema.
-- UI states simulated data boundaries.
-- Demo path can be validated by QA with the frozen acceptance checks.
-
-## Cross-Phase Controls
-
-- PM Strategy Agent coordinates scope and escalation.
-- PRD becomes the single source of truth after freeze.
-- API/schema changes after Phase 0 require PM and user approval.
-- No push without explicit user approval.
-- Product code starts only after Phase 0 checklist permits coding.
+- Login/RBAC.
+- PDF export.
+- CSV/XLSX template import.
+- Async task progress.
+- Historical report management.

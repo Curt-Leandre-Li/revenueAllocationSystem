@@ -29,7 +29,7 @@ const processSteps = [
 ];
 
 const homeSections = [
-  { id: "overview", label: "首页总览" },
+  { id: "overview", label: "项目总览" },
   { id: "process", label: "流程入口" },
   { id: "risk", label: "风险提示" },
   { id: "one-click", label: "一键计算" },
@@ -190,7 +190,7 @@ export function OverviewPage({
 
       <section className="homeSection" id="overview">
         <div className="sectionHeading">
-          <span className="eyebrow">首页总览</span>
+          <span className="eyebrow">项目总览</span>
           <h2>项目状态与核心指标</h2>
         </div>
 

@@ -39,10 +39,7 @@ export type StatusCode =
 export type CheckStatus = "PASS" | "BLOCKED" | "PENDING";
 
 export type RoutePath =
-  | "/dashboard/overview"
-  | "/dashboard/process"
-  | "/dashboard/risk"
-  | "/dashboard/one-click"
+  | "/dashboard"
   | "/data/packages"
   | "/data/resources"
   | "/data/parties"

@@ -2,61 +2,55 @@
 
 ## Role
 
-Implements UI only when explicitly assigned by PM/user.
+Maintain frontend documentation inputs for DVAS V1.2. In this round the agent
+documents route mapping, page decomposition, component inventory, and UI-data
+dependencies only.
+
+## Current-Round Boundary
+
+Documentation only. Do not write React, frontend code, CSS, tests, build config,
+or dependencies.
 
 ## Responsibilities
 
-- Implement approved UI tasks.
-- Preserve existing API contracts.
-- Document missing backend fields or dependencies instead of inventing schema.
-- Keep frontend behavior aligned with PRD and UI design notes.
+- Align frontend docs with the V1.2 left navigation and route map.
+- Document page/component breakdown for:
+  - 系统首页
+  - 数据管理
+  - 数元贡献度计量
+  - 收益分配计算
+  - 报告生成与导出
+  - 系统管理
+- Preserve UI constraints from `docs/ui_design_spec.md`.
+- Record missing API/data fields as future backend contract questions.
+- Ensure frontend docs do not implement independent allocation math.
+
+## Must-Know Rules
+
+- All visible results are simulation references, not legal settlement or
+  payment.
+- MD-DShap is the default weight strategy; Basic Shapley is only baseline
+  display/comparison.
+- Calculation buttons require precondition checks.
+- Export dialogs require files, fields, version, `report_id`, `checksum`, and
+  disclaimer.
+- Confirmed/exported projects are read-only except for copy new version.
 
 ## Allowed File Scope
 
-- `frontend/*`
-- `demo_ui/*`
-- `web/*`
-- Frontend-specific tests when present
+- `docs/**/*.md`
+- `agents/*.md` when role guidance needs alignment
+- `README.md`
 
 ## Forbidden Actions
 
+- Do not modify `demo_ui/`, `src/`, tests, package files, or dependencies.
 - Do not change backend/API contracts.
-- Do not modify algorithm or allocation logic.
-- Do not invent data fields.
-- Do not install dependencies without explicit approval.
-- Do not push, merge, or commit without explicit user approval.
-
-## Input/Output Expectations
-
-Inputs:
-- PM task brief.
-- PRD acceptance criteria.
-- UI design notes.
-- Existing API contract.
-
-Outputs:
-- Scoped frontend changes.
-- Dependency notes for missing data.
-- Validation evidence.
+- Do not implement UI.
+- Do not commit, push, or merge.
 
 ## Validation Expectations
 
-- Run frontend build/test commands specified by the project when available.
-- Verify UI uses approved fields only.
-- Report skipped checks and why.
-
-## When To Stop And Ask PM/User
-
-- API fields are missing or unclear.
-- Task requires backend or schema change.
-- UI behavior conflicts with PRD.
-- Dependencies must be installed.
-
-## Final Report Format
-
-1. task completed
-2. files changed
-3. commands run
-4. test/build results
-5. risks
-6. next recommended step
+- Route names and page responsibilities match `docs/product_navigation.md`.
+- Component notes reference approved data objects only.
+- P0/P1 UI capabilities are clearly labeled.

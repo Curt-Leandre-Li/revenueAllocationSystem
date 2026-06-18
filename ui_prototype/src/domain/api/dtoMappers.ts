@@ -702,7 +702,7 @@ function operationLabel(value: unknown) {
     INITIALIZE_DEMO_CASE: "初始化演示数据",
     UPLOAD_JSON: "上传 JSON 数据包",
     READ_PROJECT: "读取项目状态",
-    READ_DASHBOARD: "读取首页总览",
+    READ_DASHBOARD: "读取系统首页",
     READ_DATA_PACKAGE: "读取数据包",
     READ_DATA_RESOURCE: "读取数据资源",
     READ_PARTY: "读取参与方",

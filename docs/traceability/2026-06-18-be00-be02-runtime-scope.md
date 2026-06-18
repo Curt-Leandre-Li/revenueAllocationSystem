@@ -33,9 +33,8 @@ The runtime names in this slice are aligned to the current source documents:
   `DRAFT`, `INGESTED`, `ASSESSED`, `METERED`, `UTILITY_CALCULATED`,
   `WEIGHT_CALCULATED`, `ALLOCATED`, `CONFIRMED`, `EXPORTED`.
 - Module/menu codes used in this slice:
-  `SYS`, `DATA`, `RES`, `PARTY`, `NAV_SYS_OVERVIEW`, `NAV_SYS_PROCESS`,
-  `NAV_SYS_ONE_CLICK`, `NAV_DATA_PACKAGE`, `NAV_DATA_RESOURCE`,
-  `NAV_DATA_PARTY`.
+  `SYS`, `DATA`, `RES`, `PARTY`, `NAV_SYS_HOME`, `NAV_DATA_PACKAGE`,
+  `NAV_DATA_RESOURCE`, `NAV_DATA_PARTY`.
 - P0 operator identity: `local_operator`.
 - API prefix: `/api/v1`.
 

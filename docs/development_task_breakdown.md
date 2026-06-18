@@ -1,131 +1,54 @@
 # Development Task Breakdown
 
-## Task Rules
+## Current Round
 
-- Do not start coding until `docs/pre_coding_freeze_checklist.md` allows it.
-- Each task must name input docs, output files, and validation commands.
-- API/schema changes after freeze require PM and user approval.
-- No push without explicit user approval.
-- No new dependency without explicit user approval.
+Documentation synchronization only. No code, tests, migrations, dependencies,
+UI implementation, API implementation, or runnable scripts are changed.
 
-## Backend Tasks
+## Future Implementation Tasks
 
-Task: Define contracts.
+These tasks are not authorized until the user explicitly opens implementation
+scope.
 
-- Input: `docs/api_and_data_contract.md`, `docs/system_architecture.md`
-- Output: contract data structures under the approved backend path.
-- Acceptance: fields match the frozen contract and tests cover valid/invalid samples.
+### Product And Contract
 
-Task: Build validation and pipeline skeleton.
+- Freeze the canonical route paths where V1.3/V1.1/V1.0 docs differ.
+- Convert V1.2 data objects into implemented contracts.
+- Define sample JSON fixtures for demo data without sensitive real data.
 
-- Input: frozen contracts and `docs/test_plan.md`
-- Output: validation module and pipeline orchestration.
-- Acceptance: invalid input returns structured errors and valid input reaches placeholder artifacts without hidden fields.
+### Backend
 
-Task: Implement report artifact builder.
+- Implement data ingestion and validation.
+- Implement snapshot and audit logging.
+- Implement quality assessment, shuyuan metering, contribution, and utility.
+- Implement MD-DShap task/result/trace.
+- Implement allocation simulation and contract constraints.
+- Implement report/export generation.
 
-- Input: `docs/compliance_and_audit_boundary.md`
-- Output: report structure with audit trace and simulated-data labels.
-- Acceptance: report contains required sections and warnings.
+### Frontend
 
-## Frontend Tasks
+- Implement the six-group left navigation.
+- Implement module pages, precondition checks, dialogs, empty states, locked
+  states, and copy-new-version flow.
+- Show disclaimers on every page.
 
-Task: Build workflow shell.
+### QA
 
-- Input: `docs/ui_flow.md`, `docs/api_and_data_contract.md`
-- Output: page layout and navigation for the demo flow.
-- Acceptance: UI shows approved pages and states without custom business math.
+- Implement module and button-level tests from `docs/acceptance_checklist.md`.
+- Add export field and checksum checks.
+- Add audit trace and snapshot checks.
 
-Task: Build signal and allocation panels.
+### DevOps
 
-- Input: backend output contract.
-- Output: quality, metering, utility, contribution, allocation, and warning panels.
-- Acceptance: panels use only approved fields.
+- Document local run commands after implementation exists.
+- P1/P2 deployment, CI/CD, secrets, and cloud work require separate approval.
 
-Task: Build report and export views.
+## Assignment Rules
 
-- Input: report artifact contract.
-- Output: report display and export entry points.
-- Acceptance: simulated-data and confirmation-required labels are visible.
-
-## Algorithm Tasks
-
-Task: Implement quality, Data Unit metering, and utility formulas.
-
-- Input: `docs/allocation_logic_design.md`
-- Output: deterministic formula modules.
-- Acceptance: tests prove stable output for fixed input.
-
-Task: Implement DAUS and Shapley contribution reference.
-
-- Input: contribution signals and approved formula notes.
-- Output: contribution reference artifacts.
-- Acceptance: output is not labeled final allocation.
-
-Task: Implement contract constraint application.
-
-- Input: contribution references and contract constraints.
-- Output: final allocation reference.
-- Acceptance: minimum guarantee, cap, and confirmation-required cases are tested.
-
-## Report Tasks
-
-Task: Create audit report sections.
-
-- Input: all pipeline artifacts.
-- Output: summary, assumptions, formulas, constraints, warnings, and trace appendix.
-- Acceptance: report is audit-readable and avoids real-data claims.
-
-## Testing Tasks
-
-Task: Unit and integration tests.
-
-- Input: `docs/test_plan.md`
-- Output: tests for validation, formulas, pipeline, allocation, and report.
-- Acceptance: project test command passes once code exists.
-
-Task: Contract tests.
-
-- Input: `docs/api_and_data_contract.md`
-- Output: tests that compare sample input/output with schema expectations.
-- Acceptance: unapproved field drift fails tests.
-
-## Documentation Tasks
-
-Task: Keep freeze docs aligned with implementation.
-
-- Input: code changes and agent reports.
-- Output: updated docs only when behavior is approved.
-- Acceptance: docs do not claim unimplemented behavior as current fact.
-
-Task: Update formal system test report after coding.
-
-- Input: actual test commands, logs, defects, and fixes.
-- Output: updated `docs/deliverables/06_系统测试报告.md`.
-- Acceptance: report uses real execution evidence and does not claim unrun tests passed.
-
-Task: Complete administrator manual runtime commands after coding.
-
-- Input: actual local run commands and configuration files.
-- Output: updated `docs/deliverables/07_管理员手册.md`.
-- Acceptance: manual distinguishes implemented commands from planned commands.
-
-Task: Reconcile database design with actual storage implementation.
-
-- Input: implemented storage approach.
-- Output: updated `docs/deliverables/03_数据库设计.md`.
-- Acceptance: document states whether the MVP remains file/in-memory based or adds approved persistence.
-
-Task: Reconcile UI design with actual pages.
-
-- Input: implemented frontend pages and screenshots when available.
-- Output: updated `docs/deliverables/04_UI设计方案.md`.
-- Acceptance: page list, states, and component descriptions match the actual UI.
-
-## Agent Assignment Readiness
-
-- Backend tasks can be assigned to `backend_agent` with QA review.
-- Frontend tasks can be assigned to `frontend_agent` with UI and QA review.
-- Algorithm tasks remain under `backend_agent` unless a separate algorithm agent is approved later.
-- Testing tasks can be assigned to `qa_agent`.
-- Documentation and compliance tasks can be assigned to `docs_agent` and `compliance_audit_agent`.
+- Backend implementation remains with `backend_agent`.
+- Frontend implementation remains with `frontend_agent`.
+- UI design input remains with `ui_designer`.
+- QA checks remain with `qa_agent`.
+- Documentation and copyright mapping remain with `docs_agent`.
+- Compliance and audit boundary remain with `compliance_audit_agent`.
+- DevOps remains documentation-only unless explicitly approved.

@@ -1,29 +1,38 @@
 # Codex Agent Definitions
 
-This repository defines project-scoped Codex custom agents under `.codex/agents/*.toml`.
+The source role documents are `agents/*.md`. They now describe DVAS V1.2
+documentation and future implementation responsibilities.
 
-The source role documents remain in `agents/*.md`. They describe responsibilities, file scope, forbidden actions, validation expectations, and report format. The Codex-recognized custom agents are the TOML files under `.codex/agents/`.
+## Canonical 9 Agents
 
-Global subagent settings live in `.codex/config.toml`:
+- `pm_strategy`
+- `prd_agent`
+- `ui_designer`
+- `frontend_agent`
+- `backend_agent`
+- `qa_agent`
+- `docs_agent`
+- `compliance_audit_agent`
+- `devops_agent`
 
-```toml
-[agents]
-max_threads = 6
-max_depth = 1
-```
+There is no standalone Algorithm Agent in the canonical structure. Algorithm
+documentation and future deterministic computation implementation belong to
+`backend_agent` with PM, QA, and compliance review unless the user explicitly
+approves a separate agent.
 
-The canonical 9-agent structure is:
+## Current-Round Boundary
 
-- `pm_strategy`: `.codex/agents/pm-strategy.toml`, sourced from `agents/pm_strategy.md`
-- `prd_agent`: `.codex/agents/prd-agent.toml`, sourced from `agents/prd_agent.md`
-- `ui_designer`: `.codex/agents/ui-designer.toml`, sourced from `agents/ui_designer.md`
-- `frontend_agent`: `.codex/agents/frontend-agent.toml`, sourced from `agents/frontend_agent.md`
-- `backend_agent`: `.codex/agents/backend-agent.toml`, sourced from `agents/backend_agent.md`
-- `qa_agent`: `.codex/agents/qa-agent.toml`, sourced from `agents/qa_agent.md`
-- `devops_agent`: `.codex/agents/devops-agent.toml`, sourced from `agents/devops_agent.md`
-- `docs_agent`: `.codex/agents/docs-agent.toml`, sourced from `agents/docs_agent.md`
-- `compliance_audit_agent`: `.codex/agents/compliance-audit-agent.toml`, sourced from `agents/compliance_audit_agent.md`
+The current round is documentation synchronization only. The TOML files under
+`.codex/agents/` are not modified in this round because the user allowed only
+Markdown documentation files.
 
-There is no standalone Algorithm Agent in the canonical structure. Deterministic core computation responsibilities belong to `backend_agent` unless PM and user explicitly approve a separate agent later.
+## Required Agent Knowledge
 
-For Orchestrator startup prompts, agent selection rules, and validation requirements, see `docs/codex_subagents_orchestrator.md`.
+Each role must know:
+
+- 数据收益分配系统 V1.2 is the current product baseline.
+- Outputs are simulation references, not legal settlement or payment.
+- The latest six-group navigation is authoritative.
+- MD-DShap is default; Basic Shapley is baseline only.
+- P0 local operator and Markdown/CSV/JSON/JSONL exports are in scope.
+- Login/RBAC/PDF/async/history report management are P1.

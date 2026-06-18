@@ -1,117 +1,29 @@
-# UI Flow
+# UI Flow And Design Input
 
-## Page List
+This file is the compatibility entrypoint for UI flow references. Detailed UI
+requirements live in `docs/ui_design_spec.md`.
 
-- Input Package
-- Validation Results
-- Pipeline Review
-- Signal Details
-- Contribution And Allocation
-- Audit Report
-- Export
+## Global UI Baseline
 
-## Page Navigation
+- 1440x900 desktop Web management backend.
+- Chinese interface.
+- B-end SaaS / consulting-company style.
+- White background, dark blue navigation, light blue information regions, gray
+  dividers.
+- Every page prominently displays: 系统结果仅为模拟参考，非法定/非法律结算结果.
 
-```text
-Input Package
--> Validation Results
--> Pipeline Review
--> Signal Details
--> Contribution And Allocation
--> Audit Report
--> Export
-```
+## Navigation
 
-Validation errors stop the flow at Validation Results until the input is corrected.
+Use the six primary navigation groups from `docs/product_navigation.md`.
+Historical linear pages such as Input Package, Pipeline Review, and Export are
+now mapped into the left navigation modules.
 
-## Page Information Structure
+## Required Interaction Rules
 
-Input Package:
-
-- Scenario name.
-- Simulated-data label.
-- Participant list.
-- Data Unit list.
-- Contract constraints.
-
-Validation Results:
-
-- Pass/fail status.
-- Errors grouped by field path.
-- Warnings grouped by risk type.
-
-Pipeline Review:
-
-- Step status for validation, quality, metering, utility, contribution, allocation, and reporting.
-- Artifact links or expandable summaries.
-
-Signal Details:
-
-- Quality signal table.
-- Data Unit metering table.
-- Utility signal table.
-- DAUS / Shapley contribution reference table.
-
-Contribution And Allocation:
-
-- Participant contribution references.
-- Contract constraint adjustments.
-- Final allocation reference.
-- Confirmation-required warnings.
-
-Audit Report:
-
-- Report summary.
-- Assumptions.
-- Formula and constraint notes.
-- Trace appendix.
-
-Export:
-
-- JSON export entry point.
-- Report export entry point.
-- Copyable summary text.
-
-## Key Components
-
-- `WorkflowShell`
-- `InputPackageEditor`
-- `ValidationSummary`
-- `PipelineStepList`
-- `SignalTable`
-- `ContributionReferenceTable`
-- `AllocationReferencePanel`
-- `ConstraintWarningPanel`
-- `AuditReportView`
-- `ExportActions`
-
-These are component split suggestions, not existing implementation claims.
-
-## State Design
-
-- Empty: no input package loaded.
-- Draft: input is being edited.
-- Invalid: validation errors exist.
-- Ready: validation passes and pipeline can run.
-- Running: pipeline is calculating.
-- Complete: report artifact is available.
-- Warning: output exists with confirmation-required warnings.
-- Failed: unexpected pipeline error occurred.
-
-## Demo Path
-
-1. Load a simulated generic sample.
-2. Review validation success.
-3. Run pipeline.
-4. Inspect quality, utility, and contribution signals.
-5. Review contract constraints and final allocation reference.
-6. Open audit report.
-7. Export JSON or report artifact.
-
-## Frontend Component Split Guidance
-
-- Frontend must use fields from `docs/api_and_data_contract.md`.
-- Frontend must not calculate independent allocation math.
-- Frontend must show Shapley as contribution reference only.
-- Frontend must label all sample outputs as simulated.
-- Missing fields must be reported as API contract questions, not invented in UI.
+- Calculation buttons show precondition checks before execution.
+- Export dialogs show files, field scope, report version, `report_id` /
+  `checksum` behavior, and disclaimer.
+- Recalculation warns that history is not overwritten.
+- Confirmed/exported projects gray out edit buttons and offer copy new version.
+- Empty states explain the next operation.
+- Error states identify the field, precondition, or business rule.

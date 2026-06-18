@@ -207,7 +207,7 @@ export const dvasApi = {
   baseUrl: getApiBaseUrl,
   getProject: () => request<BackendProject>("/projects/current"),
   getDashboardOverview: () =>
-    request<BackendDashboardOverview>("/dashboard/overview"),
+    request<BackendDashboardOverview>("/dashboard"),
   getDashboardPreconditions: () =>
     request<BackendPreconditions>("/dashboard/preconditions"),
   initializeDemoCase: () =>

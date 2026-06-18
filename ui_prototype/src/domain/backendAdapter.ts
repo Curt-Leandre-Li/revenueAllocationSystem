@@ -103,9 +103,7 @@ async function loadQualityIfPresent() {
 function buildSnapshotFromBackend(payload: BackendWorkspacePayload): WorkbenchSnapshot {
   const pages = {
     ...workbenchSnapshot.pages,
-    "/dashboard/overview": buildOverviewPage(payload),
-    "/dashboard/process": buildProcessPage(payload),
-    "/dashboard/one-click": buildOneClickPage(payload),
+    "/dashboard": buildOverviewPage(payload),
     "/data/packages": buildPackagesPage(payload),
     "/data/resources": buildResourcesPage(payload),
     "/data/parties": buildPartiesPage(payload),
@@ -156,7 +154,7 @@ function buildOverviewPage(payload: BackendWorkspacePayload): PageWorkspaceData 
       project_id: payload.overview.project_id,
       current_package_id: payload.overview.current_package_id ?? "",
       input_snapshot_id: payload.overview.current_input_snapshot_id ?? "",
-      menu_code: "NAV_SYS_OVERVIEW",
+      menu_code: "NAV_SYS_HOME",
       module_code: "SYS",
     },
   };
@@ -192,7 +190,7 @@ function buildProcessPage(payload: BackendWorkspacePayload): PageWorkspaceData {
     technicalDetails: {
       project_id: payload.overview.project_id,
       snapshot_type: "PROJECT_STATUS",
-      menu_code: "NAV_SYS_PROCESS",
+      menu_code: "NAV_SYS_HOME",
       module_code: "SYS",
     },
   };
@@ -236,7 +234,7 @@ function buildOneClickPage(payload: BackendWorkspacePayload): PageWorkspaceData 
     })),
     technicalDetails: {
       project_id: payload.overview.project_id,
-      menu_code: "NAV_SYS_ONE_CLICK",
+      menu_code: "NAV_SYS_HOME",
       module_code: "SYS",
     },
   };

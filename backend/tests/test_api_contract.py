@@ -111,6 +111,47 @@ class DvasApiContractTests(unittest.TestCase):
         self.assertEqual("local_operator", data["operator_id"])
         self.assertEqual("系统结果仅为模拟参考，非法律结算 / 非法定结算结果。", data["simulation_disclaimer"])
 
+    def test_navigation_menu_tree_keeps_system_home_as_single_first_level_node(self):
+        data = self.assert_ok(self.request("GET", "/api/v1/navigation/menu-tree"))
+
+        menu_by_code = {item["menu_code"]: item for item in data["items"]}
+        system_home = menu_by_code["NAV_SYS_HOME"]
+        forbidden_codes = {
+            "NAV_SYS_OVERVIEW",
+            "NAV_SYS_PROCESS",
+            "NAV_SYS_RISK",
+            "NAV_SYS_ONE_CLICK",
+        }
+
+        self.assertEqual(
+            {
+                "menu_code": "NAV_SYS_HOME",
+                "menu_name": "系统首页",
+                "module_code": "SYS",
+                "route_path": "/dashboard",
+                "children": [],
+            },
+            {
+                "menu_code": system_home["menu_code"],
+                "menu_name": system_home["menu_name"],
+                "module_code": system_home["module_code"],
+                "route_path": system_home["route_path"],
+                "children": system_home["children"],
+            },
+        )
+        self.assertEqual(1, system_home["menu_level"])
+        self.assertEqual(set(), forbidden_codes & set(menu_by_code))
+
+    def test_system_home_button_permissions_bind_to_nav_sys_home(self):
+        data = self.assert_ok(self.request("GET", "/api/v1/navigation/button-permissions"))
+
+        permissions = {item["button_code"]: item for item in data["items"]}
+        for button_code in ["SYS-002", "SYS-004", "SYS-005"]:
+            with self.subTest(button_code=button_code):
+                self.assertEqual("NAV_SYS_HOME", permissions[button_code]["menu_code"])
+                self.assertEqual("MENU_SYS_HOME", permissions[button_code]["menu_id"])
+                self.assertEqual("SYS", permissions[button_code]["module_code"])
+
     def test_initialize_demo_case_moves_project_to_ingested_and_seeds_data(self):
         data = self.assert_ok(
             self.request("POST", "/api/v1/demo-cases/lung_screening_demo/initialize")
@@ -130,6 +171,11 @@ class DvasApiContractTests(unittest.TestCase):
         self.assertEqual(1, len(packages))
         self.assertEqual(len(data["resources"]), len(resources))
         self.assertEqual(len(data["parties"]), len(parties))
+
+        audit_logs = self.repository.list_audit_logs()
+        initialize_log = next(item for item in audit_logs if item["operation_type"] == "INITIALIZE_DEMO")
+        self.assertEqual("SYS", initialize_log["module_code"])
+        self.assertEqual("NAV_SYS_HOME", initialize_log["menu_code"])
 
     def test_dashboard_preconditions_enable_quality_after_ingestion(self):
         before = self.assert_ok(self.request("GET", "/api/v1/dashboard/preconditions"))
@@ -155,7 +201,7 @@ class DvasApiContractTests(unittest.TestCase):
     def test_dashboard_overview_reports_counts_and_next_step(self):
         self.request("POST", "/api/v1/demo-cases/lung_screening_demo/initialize")
 
-        data = self.assert_ok(self.request("GET", "/api/v1/dashboard/overview"))
+        data = self.assert_ok(self.request("GET", "/api/v1/dashboard"))
 
         self.assertEqual("INGESTED", data["project_status"])
         self.assertEqual(1, data["metrics"]["data_package_count"])
@@ -245,8 +291,11 @@ class DvasApiContractTests(unittest.TestCase):
     def test_public_routes_require_api_v1_prefix(self):
         public_paths = [
             "/projects/current",
-            "/dashboard/overview",
+            "/navigation/menu-tree",
+            "/navigation/button-permissions",
+            "/dashboard",
             "/dashboard/preconditions",
+            "/dashboard/actions/quick-run",
             "/data-packages",
             "/data-resources",
             "/data-resources/resource_000001/party-relations",
@@ -292,7 +341,11 @@ class DvasApiContractTests(unittest.TestCase):
         self.assertIn("url: http://127.0.0.1:8000/api/v1", openapi_text)
         self.assertTrue(path_lines)
         self.assertFalse(any(path.startswith("/api/v1") for path in path_lines))
+        self.assertIn("/navigation/menu-tree", path_lines)
+        self.assertIn("/navigation/button-permissions", path_lines)
+        self.assertIn("/dashboard", path_lines)
         self.assertIn("/dashboard/preconditions", path_lines)
+        self.assertIn("/dashboard/actions/quick-run", path_lines)
         self.assertIn("/data-resources/{resource_id}/party-relations", path_lines)
         self.assertIn("/quality-assessments/{assessment_id}/details", path_lines)
         self.assertIn("/shuyuan-meterings/{metering_id}/details", path_lines)
@@ -322,7 +375,7 @@ class DvasApiContractTests(unittest.TestCase):
         self.assertNotIn("/reports/{report_id}/pdf", path_lines)
 
     def test_quick_run_skeleton_returns_explainable_precondition_failure(self):
-        response = self.request("POST", "/api/v1/dashboard/quick-run")
+        response = self.request("POST", "/api/v1/dashboard/actions/quick-run")
 
         self.assertFalse(response["success"])
         self.assertEqual("DVAS_PRECONDITION_NOT_MET", response["code"])

@@ -1,112 +1,97 @@
 # System Scope
 
-## System Positioning
+## Positioning
 
-DVAS v2 is a generic data revenue allocation system and software-copyright product for data-element revenue allocation. It accepts structured data contribution inputs, computes auditable intermediate signals, prepares contribution and allocation references, and produces reports that explain how each result was derived.
+数据收益分配系统 V1.2（DVAS, Data Value Allocation System） is a data revenue
+allocation simulation and audit-explanation system.
 
-The product is not a medical system. Medical examples may be used only as sample scenarios for demonstrations or software copyright explanation. They must not define the generic architecture, field model, scoring rules, API contract, or final allocation logic.
+The system output is a simulation reference only. It does not constitute legal
+settlement, statutory settlement, financial payment, contract performance,
+formal asset appraisal, or authority approval. All pages, reports, exports, and
+software copyright materials must retain this boundary.
 
-The system output is a calculation and audit reference. It does not replace contract terms, expert confirmation, human confirmation, or legal/business settlement decisions.
+## Scenario Boundary
 
-## Target Users
+The system is generic and not limited to medical data. 肺癌早筛数据收益分配示例项目
+may be used as a sample project, but medical wording must not define the only
+schema, workflow, quality formula, utility rule, algorithm behavior, or report
+claim.
 
-- Product owner: defines MVP scope, scenario boundaries, and delivery priorities.
-- Data operations user: prepares input records and reviews validation feedback.
-- Business analyst: reviews contribution, quality, utility, and allocation references.
-- Auditor or reviewer: checks traceability, assumptions, simulated examples, and report consistency.
-- Developer or agent: implements approved modules after this freeze package is accepted.
+## P0 Included Scope
 
-## MVP Boundary
+- Local operator mode.
+- Demo data and JSON upload.
+- Data ingestion, resource recognition, and party management.
+- Quality assessment.
+- Shuyuan metering.
+- Contribution and utility calculation.
+- MD-DShap weight calculation.
+- Allocation simulation.
+- Contract constraints.
+- Markdown, CSV, JSON, and JSONL export.
+- Audit logs and snapshot traceability.
 
-The MVP includes:
+## P0 Excluded Scope
 
-- Generic input records and participant metadata.
-- Validation of required fields, naming, and numeric ranges.
-- Quality assessment for completeness, validity, consistency, and traceability.
-- Data Unit metering for approved generic units.
-- Utility modeling using deterministic and documented formulas.
-- DAUS / Shapley contribution calculation as a computation-layer weight reference.
-- Contract constraint application for minimum guarantee, cap, and manual/expert confirmation flags.
-- Final allocation reference output after approved constraints are applied.
-- Audit report generation with inputs, intermediate signals, assumptions, warnings, and result summaries.
-- Lightweight demonstration UI after schema and API contracts are frozen.
+- Login.
+- Production-grade RBAC.
+- PDF export.
+- CSV/XLSX batch import.
+- Async queues.
+- Multi-tenancy.
+- Real financial payment.
+- Electronic signature, tax, or bank integration.
 
-## Non-Goals
+## P1 Extension Scope
 
-The MVP does not include:
+- Login and RBAC.
+- PDF export.
+- CSV/XLSX template import.
+- Async task progress.
+- Historical report management.
+- Stronger permission controls.
 
-- Real hospital integration or any real hospital data claim.
-- Medical, clinical, laboratory, policy, insurance, or disease-specific architecture.
-- Marketplace settlement, payment processing, invoicing, or live clearing.
-- External data source synchronization.
-- User authentication, authorization, tenant isolation, or production security workflow.
-- Model training, adaptive scoring, or hidden random behavior.
-- Legal advice or compliance certification.
-- Restoring MAR.
-- Restoring Effective DU.
-- Restoring `token_weighting` as a main-process term.
-- Treating Shapley output as the final revenue allocation layer.
+## Roles
 
-## Core Business Chain
+P0 uses `local_operator` as the default operator. The documentation still keeps
+role concepts for future P1 permissions:
 
-The frozen MVP chain is:
+- system administrator, P1
+- business administrator
+- algorithm reviewer
+- contract reviewer
+- auditor
+- viewer
+- local operator, P0
+
+## Complete Business Chain
 
 ```text
-input package
--> validation
--> quality assessment
--> Data Unit metering
--> utility modeling
--> DAUS / Shapley contribution reference
--> contract constraint application
--> final allocation reference
--> audit report
+创建项目或选择演示数据
+-> 上传或初始化数据包并生成输入快照
+-> 识别数据资源、字段、模态和基础统计
+-> 维护参与方，区分数据源主体和非数据贡献主体
+-> 数据资源关联数据源主体
+-> 质量评估
+-> 数元计量
+-> 贡献度计算与效用计算
+-> MD-DShap 权重计算
+-> 配置总收益、合同优先分配、数据源收益池
+-> 合同约束调整
+-> 收益分配模拟
+-> 锁定参考方案或复制新版本重算
+-> 报告生成与导出
+-> 审计追溯
 ```
 
-Every implementation task must map to this chain. A proposed module outside this chain requires PM Strategy review and explicit user approval before coding.
+## Boundary Rules
 
-## Terminology Freeze
-
-Top-level terms are frozen as:
-
-- Token: a minimal countable text or data-processing unit used only when the approved input contract needs token-level quantity.
-- Data Unit: the business-facing generic data unit used for contribution, quality, utility, and allocation reference calculations.
-
-Rules:
-
-- Use `Data Unit`, not `DU`, in user-facing docs unless the abbreviation is defined locally.
-- Do not introduce Effective DU.
-- Do not use `token_weighting` as a main-process term.
-- DAUS is a utility/contribution signal layer, not a final settlement layer.
-- Shapley is a computation-layer weight determination method, not final revenue allocation.
-- Final allocation reference may be adjusted by contract terms, minimum guarantee, cap, expert confirmation, and human confirmation.
-
-## Delivery Boundary
-
-The pre-coding freeze package delivers documentation only:
-
-- Product scope and milestone plan.
-- Product requirements.
-- Architecture and module boundaries.
-- Allocation logic design.
-- UI flow and component split guidance.
-- API and data contract draft.
-- Test plan and validation commands.
-- Compliance and audit boundary.
-- Development task breakdown.
-- Pre-coding freeze checklist.
-
-No product code, frontend implementation, backend implementation, algorithm implementation, dependency installation, commit push, merge, or deployment is included in the freeze package.
-
-## Today Freeze Conclusion
-
-As of 2026-06-16, the product may proceed to coding only after this freeze package is committed and the checklist in `docs/pre_coding_freeze_checklist.md` remains green.
-
-The scope is frozen for MVP coding:
-
-- Build a generic data revenue allocation demo product.
-- Keep medical content as optional sample data only.
-- Keep Shapley and DAUS below the final allocation layer.
-- Preserve contract and manual confirmation as final allocation constraints.
-- Use simulated data only and label it as simulated.
-- Do not add dependencies until a coding task explicitly requires and receives approval.
+- MD-DShap outputs weights only.
+- Basic Shapley is only a small-scale `baseline_check`.
+- DAUS / utility is an input signal layer for `v(S,t)` or utility values.
+- Non-data contribution parties do not enter the MD-DShap algorithm pool by
+  default.
+- Contract priority allocation and constraints apply before/after data-provider
+  pool allocation according to the latest PRD.
+- Recalculation and export create new versions and never silently overwrite
+  historical task/result/trace/report records.

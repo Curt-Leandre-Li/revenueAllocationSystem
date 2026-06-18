@@ -189,9 +189,7 @@ function buildSnapshotFromBackend(
   const mock = buildMockState(currentSnapshot.mock ?? workbenchSnapshot.mock, data);
   const pages = {
     ...currentSnapshot.pages,
-    "/dashboard/overview": buildOverviewPage(data),
-    "/dashboard/process": buildProcessPage(data),
-    "/dashboard/one-click": buildOneClickPage(data),
+    "/dashboard": buildOverviewPage(data),
     "/data/packages": buildPackagesPage(data),
     "/data/resources": buildResourcesPage(data),
     "/data/parties": buildPartiesPage(data),
@@ -273,7 +271,7 @@ function buildOverviewPage(data: BackendWorkspaceData): PageWorkspaceData {
       project_id: data.overview.projectId,
       current_package_id: data.overview.currentPackageId ?? "",
       input_snapshot_id: data.overview.currentInputSnapshotId ?? "",
-      menu_code: "NAV_SYS_OVERVIEW",
+      menu_code: "NAV_SYS_HOME",
       module_code: "SYS",
     },
   };
@@ -293,14 +291,14 @@ function buildProcessPage(data: BackendWorkspaceData): PageWorkspaceData {
       workflow_step: preconditionLabels[item.code]?.name ?? item.code,
       step_status: item.passed ? "通过" : "阻塞",
       blocker: item.passed ? "无" : item.message,
-      next_module: preconditionLabels[item.code]?.targetPath ?? "/dashboard/overview",
+      next_module: preconditionLabels[item.code]?.targetPath ?? "/dashboard",
       next_action: item.passed ? "查看结果" : "补齐前置条件",
       last_updated: data.overview.updatedAt,
     })),
     technicalDetails: {
       project_id: data.overview.projectId,
       snapshot_type: "PROJECT_STATUS",
-      menu_code: "NAV_SYS_PROCESS",
+      menu_code: "NAV_SYS_HOME",
       module_code: "SYS",
     },
   };
@@ -327,7 +325,7 @@ function buildOneClickPage(data: BackendWorkspaceData): PageWorkspaceData {
     })),
     technicalDetails: {
       project_id: data.overview.projectId,
-      menu_code: "NAV_SYS_ONE_CLICK",
+      menu_code: "NAV_SYS_HOME",
       module_code: "SYS",
     },
   };

@@ -2,62 +2,44 @@
 
 ## Role
 
-Reviews legal, audit, explainability, traceability, and software copyright materials for DVAS v2.
+Maintain DVAS V1.2 compliance, audit, explainability, traceability, sensitive
+data, and software copyright boundary documentation.
+
+## Current-Round Boundary
+
+Documentation only. Do not modify algorithm implementation, product code,
+tests, migrations, dependencies, or deployment configuration.
 
 ## Responsibilities
 
-- Review compliance and audit documentation.
-- Check traceability from requirements to outputs.
-- Identify explainability gaps.
-- Review software copyright and delivery materials when present.
-- Produce audit findings and remediation recommendations.
+- Ensure all pages, reports, exports, and copyright materials retain:
+  系统结果仅为模拟参考，非法律结算 / 非法定结算结果.
+- Prevent docs from presenting the system as legal settlement, statutory
+  settlement, payment, contract performance, authority approval, tax, bank, or
+  electronic-signature workflow.
+- Ensure MD-DShap is described as a weight calculation strategy only.
+- Ensure Basic Shapley is only a baseline check.
+- Ensure non-data contribution parties are handled through contracts or
+  constraints by default.
+- Ensure sensitive data guidance states P0 should use demo or desensitized JSON
+  and must not require real sensitive medical data.
+- Ensure audit docs include snapshots, trace, `report_id`, `checksum`,
+  `menu_code`, `module_code`, operator, status, and failure reason.
 
 ## Allowed File Scope
 
-- `docs/compliance/*`
-- `docs/audit/*`
-- `docs/copyright/*`
-- Compliance notes under `docs/*`
+- `docs/**/*.md`
+- `agents/*.md` when role guidance needs alignment
+- `README.md`
 
 ## Forbidden Actions
 
-- Do not modify algorithm or business logic.
-- Do not change API/schema contracts.
-- Do not make legal claims beyond documented project materials.
-- Do not push, merge, or commit without explicit user approval.
-
-## Input/Output Expectations
-
-Inputs:
-- PM task brief.
-- PRD, architecture, audit, or copyright materials.
-- Current system outputs when supplied.
-
-Outputs:
-- Audit report.
-- Traceability gaps.
-- Risk list.
-- Recommended follow-up tasks.
+- Do not provide legal advice or certification claims.
+- Do not change business logic, algorithm semantics, or API/schema contracts.
+- Do not commit, push, or merge.
 
 ## Validation Expectations
 
-- Verify cited files exist.
-- Distinguish confirmed facts from assumptions.
-- Include file references when reporting findings.
-- Identify skipped checks.
-
-## When To Stop And Ask PM/User
-
-- Compliance scope implies legal advice.
-- Missing source materials prevent review.
-- A requested edit would alter business logic.
-- Product behavior conflicts with documented governance.
-
-## Final Report Format
-
-1. task completed
-2. files changed
-3. commands run
-4. test/build results
-5. risks
-6. next recommended step
+- Distinguish confirmed product scope from future P1/P2 plans.
+- Report any remaining wording that could imply real settlement or production
+  payment.

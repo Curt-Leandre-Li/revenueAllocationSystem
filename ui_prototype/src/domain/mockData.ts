@@ -46,10 +46,15 @@ const pageContent: Record<
     rows: DataRow[];
   }
 > = {
-  "/dashboard/overview": {
-    summary: "汇总当前项目状态、最近产出、风险提示和下一步动作。",
+  "/dashboard": {
+    summary: "汇总当前项目状态、流程入口、风险提示、一键计算和最近产出。",
     primaryTask: "继续执行 MD-DShap 权重计算，生成可审计的参考分配输入。",
-    metrics: sharedMetrics,
+    metrics: [
+      ...sharedMetrics,
+      { label: "已完成节点", value: "5", hint: "接入、资源、参与方、质量、效用", tone: "success" },
+      { label: "风险边界", value: "6", hint: "覆盖数据、算法、合同和报告", tone: "neutral" },
+      { label: "默认算法", value: "MD-DShap", hint: "Basic Shapley 仅用于 baseline_check", tone: "neutral" },
+    ],
     preconditions: sharedPreconditions,
     rows: [
       {
@@ -62,18 +67,6 @@ const pageContent: Record<
         recent_report_type: "资源摘要",
         recent_report_time: "2026-06-18 10:20",
       },
-    ],
-  },
-  "/dashboard/process": {
-    summary: "用完整链路入口承接从数据接入到审计追溯的连续工作。",
-    primaryTask: "处理待计算节点，不跳过质量、计量和效用前置步骤。",
-    metrics: [
-      { label: "已完成节点", value: "5", hint: "接入、资源、参与方、质量、效用", tone: "success" },
-      { label: "待办节点", value: "4", hint: "权重、分配、报告、审计", tone: "warning" },
-      { label: "阻塞项", value: "1", hint: "MD-DShap 尚未运行", tone: "warning" },
-    ],
-    preconditions: sharedPreconditions,
-    rows: [
       {
         workflow_step: "MD-DShap 权重计算",
         step_status: "待处理",
@@ -83,37 +76,6 @@ const pageContent: Record<
         last_updated: "2026-06-18 10:22",
       },
       {
-        workflow_step: "收益分配模拟",
-        step_status: "阻塞",
-        blocker: "缺少归一化权重",
-        next_module: "MD-DShap 计算管理",
-        next_action: "先计算权重",
-        last_updated: "2026-06-18 10:22",
-      },
-    ],
-  },
-  "/dashboard/risk": {
-    summary: "集中展示模拟参考、数据边界、算法边界、合同边界和报告边界。",
-    primaryTask: "确认本系统输出仅作模拟参考，不作为法律结算或付款指令。",
-    metrics: [
-      { label: "风险边界", value: "6", hint: "覆盖数据、算法、合同和报告", tone: "neutral" },
-      { label: "P0 禁用项", value: "7", hint: "登录、PDF、真实支付等", tone: "warning" },
-      { label: "需确认动作", value: "12", hint: "计算、锁定和导出类按钮", tone: "neutral" },
-    ],
-    preconditions: [
-      {
-        name: "模拟参考说明",
-        status: "PASS",
-        message: "页面和导出均需显示非法律结算边界。",
-      },
-      {
-        name: "敏感数据边界",
-        status: "PASS",
-        message: "默认使用脱敏演示摘要，不展示原始敏感明细。",
-      },
-    ],
-    rows: [
-      {
         data_boundary: "仅使用演示数据或用户上传 JSON 摘要",
         simulation_disclaimer: "结果仅作模拟参考",
         sensitive_data_notice: "敏感字段仅展示统计和标记",
@@ -121,18 +83,6 @@ const pageContent: Record<
         contract_boundary: "合同约束为模拟调整规则",
         report_boundary: "P0 支持 Markdown、CSV、JSON、JSONL",
       },
-    ],
-  },
-  "/dashboard/one-click": {
-    summary: "在前置条件通过后按完整链路顺序运行计算，不覆盖历史结果。",
-    primaryTask: "检查 MD-DShap 前置条件，失败时停在具体节点并写入审计。",
-    metrics: [
-      { label: "通过检查", value: "5", hint: "输入、资源、参与方、质量、效用", tone: "success" },
-      { label: "待运行阶段", value: "4", hint: "权重、约束、分配、导出", tone: "warning" },
-      { label: "默认算法", value: "MD-DShap", hint: "Basic Shapley 仅用于 baseline_check", tone: "neutral" },
-    ],
-    preconditions: sharedPreconditions,
-    rows: [
       {
         precondition_name: "效用值",
         check_result: "通过",

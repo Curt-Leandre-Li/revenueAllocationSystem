@@ -18,40 +18,13 @@ import type { ComponentType } from "react";
 
 export const appRoutes: AppRoute[] = [
   {
-    path: "/dashboard/overview",
+    path: "/dashboard",
     label: "系统首页",
-    menuCode: "NAV_SYS_OVERVIEW",
+    menuCode: "NAV_SYS_HOME",
     moduleCode: "SYS",
     phase: "P0",
-    responsibility: "展示当前项目、状态、关键指标、最近报告、风险摘要和下一步建议。",
-    actionIds: ["SYS-002", "DATA-003", "REP-001"],
-  },
-  {
-    path: "/dashboard/process",
-    label: "流程入口",
-    menuCode: "NAV_SYS_PROCESS",
-    moduleCode: "SYS",
-    phase: "P0",
-    responsibility: "以完整链路卡片承接从数据接入到审计追溯的下一步动作。",
-    actionIds: ["SYS-004"],
-  },
-  {
-    path: "/dashboard/risk",
-    label: "风险提示",
-    menuCode: "NAV_SYS_RISK",
-    moduleCode: "SYS",
-    phase: "P0",
-    responsibility: "展示模拟参考、非法律结算、敏感数据、算法、合同和报告边界。",
-    actionIds: ["SYS-005"],
-  },
-  {
-    path: "/dashboard/one-click",
-    label: "一键计算",
-    menuCode: "NAV_SYS_ONE_CLICK",
-    moduleCode: "SYS",
-    phase: "P0",
-    responsibility: "展示前置条件、运行模式、默认算法、流水线进度和失败节点。",
-    actionIds: ["SYS-004"],
+    responsibility: "展示当前项目、流程入口、风险提示、一键计算和最近报告摘要。",
+    actionIds: ["SYS-002", "DATA-003", "SYS-004", "SYS-005", "REP-001"],
   },
   {
     path: "/data/packages",
@@ -191,19 +164,13 @@ export const appRoutes: AppRoute[] = [
   },
 ];
 
-export const defaultRoutePath: RoutePath = "/dashboard/overview";
+export const defaultRoutePath: RoutePath = "/dashboard";
 
-export const dashboardSectionRouteMap: Record<string, { path: RoutePath; sectionId: string }> = {
-  "/dashboard/process": { path: "/dashboard/overview", sectionId: "process" },
-  "/dashboard/risk": { path: "/dashboard/overview", sectionId: "risk" },
-  "/dashboard/one-click": { path: "/dashboard/overview", sectionId: "one-click" },
-  "/dashboard/flow": { path: "/dashboard/overview", sectionId: "process" },
-  "/dashboard/quick-run": { path: "/dashboard/overview", sectionId: "one-click" },
-};
+export const dashboardSectionRouteMap: Record<string, { path: RoutePath; sectionId: string }> = {};
 
 export const compatibilityRouteMap: Record<string, RoutePath> = {
-  "/": "/dashboard/overview",
-  "/dashboard": "/dashboard/overview",
+  "/": "/dashboard",
+  "/dashboard": "/dashboard",
   "/data/ingestion": "/data/packages",
   "/metering/quality": "/measure/quality",
   "/metering/shuyuan": "/measure/shuyuan",
@@ -220,10 +187,7 @@ export const compatibilityRouteMap: Record<string, RoutePath> = {
 };
 
 export const routeComponents: Record<RoutePath, ComponentType<PageProps>> = {
-  "/dashboard/overview": OverviewPage,
-  "/dashboard/process": OverviewPage,
-  "/dashboard/risk": OverviewPage,
-  "/dashboard/one-click": OverviewPage,
+  "/dashboard": OverviewPage,
   "/data/packages": DataPackagesPage,
   "/data/resources": DataResourcesPage,
   "/data/parties": DataPartiesPage,

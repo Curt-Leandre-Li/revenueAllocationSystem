@@ -8,13 +8,13 @@
 
 | 页面 | 路由 | 截图 | 文件状态 |
 | --- | --- | --- | --- |
-| 系统首页驾驶舱 | `/dashboard/overview` | `output/phase2a-screenshots/dashboard-overview.png` | 存在，约 323 KB |
+| 系统首页驾驶舱 | `/dashboard` | `output/phase2a-screenshots/dashboard-overview.png` | 存在，约 323 KB |
 | 资源盘点和主体归属确认工作台 | `/data/resources` | `output/phase2a-screenshots/data-resources.png` | 存在，约 249 KB |
 | MD-DShap 算法权重计算管理页 | `/allocation/md-dshap` | `output/phase2a-screenshots/allocation-md-dshap.png` | 存在，约 396 KB |
 
 ## 3 个样板页验收结论
 
-| 维度 | `/dashboard/overview` | `/data/resources` | `/allocation/md-dshap` |
+| 维度 | `/dashboard` | `/data/resources` | `/allocation/md-dshap` |
 | --- | --- | --- | --- |
 | 是否像正式中文 B 端 SaaS 产品 | 通过。白底浅灰、深蓝标题、青绿色状态和清晰工作区。 | 通过。筛选、表格、阻断提示和详情入口符合管理后台语境。 | 通过。算法卡、前置条件、参数、任务、权重表形成业务工作台。 |
 | 是否有明确业务工作区 | 通过。项目、指标、下一步、风险、流程、报告、审计集中展示。 | 通过。围绕资源盘点、主体归属和计算纳入设置组织。 | 通过。围绕算法权重计算前置条件、任务和结果组织。 |
@@ -31,7 +31,7 @@
 
 | 路由 | 默认抽屉数 | 默认弹窗数 | 默认展开 `details` 数 | 结论 |
 | --- | ---: | ---: | ---: | --- |
-| `/dashboard/overview` | 0 | 0 | 0 | 通过 |
+| `/dashboard` | 0 | 0 | 0 | 通过 |
 | `/data/resources` | 0 | 0 | 0 | 通过 |
 | `/allocation/md-dshap` | 0 | 0 | 0 | 通过 |
 | `/reports` | 0 | 0 | 0 | 通过 |
@@ -40,7 +40,7 @@
 
 ## 系统首页层级检查
 
-`/dashboard/overview` 符合“仅一级页面”要求。默认首屏不存在抽屉、弹窗或详情面板。风险说明抽屉只在点击“打开风险说明抽屉”后出现，并可关闭。
+`/dashboard` 符合“仅一级页面”要求。默认首屏不存在抽屉、弹窗或详情面板。风险说明抽屉只在点击“打开风险说明抽屉”后出现，并可关闭。
 
 ## 报告生成与导出页面层级检查
 
@@ -50,7 +50,7 @@
 
 | 页面 | 二级窗口 | 触发入口 | 关闭路径 | 结论 |
 | --- | --- | --- | --- | --- |
-| `/dashboard/overview` | 风险与合规边界抽屉 | 打开风险说明抽屉 | 关闭 | 通过 |
+| `/dashboard` | 风险与合规边界抽屉 | 打开风险说明抽屉 | 关闭 | 通过 |
 | `/data/resources` | 数据资源详情抽屉 | 资源行“详情” | 关闭 | 通过 |
 | `/data/resources` | 绑定数据源主体弹窗 | 资源行“关联主体” | 取消 / 保存绑定 | 通过 |
 | `/data/resources` | 资源摘要导出抽屉 | 导出资源摘要 | 关闭 | 通过 |
@@ -67,7 +67,7 @@
 自动化覆盖结果：
 
 - 左侧 17 个菜单项均可跳转到 canonical route。
-- `/dashboard/overview`：选择演示数据有业务反馈；进入数据接入、查看报告可跳转；风险抽屉可打开关闭。
+- `/dashboard`：选择演示数据有业务反馈；进入数据接入、查看报告可跳转；风险抽屉可打开关闭。
 - `/data/resources`：详情、关联主体、保存绑定、取消、导出资源摘要均可触发可见业务结果。
 - `/allocation/md-dshap`：默认“启动 MD-DShap”和“重新计算”在前置条件不满足时禁用，禁用说明可见；补齐资源主体后启动计算可确认执行并生成权重；所有查看/导出/审计入口可打开并关闭二级窗口。
 - `/reports`：PDF P1 按钮禁用且说明明确。

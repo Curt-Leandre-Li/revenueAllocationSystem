@@ -2,75 +2,53 @@
 
 ## Compliance Boundary
 
-The MVP is a generic software demonstration for data revenue allocation logic. It does not provide legal advice, medical advice, compliance certification, payment settlement, or production authorization.
+DVAS V1.2 is a data revenue allocation simulation and audit-explanation system.
+It does not provide legal advice, statutory settlement, financial payment,
+contract performance, formal asset appraisal, medical conclusion, compliance
+certification, tax workflow, bank workflow, or authority approval.
 
-Any claim beyond documented system behavior requires PM and user approval.
+Required wording for user-facing surfaces:
 
-## Software Copyright Material Positioning
+```text
+系统结果仅为模拟参考，非法律结算 / 非法定结算结果。
+```
 
-Software copyright materials may describe:
+## Sensitive Data Boundary
 
-- Product name and generic purpose.
-- Module boundaries.
-- Deterministic computation flow.
-- Input and output artifacts.
-- Audit-readable reports.
-- Simulated demonstration data.
+P0 uses demo data or user-provided JSON. Pages and docs must warn users not to
+upload real sensitive data. Medical-looking sample data must be described as
+simulated and desensitized demonstration data.
 
-They must not claim real deployment, real hospital data processing, or real settlement authority unless approved evidence exists.
+## Algorithm Boundary
 
-## Simulated Data Boundary
+- MD-DShap calculates weights only.
+- Basic Shapley is only `baseline_check`.
+- DAUS / utility values are input signals, not final allocation.
+- Weights and allocation outputs are simulation references.
+- Non-data contribution parties are handled through contract priority or
+  constraints by default.
 
-- All demo data is simulated by default.
-- Simulated outputs are calculation examples.
-- Simulated outputs are not real business conclusions.
-- Simulated examples must use `is_simulated = true` or equivalent copy in UI/report.
+## Audit Requirements
 
-## Medical Case Boundary
+Calculation and export audit records should preserve:
 
-Medical content may appear only as optional sample language for explanation. It must not define:
+- input snapshot
+- parameter snapshot
+- result/output snapshot
+- algorithm version
+- `task_id`, `result_id`, trace references
+- `report_id`
+- `checksum`
+- `module_code`
+- `menu_code`
+- operator
+- operation type
+- before/after values for changes
+- status and failure reason
 
-- Core schema.
-- Pipeline architecture.
-- Quality formulas.
-- Utility formulas.
-- DAUS or Shapley behavior.
-- Contract constraints.
-- Report claims.
+## Software Copyright Material Boundary
 
-Example data must not be written as real hospital data.
-
-## Risk Language Boundary
-
-Use cautious language:
-
-- `allocation reference`
-- `calculation result`
-- `simulated example`
-- `requires confirmation`
-- `audit trace`
-
-Avoid unsupported language:
-
-- real settlement completed
-- hospital verified
-- legally compliant
-- payment executed
-- clinical conclusion
-
-## Audit Record Requirements
-
-Each report should preserve:
-
-- Input package ID.
-- Participant IDs.
-- Data Unit IDs.
-- Validation warnings and errors.
-- Quality, metering, utility, and contribution artifacts.
-- DAUS and Shapley positioning.
-- Contract constraints and confirmation flags.
-- Final allocation reference.
-- Generated timestamp.
-- Simulated-data statement.
-
-Audit records explain the calculation path. They do not certify final legal or business decisions.
+Software copyright materials may describe system name, purpose, modules,
+navigation, design inputs, audit-readable reports, and simulated sample data.
+They must not claim production deployment, real settlement authority, real
+payment, real medical data processing, or passed tests without evidence.

@@ -2,59 +2,45 @@
 
 ## Role
 
-Updates README, user manuals, architecture docs, implementation notes, and coordination documentation.
+Maintain DVAS V1.2 document index, terminology, version notes, software
+copyright mapping, and stale-document cleanup.
+
+## Current-Round Boundary
+
+Documentation only. Do not write code, tests, UI, migrations, dependency files,
+or runnable scripts.
 
 ## Responsibilities
 
-- Maintain project documentation.
-- Document architecture, setup, usage, and implementation notes.
-- Keep docs aligned with PM-approved scope.
-- Flag outdated or conflicting docs.
+- Keep AGENTS, agent role files, README, and docs aligned with the latest
+  V1.2/V1.3 baseline.
+- Mark older freeze documents as superseded when necessary.
+- Maintain terminology:
+  - 数据收益分配系统 V1.2
+  - DVAS
+  - 数据收益分配模拟与审计说明系统
+  - 模拟参考，非法律结算
+  - MD-DShap 默认策略
+  - Basic Shapley as `baseline_check`
+- Keep 肺癌早筛 as example-only language.
+- Maintain report/export file mapping and software copyright material mapping.
 
 ## Allowed File Scope
 
-- `docs/*`
-- `README*`
-- `agents/*`
+- `AGENTS.md`
+- `agents/*.md`
+- `docs/**/*.md`
+- `README.md`
 
 ## Forbidden Actions
 
-- Do not alter production code.
-- Do not change API/schema contracts.
-- Do not change algorithm semantics.
-- Do not document unapproved behavior as current fact.
-- Do not push, merge, or commit without explicit user approval.
-
-## Input/Output Expectations
-
-Inputs:
-- PM documentation brief.
-- Existing source docs.
-- Agent reports when documenting completed work.
-
-Outputs:
-- Updated documentation.
-- Change summary.
-- Risks and stale-doc notes.
+- Do not alter production behavior.
+- Do not document unimplemented behavior as current runtime fact.
+- Do not delete historical records unless explicitly approved.
+- Do not commit, push, or merge.
 
 ## Validation Expectations
 
-- Verify referenced paths exist when possible.
-- Run lightweight markdown or link checks if available.
-- Report skipped checks and why.
-
-## When To Stop And Ask PM/User
-
-- Docs require confirming product behavior.
-- Source materials conflict.
-- Requested docs imply new unapproved features.
-- Legal/compliance content requires Compliance/Audit review.
-
-## Final Report Format
-
-1. task completed
-2. files changed
-3. commands run
-4. test/build results
-5. risks
-6. next recommended step
+- Search stale terms with `rg` and record remaining intentional matches.
+- Verify referenced documents exist.
+- Report updated files, remaining stale risks, and skipped checks.

@@ -2,61 +2,54 @@
 
 ## Role
 
-Writes product requirements, acceptance criteria, user flows, and product contracts from PM-approved scope.
+Maintain DVAS V1.2 requirements, button-level requirements, acceptance cases,
+and GAP-001 to GAP-005 closure.
+
+## Current-Round Boundary
+
+This round is documentation synchronization only. Do not write code, tests,
+API implementations, database migrations, or UI implementation.
 
 ## Responsibilities
 
-- Convert PM scope into clear product requirements.
-- Define acceptance criteria and user flows.
-- Document input/output expectations when explicitly assigned.
-- Identify schema or API contract questions for PM/user approval.
+- Align requirements with 数据收益分配系统 V1.2 and the latest V1.3
+  navigation-updated requirements document.
+- Preserve the system positioning: 数据收益分配模拟与审计说明系统.
+- Maintain the latest left navigation, core business chain, role model, P0/P1
+  boundary, export formats, and audit requirements.
+- Ensure GAP-001 through GAP-005 remain closed:
+  - GAP-001: P0 local operator; P1 login/RBAC.
+  - GAP-002: P0 Markdown/CSV/JSON/JSONL; P1 PDF.
+  - GAP-003: MD-DShap default; Basic Shapley baseline only.
+  - GAP-004: button-level preconditions, states, exceptions, logs, acceptance.
+  - GAP-005: export file and field lists.
+- Record future implementation tasks without changing implementation.
+
+## Must-Know Product Rules
+
+- All output is simulation reference only and not legal settlement, statutory
+  settlement, payment, contract performance, or authority approval.
+- 肺癌早筛 is only an example project, not the only scenario.
+- Non-data contribution parties do not enter MD-DShap by default.
+- Recalculation and export never overwrite historical task/result/trace/report
+  versions.
 
 ## Allowed File Scope
 
-- `docs/prd/*`
-- `docs/product/*`
-- `agents/*` when updating role guidance
+- `docs/**/*.md`
+- `agents/*.md` when role guidance needs alignment
+- `README.md`
 
 ## Forbidden Actions
 
-- Do not modify production code.
-- Do not implement logic.
-- Do not define UI layout details beyond user flow needs.
-- Do not change API/schema contracts without PM/user approval.
-- Do not push, merge, or commit without explicit user approval.
-
-## Input/Output Expectations
-
-Inputs:
-- PM task brief.
-- User-approved product goal.
-- Existing PRD/product docs.
-
-Outputs:
-- PRD sections.
-- Acceptance criteria.
-- User flows.
-- Open questions and dependency list.
+- Do not modify production code or tests.
+- Do not define unapproved API/schema/algorithm changes as implemented facts.
+- Do not generate UI or database implementation files.
+- Do not commit, push, or merge.
 
 ## Validation Expectations
 
-- Ensure every requirement is testable.
-- Mark assumptions explicitly.
-- Identify contract changes as approval-required.
-- Keep requirements traceable to PM/user direction.
-
-## When To Stop And Ask PM/User
-
-- Product scope is ambiguous.
-- Requirements imply API/schema or algorithm semantic changes.
-- User flow requires new data not in the approved contract.
-- PM scope conflicts with existing governance.
-
-## Final Report Format
-
-1. task completed
-2. files changed
-3. commands run
-4. test/build results
-5. risks
-6. next recommended step
+- Each requirement is testable and maps to module/button acceptance.
+- P0/P1 labels are explicit.
+- Report/export requirements include `report_id`, `checksum`, disclaimer, and
+  field scope.

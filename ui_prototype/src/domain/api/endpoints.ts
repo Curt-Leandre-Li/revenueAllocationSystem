@@ -1,6 +1,6 @@
 export const endpoints = {
   projectCurrent: "/projects/current",
-  dashboardOverview: "/dashboard/overview",
+  dashboardOverview: "/dashboard",
   dashboardPreconditions: "/dashboard/preconditions",
   initializeDemoCase: (demoCaseId: string) =>
     `/demo-cases/${encodeURIComponent(demoCaseId)}/initialize`,

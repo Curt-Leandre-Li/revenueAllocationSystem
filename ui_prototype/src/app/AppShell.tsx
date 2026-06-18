@@ -65,7 +65,7 @@ export function AppShell() {
     const canonicalLocation = canonicalLocationForPathname(window.location.pathname);
     const currentLocation = `${window.location.pathname}${window.location.hash}`;
     const isDashboardSectionHash =
-      window.location.pathname === "/dashboard/overview" &&
+      window.location.pathname === "/dashboard" &&
       ["#overview", "#process", "#risk", "#one-click"].includes(window.location.hash);
     if (currentLocation !== canonicalLocation && !isDashboardSectionHash) {
       window.history.replaceState({}, "", canonicalLocation);
@@ -164,7 +164,7 @@ export function AppShell() {
             <span>操作员</span>
             <strong>{store.snapshot.operator}</strong>
           </div>
-          <button type="button" onClick={() => navigate("/dashboard/risk")}>
+          <button type="button" onClick={() => navigate("/dashboard")}>
             风险提示
           </button>
           <button type="button" onClick={() => setTraceOpen(true)}>
