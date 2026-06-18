@@ -11,6 +11,43 @@ from .contracts import (
 from .demo_data import get_demo_case
 
 
+def write_audit(
+    repository,
+    module_code,
+    menu_code,
+    operation_type,
+    object_type,
+    object_id,
+    status,
+    failure_reason=None,
+    input_snapshot_id=None,
+    parameter_snapshot_id=None,
+    result_snapshot_id=None,
+    before_value_json=None,
+    after_value_json=None,
+):
+    audit_log = {
+        "log_id": repository.next_id("audit"),
+        "project_id": repository.get_project()["project_id"],
+        "module_code": module_code,
+        "menu_code": menu_code,
+        "operation_type": operation_type,
+        "object_type": object_type,
+        "object_id": object_id,
+        "operator_id": LOCAL_OPERATOR,
+        "before_value_json": before_value_json,
+        "after_value_json": after_value_json,
+        "input_snapshot_id": input_snapshot_id,
+        "parameter_snapshot_id": parameter_snapshot_id,
+        "result_snapshot_id": result_snapshot_id,
+        "status": status,
+        "failure_reason": failure_reason,
+        "created_at": utc_now(),
+    }
+    repository.put_audit_log(audit_log)
+    return audit_log
+
+
 class ProjectService:
     def __init__(self, repository):
         self.repository = repository
@@ -73,7 +110,10 @@ class DashboardService:
         if has_valid_package and has_resource_party_relation:
             available_actions.append("QUAL-003")
         else:
-            disabled_actions.append({"button_code": "QUAL-003", "reason": "请先完成数据接入"})
+            reason = "请先完成数据接入"
+            if has_valid_package and not has_resource_party_relation:
+                reason = "请先关联数据源主体"
+            disabled_actions.append({"button_code": "QUAL-003", "reason": reason})
         return {
             "project_id": project["project_id"],
             "project_status": project["project_status"],
@@ -397,23 +437,338 @@ class DataIngestionService:
         input_snapshot_id=None,
         after_value_json=None,
     ):
-        audit_log = {
-            "log_id": self.repository.next_id("audit"),
-            "project_id": self.repository.get_project()["project_id"],
-            "module_code": module_code,
-            "menu_code": menu_code,
-            "operation_type": operation_type,
-            "object_type": object_type,
-            "object_id": object_id,
-            "operator_id": LOCAL_OPERATOR,
-            "before_value_json": None,
-            "after_value_json": after_value_json,
-            "input_snapshot_id": input_snapshot_id,
-            "parameter_snapshot_id": None,
-            "result_snapshot_id": None,
-            "status": status,
-            "failure_reason": failure_reason,
-            "created_at": utc_now(),
+        return write_audit(
+            self.repository,
+            module_code=module_code,
+            menu_code=menu_code,
+            operation_type=operation_type,
+            object_type=object_type,
+            object_id=object_id,
+            status=status,
+            failure_reason=failure_reason,
+            input_snapshot_id=input_snapshot_id,
+            after_value_json=after_value_json,
+        )
+
+
+class ResourceService:
+    def __init__(self, repository):
+        self.repository = repository
+
+    def bind_party_relations(self, resource_id, payload):
+        resource = self.repository.get_data_resource(resource_id)
+        if not resource:
+            raise ApiError("DVAS_NOT_FOUND", "数据资源不存在", status=404)
+        relations = payload.get("relations") or []
+        if not relations:
+            raise ApiError(
+                "DVAS_REQUIRED_FIELD_MISSING",
+                "资源主体关系不能为空",
+                field_errors=[{"field": "relations", "reason": "至少需要一个数据源主体关系"}],
+            )
+
+        normalized_relations = []
+        for index, relation in enumerate(relations):
+            party_id = relation.get("party_id")
+            party = self.repository.get_party(party_id) if party_id else None
+            if not party:
+                raise ApiError(
+                    "DVAS_NOT_FOUND",
+                    "参与方不存在",
+                    status=404,
+                    field_errors=[{"field": f"relations[{index}].party_id", "reason": "参与方不存在"}],
+                )
+            try:
+                split_ratio = float(relation.get("split_ratio", 1))
+            except (TypeError, ValueError) as exc:
+                raise ApiError(
+                    "DVAS_FACTOR_INVALID",
+                    "资源主体拆分比例不合法",
+                    field_errors=[
+                        {
+                            "field": f"relations[{index}].split_ratio",
+                            "reason": "split_ratio 必须是 0 到 1 之间的数字",
+                        }
+                    ],
+                ) from exc
+            if split_ratio < 0 or split_ratio > 1:
+                raise ApiError(
+                    "DVAS_FACTOR_INVALID",
+                    "资源主体拆分比例不合法",
+                    field_errors=[
+                        {"field": f"relations[{index}].split_ratio", "reason": "split_ratio 必须在 0 到 1 之间"}
+                    ],
+                )
+            normalized_relations.append(
+                {
+                    "party_id": party_id,
+                    "split_ratio": split_ratio,
+                    "is_primary_provider": bool(relation.get("is_primary_provider", index == 0)),
+                }
+            )
+
+        primary_relation = next(
+            (relation for relation in normalized_relations if relation["is_primary_provider"]),
+            normalized_relations[0],
+        )
+        primary_party = self.repository.get_party(primary_relation["party_id"])
+        updated = {
+            **resource,
+            "party_id": primary_party["party_id"],
+            "provider_party_name": primary_party["party_name"],
+            "party_relations": normalized_relations,
+            "updated_at": utc_now(),
         }
-        self.repository.put_audit_log(audit_log)
-        return audit_log
+        self.repository.put_data_resource(updated)
+        write_audit(
+            self.repository,
+            module_code="RES",
+            menu_code="NAV_DATA_RESOURCE",
+            operation_type="BIND_PARTY_RELATIONS",
+            object_type="data_resource",
+            object_id=resource_id,
+            status="SUCCESS",
+            before_value_json=resource,
+            after_value_json=updated,
+        )
+        return updated
+
+
+class PartyService:
+    DATA_PROVIDER_TYPES = {"DATA_PROVIDER"}
+
+    def __init__(self, repository):
+        self.repository = repository
+
+    def create_party(self, payload):
+        party_name = payload.get("party_name")
+        if not party_name:
+            raise ApiError(
+                "DVAS_REQUIRED_FIELD_MISSING",
+                "参与方名称不能为空",
+                field_errors=[{"field": "party_name", "reason": "party_name 为必填字段"}],
+            )
+        self._ensure_unique_name(party_name)
+        now = utc_now()
+        party_type = payload.get("party_type", "DATA_PROVIDER")
+        party = {
+            "party_id": self.repository.next_id("party"),
+            "project_id": self.repository.get_project()["project_id"],
+            "party_name": party_name,
+            "party_type": party_type,
+            "include_in_md_dshap": self._default_include(payload, party_type),
+            "status": "ENABLED",
+            "credit_code": payload.get("credit_code"),
+            "contact_name": payload.get("contact_name"),
+            "description": payload.get("description"),
+            "created_at": now,
+            "updated_at": now,
+        }
+        self.repository.put_party(party)
+        write_audit(
+            self.repository,
+            module_code="PARTY",
+            menu_code="NAV_DATA_PARTY",
+            operation_type="CREATE_PARTY",
+            object_type="party",
+            object_id=party["party_id"],
+            status="SUCCESS",
+            after_value_json=party,
+        )
+        return party
+
+    def update_party(self, party_id, payload):
+        party = self.repository.get_party(party_id)
+        if not party:
+            raise ApiError("DVAS_NOT_FOUND", "参与方不存在", status=404)
+        new_name = payload.get("party_name", party["party_name"])
+        self._ensure_unique_name(new_name, exclude_party_id=party_id)
+        party_type = payload.get("party_type", party["party_type"])
+        updated = {
+            **party,
+            "party_name": new_name,
+            "party_type": party_type,
+            "include_in_md_dshap": self._default_include(payload, party_type, party),
+            "credit_code": payload.get("credit_code", party.get("credit_code")),
+            "contact_name": payload.get("contact_name", party.get("contact_name")),
+            "description": payload.get("description", party.get("description")),
+            "updated_at": utc_now(),
+        }
+        self.repository.put_party(updated)
+        write_audit(
+            self.repository,
+            module_code="PARTY",
+            menu_code="NAV_DATA_PARTY",
+            operation_type="UPDATE_PARTY",
+            object_type="party",
+            object_id=party_id,
+            status="SUCCESS",
+            before_value_json=party,
+            after_value_json=updated,
+        )
+        return updated
+
+    def set_status(self, party_id, payload):
+        party = self.repository.get_party(party_id)
+        if not party:
+            raise ApiError("DVAS_NOT_FOUND", "参与方不存在", status=404)
+        status = payload.get("status")
+        if status not in {"ENABLED", "DISABLED"}:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "参与方状态不合法",
+                field_errors=[{"field": "status", "reason": "status 必须为 ENABLED 或 DISABLED"}],
+            )
+        if status == "DISABLED" and party["party_type"] == "DATA_PROVIDER":
+            enabled_data_providers = [
+                item
+                for item in self.repository.list_parties()
+                if item["party_type"] == "DATA_PROVIDER"
+                and item["status"] == "ENABLED"
+                and item["party_id"] != party_id
+            ]
+            if not enabled_data_providers:
+                raise ApiError(
+                    "DVAS_PRECONDITION_NOT_MET",
+                    "至少需要保留一个有效数据源主体",
+                    field_errors=[{"field": "party_id", "reason": "不能停用唯一有效数据源主体"}],
+                )
+        updated = {
+            **party,
+            "status": status,
+            "status_reason": payload.get("reason"),
+            "updated_at": utc_now(),
+        }
+        self.repository.put_party(updated)
+        write_audit(
+            self.repository,
+            module_code="PARTY",
+            menu_code="NAV_DATA_PARTY",
+            operation_type="SET_PARTY_STATUS",
+            object_type="party",
+            object_id=party_id,
+            status="SUCCESS",
+            before_value_json=party,
+            after_value_json=updated,
+        )
+        return updated
+
+    def _default_include(self, payload, party_type, existing=None):
+        if "include_in_md_dshap" in payload:
+            return bool(payload["include_in_md_dshap"])
+        if existing is not None and "include_in_md_dshap" in existing:
+            return bool(existing["include_in_md_dshap"])
+        return party_type in self.DATA_PROVIDER_TYPES
+
+    def _ensure_unique_name(self, party_name, exclude_party_id=None):
+        for party in self.repository.list_parties():
+            if party["party_name"] == party_name and party["party_id"] != exclude_party_id:
+                raise ApiError(
+                    "DVAS_FACTOR_INVALID",
+                    "参与方名称重复",
+                    field_errors=[{"field": "party_name", "reason": "同一项目参与方名称必须唯一"}],
+                )
+
+
+class QualityAssessmentService:
+    def __init__(self, repository):
+        self.repository = repository
+
+    def run(self, payload):
+        project = self.repository.get_project()
+        package_id = payload.get("package_id") or project.get("current_package_id")
+        package = self.repository.get_data_package(package_id) if package_id else None
+        if not package or package.get("status") != "VALIDATED":
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "请先完成数据接入",
+                field_errors=[{"field": "package_id", "reason": "请先完成数据接入"}],
+            )
+        resources = self.repository.list_data_resources(package_id)
+        if not resources:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "当前数据包无有效数据资源",
+                field_errors=[{"field": "resources", "reason": "当前数据包无有效数据资源"}],
+            )
+
+        now = utc_now()
+        version_no = len(self.repository.list_quality_assessments()) + 1
+        quality_score = min(98.0, 78.0 + len(resources) * 3.5)
+        quality_level = "A" if quality_score >= 85 else "B"
+        details = [
+            self._detail("完整性", "completeness", 0.35, quality_score + 1.0),
+            self._detail("一致性", "consistency", 0.30, quality_score - 2.0),
+            self._detail("可用性", "usability", 0.35, quality_score),
+        ]
+        snapshot_id = self.repository.next_id("snapshot")
+        output_snapshot = {
+            "snapshot_id": snapshot_id,
+            "project_id": project["project_id"],
+            "snapshot_type": "RESULT",
+            "content_json": {"details": details, "quality_score": round(quality_score, 2)},
+            "checksum": stable_checksum({"details": details, "quality_score": round(quality_score, 2)}),
+            "created_by": LOCAL_OPERATOR,
+            "created_at": now,
+        }
+        assessment = {
+            "assessment_id": self.repository.next_id("assessment"),
+            "project_id": project["project_id"],
+            "package_id": package_id,
+            "version_no": version_no,
+            "quality_score": round(quality_score, 2),
+            "quality_level": quality_level,
+            "quality_factor": round(quality_score / 100, 4),
+            "dimension_scores": {detail["dimension_code"]: detail["score"] for detail in details},
+            "evidence_summary": "BE-04 质量评估骨架基于资源数量和字段统计生成演示评分。",
+            "algorithm_version": "DVAS_QUALITY_SKELETON_V0",
+            "input_snapshot_id": package.get("input_snapshot_id"),
+            "parameter_snapshot_id": None,
+            "output_snapshot_id": snapshot_id,
+            "created_by": LOCAL_OPERATOR,
+            "created_at": now,
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+        }
+        self.repository.put_snapshot(output_snapshot)
+        self.repository.put_quality_assessment(assessment, details)
+        updated_project = self.repository.update_project(project_status="ASSESSED")
+        write_audit(
+            self.repository,
+            module_code="QUAL",
+            menu_code="NAV_MEASURE_QUALITY",
+            operation_type="RUN_QUALITY_ASSESSMENT",
+            object_type="quality_assessment",
+            object_id=assessment["assessment_id"],
+            status="SUCCESS",
+            input_snapshot_id=assessment["input_snapshot_id"],
+            result_snapshot_id=snapshot_id,
+            after_value_json={"assessment": assessment, "details": details},
+        )
+        return {
+            "project_id": updated_project["project_id"],
+            "project_status": updated_project["project_status"],
+            "assessment": assessment,
+            "details": details,
+        }
+
+    def latest(self):
+        assessments = self.repository.list_quality_assessments()
+        if not assessments:
+            raise ApiError("DVAS_NOT_FOUND", "质量评估结果不存在", status=404)
+        return assessments[-1]
+
+    def details(self, assessment_id):
+        assessment = self.repository.get_quality_assessment(assessment_id)
+        if not assessment:
+            raise ApiError("DVAS_NOT_FOUND", "质量评估结果不存在", status=404)
+        return {"assessment_id": assessment_id, "assessment": assessment, "details": self.repository.get_quality_details(assessment_id)}
+
+    def _detail(self, dimension_name, dimension_code, weight, score):
+        return {
+            "detail_id": self.repository.next_id("quality_detail"),
+            "dimension_name": dimension_name,
+            "dimension_code": dimension_code,
+            "weight": weight,
+            "score": round(score, 2),
+            "evidence": f"{dimension_name}演示评分由 BE-04 骨架生成。",
+        }

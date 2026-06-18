@@ -3,7 +3,14 @@ from urllib.parse import urlparse
 
 from .contracts import API_PREFIX, ApiError, error_response, ok_response
 from .repository import JsonFileRepository
-from .services import DashboardService, DataIngestionService, ProjectService
+from .services import (
+    DashboardService,
+    DataIngestionService,
+    PartyService,
+    ProjectService,
+    QualityAssessmentService,
+    ResourceService,
+)
 
 
 class DvasApplication:
@@ -12,6 +19,9 @@ class DvasApplication:
         self.project_service = ProjectService(self.repository)
         self.dashboard_service = DashboardService(self.repository)
         self.ingestion_service = DataIngestionService(self.repository)
+        self.resource_service = ResourceService(self.repository)
+        self.party_service = PartyService(self.repository)
+        self.quality_service = QualityAssessmentService(self.repository)
 
     def handle(self, method, path, body=None):
         trace_id = None
@@ -66,10 +76,39 @@ class DvasApplication:
             return self.ingestion_service.validation_result(segments[1])
         if method == "GET" and segments == ["data-resources"]:
             return self.ingestion_service.list_resources()
+        if (
+            method == "PUT"
+            and len(segments) == 3
+            and segments[0] == "data-resources"
+            and segments[2] == "party-relations"
+        ):
+            return self.resource_service.bind_party_relations(segments[1], body)
         if method == "GET" and len(segments) == 2 and segments[0] == "data-resources":
             return self.ingestion_service.resource_detail(segments[1])
         if method == "GET" and segments == ["parties"]:
             return self.ingestion_service.list_parties()
+        if method == "POST" and segments == ["parties"]:
+            return self.party_service.create_party(body)
+        if method == "PUT" and len(segments) == 2 and segments[0] == "parties":
+            return self.party_service.update_party(segments[1], body)
+        if (
+            method == "PATCH"
+            and len(segments) == 3
+            and segments[0] == "parties"
+            and segments[2] == "status"
+        ):
+            return self.party_service.set_status(segments[1], body)
+        if method == "POST" and segments == ["quality-assessments", "run"]:
+            return self.quality_service.run(body)
+        if method == "GET" and segments == ["quality-assessments", "latest"]:
+            return self.quality_service.latest()
+        if (
+            method == "GET"
+            and len(segments) == 3
+            and segments[0] == "quality-assessments"
+            and segments[2] == "details"
+        ):
+            return self.quality_service.details(segments[1])
         raise ApiError("DVAS_NOT_FOUND", "接口不存在", status=404)
 
     def _normalize_path(self, path):
@@ -99,4 +138,6 @@ class DvasApplication:
             return 422
         if code == "DVAS_PRECONDITION_NOT_MET":
             return 409
+        if code == "DVAS_FACTOR_INVALID":
+            return 422
         return 400

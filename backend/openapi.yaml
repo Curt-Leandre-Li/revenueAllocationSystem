@@ -1,11 +1,11 @@
 openapi: 3.1.0
 info:
   title: DVAS P0 Local API
-  version: 0.1.0
+  version: 0.2.0
   description: >
-    BE-00/BE-01/BE-02 local demo API contract. Results are simulation references
-    only and are not legal settlement, statutory settlement, payment
-    instructions, contract performance, or authority approval.
+    BE-00 through BE-04 local demo API contract. Results are simulation
+    references only and are not legal settlement, statutory settlement,
+    payment instructions, contract performance, or authority approval.
 servers:
   - url: http://127.0.0.1:8000/api/v1
 paths:
@@ -111,12 +111,125 @@ paths:
       responses:
         "200":
           description: DataResource.
+  /data-resources/{resource_id}/party-relations:
+    put:
+      summary: Bind data resource to source-party relations
+      parameters:
+        - name: resource_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourcePartyRelationRequest"
+      responses:
+        "200":
+          description: Updated DataResource with party_relations.
+        "404":
+          description: Resource or party not found.
+        "422":
+          description: Invalid split ratio or missing relation fields.
   /parties:
     get:
       summary: List parties available after ingestion
       responses:
         "200":
           description: Paged party list.
+    post:
+      summary: Create a participant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartyWriteRequest"
+      responses:
+        "200":
+          description: Created Party.
+        "422":
+          description: Missing or invalid party fields.
+  /parties/{party_id}:
+    put:
+      summary: Update a participant
+      parameters:
+        - name: party_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartyWriteRequest"
+      responses:
+        "200":
+          description: Updated Party.
+        "404":
+          description: Party not found.
+        "422":
+          description: Duplicate or invalid party fields.
+  /parties/{party_id}/status:
+    patch:
+      summary: Enable or disable a participant
+      parameters:
+        - name: party_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartyStatusRequest"
+      responses:
+        "200":
+          description: Updated Party status.
+        "409":
+          description: Cannot disable the only enabled data provider.
+  /quality-assessments/run:
+    post:
+      summary: Run BE-04 quality assessment skeleton
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QualityRunRequest"
+      responses:
+        "200":
+          description: Quality assessment, detail rows, result snapshot, and project status update.
+        "409":
+          description: Data ingestion precondition not satisfied.
+  /quality-assessments/latest:
+    get:
+      summary: Get latest quality assessment
+      responses:
+        "200":
+          description: Latest QualityAssessment.
+        "404":
+          description: No quality assessment exists.
+  /quality-assessments/{assessment_id}/details:
+    get:
+      summary: Get quality assessment details
+      parameters:
+        - name: assessment_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: QualityAssessment plus detail rows.
+        "404":
+          description: Quality assessment not found.
 components:
   schemas:
     StandardResponse:
@@ -145,6 +258,7 @@ components:
             - DVAS_INPUT_FORMAT_ERROR
             - DVAS_REQUIRED_FIELD_MISSING
             - DVAS_PRECONDITION_NOT_MET
+            - DVAS_FACTOR_INVALID
             - DVAS_NOT_FOUND
         message:
           type: string
@@ -196,3 +310,51 @@ components:
                 type: string
               include_in_md_dshap:
                 type: boolean
+    ResourcePartyRelationRequest:
+      type: object
+      required: [relations]
+      properties:
+        relations:
+          type: array
+          items:
+            type: object
+            required: [party_id]
+            properties:
+              party_id:
+                type: string
+              split_ratio:
+                type: number
+                minimum: 0
+                maximum: 1
+              is_primary_provider:
+                type: boolean
+    PartyWriteRequest:
+      type: object
+      required: [party_name]
+      properties:
+        party_name:
+          type: string
+        party_type:
+          type: string
+        include_in_md_dshap:
+          type: boolean
+        credit_code:
+          type: string
+        contact_name:
+          type: string
+        description:
+          type: string
+    PartyStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ENABLED, DISABLED]
+        reason:
+          type: string
+    QualityRunRequest:
+      type: object
+      properties:
+        package_id:
+          type: string

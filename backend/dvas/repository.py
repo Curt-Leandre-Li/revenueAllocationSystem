@@ -26,6 +26,9 @@ def initial_state():
         "validation_results": {},
         "data_resources": {},
         "parties": {},
+        "quality_assessments": {},
+        "quality_details": {},
+        "snapshots": {},
         "audit_logs": {},
     }
 
@@ -33,6 +36,9 @@ def initial_state():
 class InMemoryRepository:
     def __init__(self, state=None):
         self.state = copy.deepcopy(state) if state is not None else initial_state()
+        self.state.setdefault("quality_assessments", {})
+        self.state.setdefault("quality_details", {})
+        self.state.setdefault("snapshots", {})
 
     def next_id(self, prefix):
         current = self.state["counters"].get(prefix, 0) + 1
@@ -73,6 +79,15 @@ class InMemoryRepository:
         snapshot = self.state["input_snapshots"].get(snapshot_id)
         return copy.deepcopy(snapshot) if snapshot else None
 
+    def put_snapshot(self, snapshot):
+        self.state["snapshots"][snapshot["snapshot_id"]] = copy.deepcopy(snapshot)
+        self.save()
+        return copy.deepcopy(snapshot)
+
+    def get_snapshot(self, snapshot_id):
+        snapshot = self.state["snapshots"].get(snapshot_id)
+        return copy.deepcopy(snapshot) if snapshot else None
+
     def put_validation_result(self, validation_result):
         self.state["validation_results"][validation_result["package_id"]] = copy.deepcopy(
             validation_result
@@ -104,11 +119,34 @@ class InMemoryRepository:
         self.save()
         return copy.deepcopy(party)
 
+    def get_party(self, party_id):
+        party = self.state["parties"].get(party_id)
+        return copy.deepcopy(party) if party else None
+
     def list_parties(self):
         return sorted(
             [copy.deepcopy(item) for item in self.state["parties"].values()],
             key=lambda item: item["party_id"],
         )
+
+    def put_quality_assessment(self, assessment, details):
+        self.state["quality_assessments"][assessment["assessment_id"]] = copy.deepcopy(assessment)
+        self.state["quality_details"][assessment["assessment_id"]] = copy.deepcopy(details)
+        self.save()
+        return copy.deepcopy(assessment)
+
+    def get_quality_assessment(self, assessment_id):
+        assessment = self.state["quality_assessments"].get(assessment_id)
+        return copy.deepcopy(assessment) if assessment else None
+
+    def list_quality_assessments(self):
+        return sorted(
+            [copy.deepcopy(item) for item in self.state["quality_assessments"].values()],
+            key=lambda item: item["created_at"],
+        )
+
+    def get_quality_details(self, assessment_id):
+        return copy.deepcopy(self.state["quality_details"].get(assessment_id, []))
 
     def put_audit_log(self, audit_log):
         self.state["audit_logs"][audit_log["log_id"]] = copy.deepcopy(audit_log)

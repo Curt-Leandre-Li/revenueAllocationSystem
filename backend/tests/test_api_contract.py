@@ -1,5 +1,6 @@
 import json
 import unittest
+from pathlib import Path
 
 from backend.dvas.app import DvasApplication
 from backend.dvas.repository import InMemoryRepository
@@ -165,7 +166,9 @@ class DvasApiContractTests(unittest.TestCase):
             "/dashboard/preconditions",
             "/data-packages",
             "/data-resources",
+            "/data-resources/resource_000001/party-relations",
             "/parties",
+            "/quality-assessments/latest",
         ]
 
         for path in public_paths:
@@ -173,6 +176,21 @@ class DvasApiContractTests(unittest.TestCase):
                 response = self.request("GET", path)
                 self.assertFalse(response["success"])
                 self.assertEqual("DVAS_NOT_FOUND", response["code"])
+
+    def test_openapi_uses_api_v1_server_base_and_relative_paths(self):
+        openapi_text = Path("backend/openapi.yaml").read_text(encoding="utf-8")
+        path_lines = [
+            line.strip().rstrip(":")
+            for line in openapi_text.splitlines()
+            if line.startswith("  /")
+        ]
+
+        self.assertIn("url: http://127.0.0.1:8000/api/v1", openapi_text)
+        self.assertTrue(path_lines)
+        self.assertFalse(any(path.startswith("/api/v1") for path in path_lines))
+        self.assertIn("/dashboard/preconditions", path_lines)
+        self.assertIn("/data-resources/{resource_id}/party-relations", path_lines)
+        self.assertIn("/quality-assessments/{assessment_id}/details", path_lines)
 
     def test_quick_run_skeleton_returns_explainable_precondition_failure(self):
         response = self.request("POST", "/api/v1/dashboard/quick-run")
@@ -221,6 +239,142 @@ class DvasApiContractTests(unittest.TestCase):
 
             self.assertEqual("INGESTED", data["project_status"])
             self.assertEqual(1, packages["total"])
+
+    def test_bind_resource_party_relation_updates_resource_and_audit_log(self):
+        initialized = self.assert_ok(
+            self.request("POST", "/api/v1/demo-cases/lung_screening_demo/initialize")
+        )
+        resource_id = initialized["resources"][0]["resource_id"]
+        party_id = initialized["parties"][1]["party_id"]
+
+        data = self.assert_ok(
+            self.request(
+                "PUT",
+                f"/api/v1/data-resources/{resource_id}/party-relations",
+                {
+                    "relations": [
+                        {
+                            "party_id": party_id,
+                            "split_ratio": 1,
+                            "is_primary_provider": True,
+                        }
+                    ]
+                },
+            )
+        )
+
+        self.assertEqual(resource_id, data["resource_id"])
+        self.assertEqual(party_id, data["party_id"])
+        self.assertEqual("示例数据源主体B", data["provider_party_name"])
+        self.assertEqual(
+            [{"party_id": party_id, "split_ratio": 1.0, "is_primary_provider": True}],
+            data["party_relations"],
+        )
+
+    def test_bind_resource_party_relation_rejects_invalid_split_ratio(self):
+        initialized = self.assert_ok(
+            self.request("POST", "/api/v1/demo-cases/lung_screening_demo/initialize")
+        )
+        resource_id = initialized["resources"][0]["resource_id"]
+        party_id = initialized["parties"][0]["party_id"]
+
+        response = self.request(
+            "PUT",
+            f"/api/v1/data-resources/{resource_id}/party-relations",
+            {"relations": [{"party_id": party_id, "split_ratio": "bad"}]},
+        )
+
+        self.assertFalse(response["success"])
+        self.assertEqual("DVAS_FACTOR_INVALID", response["code"])
+        self.assertEqual(
+            [
+                {
+                    "field": "relations[0].split_ratio",
+                    "reason": "split_ratio 必须是 0 到 1 之间的数字",
+                }
+            ],
+            response["field_errors"],
+        )
+
+    def test_party_create_update_and_disable_are_versioned_write_operations(self):
+        self.request("POST", "/api/v1/demo-cases/lung_screening_demo/initialize")
+
+        created = self.assert_ok(
+            self.request(
+                "POST",
+                "/api/v1/parties",
+                {
+                    "party_name": "新增运营主体",
+                    "party_type": "OPERATOR",
+                    "description": "合同优先分配主体",
+                },
+            )
+        )
+        self.assertEqual("OPERATOR", created["party_type"])
+        self.assertFalse(created["include_in_md_dshap"])
+        self.assertEqual("ENABLED", created["status"])
+
+        updated = self.assert_ok(
+            self.request(
+                "PUT",
+                f"/api/v1/parties/{created['party_id']}",
+                {
+                    "party_name": "新增运营主体-已更新",
+                    "party_type": "TECH_SERVICE",
+                    "include_in_md_dshap": False,
+                },
+            )
+        )
+        self.assertEqual("新增运营主体-已更新", updated["party_name"])
+        self.assertEqual("TECH_SERVICE", updated["party_type"])
+
+        disabled = self.assert_ok(
+            self.request(
+                "PATCH",
+                f"/api/v1/parties/{created['party_id']}/status",
+                {"status": "DISABLED", "reason": "P0 联调停用"},
+            )
+        )
+        self.assertEqual("DISABLED", disabled["status"])
+
+    def test_quality_assessment_run_latest_and_details_progress_project_to_assessed(self):
+        initialized = self.assert_ok(
+            self.request("POST", "/api/v1/demo-cases/lung_screening_demo/initialize")
+        )
+        package_id = initialized["package"]["package_id"]
+
+        assessment = self.assert_ok(
+            self.request("POST", "/api/v1/quality-assessments/run", {"package_id": package_id})
+        )
+
+        self.assertEqual("ASSESSED", assessment["project_status"])
+        self.assertTrue(assessment["assessment"]["assessment_id"].startswith("assessment_"))
+        self.assertGreater(assessment["assessment"]["quality_score"], 0)
+        self.assertEqual("DVAS_QUALITY_SKELETON_V0", assessment["assessment"]["algorithm_version"])
+        self.assertTrue(assessment["assessment"]["output_snapshot_id"].startswith("snapshot_"))
+        self.assertGreaterEqual(len(assessment["details"]), 3)
+
+        latest = self.assert_ok(self.request("GET", "/api/v1/quality-assessments/latest"))
+        self.assertEqual(assessment["assessment"]["assessment_id"], latest["assessment_id"])
+
+        details = self.assert_ok(
+            self.request(
+                "GET",
+                f"/api/v1/quality-assessments/{assessment['assessment']['assessment_id']}/details",
+            )
+        )
+        self.assertEqual(assessment["assessment"]["assessment_id"], details["assessment_id"])
+        self.assertEqual(assessment["details"], details["details"])
+
+    def test_quality_assessment_requires_ingested_package(self):
+        response = self.request("POST", "/api/v1/quality-assessments/run", {})
+
+        self.assertFalse(response["success"])
+        self.assertEqual("DVAS_PRECONDITION_NOT_MET", response["code"])
+        self.assertEqual(
+            [{"field": "package_id", "reason": "请先完成数据接入"}],
+            response["field_errors"],
+        )
 
 
 if __name__ == "__main__":
