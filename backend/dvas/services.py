@@ -68,6 +68,7 @@ class DashboardService:
         metering_count = len(self.repository.list_shuyuan_meterings())
         utility_count = len(self.repository.list_utility_records())
         weight_count = len(self.repository.list_md_dshap_tasks())
+        allocation_count = len(self.repository.list_allocation_scenarios())
         preconditions = self.preconditions()
         return {
             **project,
@@ -78,6 +79,7 @@ class DashboardService:
                 "metering_count": metering_count,
                 "utility_count": utility_count,
                 "weight_count": weight_count,
+                "allocation_count": allocation_count,
                 "audit_log_count": len(self.repository.list_audit_logs()),
             },
             "risk_notices": [
@@ -105,6 +107,11 @@ class DashboardService:
         has_contribution_records = bool(contribution_records)
         has_utility_result = bool(self.repository.list_utility_records())
         has_mds_weight_result = bool(self.repository.list_md_dshap_tasks())
+        has_allocation_scenario = bool(self.repository.list_allocation_scenarios())
+        has_allocation_result = bool(self.repository.list_allocation_results())
+        has_confirmed_allocation = any(
+            item["status"] == "CONFIRMED" for item in self.repository.list_allocation_scenarios()
+        )
         mds_ready, mds_reason = self._mds_ready_reason(project)
         preconditions = [
             {
@@ -141,6 +148,21 @@ class DashboardService:
                 "code": "HAS_MDS_WEIGHT_RESULT",
                 "passed": has_mds_weight_result,
                 "message": "已完成 MD-DShap 权重计算" if has_mds_weight_result else "待完成 MD-DShap 权重计算",
+            },
+            {
+                "code": "HAS_ALLOCATION_SCENARIO",
+                "passed": has_allocation_scenario,
+                "message": "已创建收益分配模拟方案" if has_allocation_scenario else "待创建收益分配模拟方案",
+            },
+            {
+                "code": "HAS_ALLOCATION_RESULT",
+                "passed": has_allocation_result,
+                "message": "已完成收益分配模拟" if has_allocation_result else "待完成收益分配模拟",
+            },
+            {
+                "code": "HAS_CONFIRMED_ALLOCATION",
+                "passed": has_confirmed_allocation,
+                "message": "已锁定模拟参考方案" if has_confirmed_allocation else "待锁定模拟参考方案",
             },
         ]
         available_actions = ["SYS-002", "DATA-002", "DATA-003"]
@@ -225,7 +247,11 @@ class DashboardService:
         if project_status == "UTILITY_CALCULATED":
             return {"label": "进入 MD-DShap 权重计算", "button_code": "MDS-011"}
         if project_status == "WEIGHT_CALCULATED":
-            return {"label": "查看或重算 MD-DShap 权重", "button_code": "MDS-011"}
+            return {"label": "创建收益分配模拟方案", "button_code": "ALLOC-001"}
+        if project_status == "ALLOCATED":
+            return {"label": "锁定模拟参考方案", "button_code": "ALLOC-009"}
+        if project_status == "CONFIRMED":
+            return {"label": "查看已确认模拟参考方案", "button_code": "ALLOC-010"}
         return {"label": "查看当前状态", "button_code": "SYS-001"}
 
     def _gate_action(self, available_actions, disabled_actions, button_code, passed, reason):
@@ -1694,3 +1720,539 @@ class MdDshapService:
             "MD-DShap 参数不合法",
             field_errors=[{"field": field, "reason": f"{field} 必须是布尔值"}],
         )
+
+
+class ContractConstraintService:
+    SUPPORTED_TYPES = {
+        "MIN_AMOUNT",
+        "MAX_AMOUNT",
+        "CAP_AMOUNT",
+        "FLOOR_AMOUNT",
+        "FIXED_RATIO",
+        "PRIORITY_ALLOCATION",
+    }
+    RATIO_TYPES = {"FIXED_RATIO"}
+
+    def __init__(self, repository):
+        self.repository = repository
+
+    def list(self):
+        return table_page(self.repository.list_contract_constraints())
+
+    def create(self, payload):
+        now = utc_now()
+        constraint = self._build_constraint(
+            payload,
+            constraint_id=self.repository.next_id("constraint"),
+            version_no=1,
+            now=now,
+        )
+        self.repository.put_contract_constraint(constraint)
+        write_audit(
+            self.repository,
+            module_code="CONS",
+            menu_code="NAV_ALLOC_CONSTRAINT",
+            operation_type="CREATE_CONSTRAINT",
+            object_type="contract_constraint",
+            object_id=constraint["constraint_id"],
+            status="SUCCESS",
+            after_value_json=constraint,
+        )
+        return constraint
+
+    def update(self, constraint_id, payload):
+        existing = self.repository.get_contract_constraint(constraint_id)
+        if not existing:
+            raise ApiError("DVAS_NOT_FOUND", "合同约束不存在", status=404)
+        now = utc_now()
+        merged = {**existing, **payload}
+        updated = self._build_constraint(
+            merged,
+            constraint_id=constraint_id,
+            version_no=int(existing["version_no"]) + 1,
+            now=now,
+            created_at=existing["created_at"],
+        )
+        self.repository.put_contract_constraint(updated)
+        write_audit(
+            self.repository,
+            module_code="CONS",
+            menu_code="NAV_ALLOC_CONSTRAINT",
+            operation_type="UPDATE_CONSTRAINT",
+            object_type="contract_constraint",
+            object_id=constraint_id,
+            status="SUCCESS",
+            before_value_json=existing,
+            after_value_json=updated,
+        )
+        return updated
+
+    def set_status(self, constraint_id, payload):
+        existing = self.repository.get_contract_constraint(constraint_id)
+        if not existing:
+            raise ApiError("DVAS_NOT_FOUND", "合同约束不存在", status=404)
+        status = payload.get("status")
+        if status not in {"ACTIVE", "DISABLED"}:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "合同约束状态不合法",
+                field_errors=[{"field": "status", "reason": "status 必须为 ACTIVE 或 DISABLED"}],
+            )
+        updated = {
+            **existing,
+            "status": status,
+            "description": payload.get("description", existing.get("description")),
+            "version_no": int(existing["version_no"]) + 1,
+            "updated_at": utc_now(),
+        }
+        self.repository.put_contract_constraint(updated)
+        write_audit(
+            self.repository,
+            module_code="CONS",
+            menu_code="NAV_ALLOC_CONSTRAINT",
+            operation_type="SET_CONSTRAINT_STATUS",
+            object_type="contract_constraint",
+            object_id=constraint_id,
+            status="SUCCESS",
+            before_value_json=existing,
+            after_value_json=updated,
+        )
+        return updated
+
+    def _build_constraint(self, payload, constraint_id, version_no, now, created_at=None):
+        party_id = payload.get("party_id")
+        party = self.repository.get_party(party_id) if party_id else None
+        if not party:
+            raise ApiError(
+                "DVAS_NOT_FOUND",
+                "参与方不存在",
+                status=404,
+                field_errors=[{"field": "party_id", "reason": "参与方不存在"}],
+            )
+        constraint_type = payload.get("constraint_type", "MIN_AMOUNT")
+        if constraint_type not in self.SUPPORTED_TYPES:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "合同约束类型不支持",
+                field_errors=[{"field": "constraint_type", "reason": "不支持的合同约束类型"}],
+            )
+        value_type = payload.get(
+            "value_type",
+            "RATIO" if constraint_type in self.RATIO_TYPES else "AMOUNT",
+        )
+        value = self._constraint_value(payload.get("constraint_value", 0), value_type)
+        return {
+            "constraint_id": constraint_id,
+            "project_id": self.repository.get_project()["project_id"],
+            "party_id": party_id,
+            "party_name": party["party_name"],
+            "constraint_name": payload.get("constraint_name") or constraint_type,
+            "constraint_type": constraint_type,
+            "value_type": value_type,
+            "constraint_value": value,
+            "priority": int(payload.get("priority", 100)),
+            "status": payload.get("status", "ACTIVE"),
+            "description": payload.get("description"),
+            "version_no": version_no,
+            "created_at": created_at or now,
+            "updated_at": now,
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+        }
+
+    def _constraint_value(self, raw_value, value_type):
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "合同约束值不合法",
+                field_errors=[{"field": "constraint_value", "reason": "constraint_value 必须是数字"}],
+            ) from exc
+        if value_type == "RATIO":
+            if value < 0 or value > 1:
+                raise ApiError(
+                    "DVAS_FACTOR_INVALID",
+                    "合同约束值不合法",
+                    field_errors=[{"field": "constraint_value", "reason": "比例类约束值必须在 0 到 1 之间"}],
+                )
+            return round(value, 6)
+        if value < 0:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "合同约束值不合法",
+                field_errors=[{"field": "constraint_value", "reason": "金额类约束值必须大于等于 0"}],
+            )
+        return round(value, 2)
+
+
+class AllocationService:
+    def __init__(self, repository):
+        self.repository = repository
+
+    def create(self, payload):
+        project = self.repository.get_project()
+        task = self._resolve_weight_task(payload.get("weight_task_id"), project)
+        results = self._weight_results(task["task_id"])
+        total_revenue = self._amount(payload, "total_revenue", required=True)
+        priority_amount = self._amount(payload, "priority_allocation_amount", default=0)
+        if priority_amount > total_revenue:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "优先分配金额不能超过总收益",
+                field_errors=[{"field": "priority_allocation_amount", "reason": "优先分配金额不能超过总收益"}],
+            )
+        now = utc_now()
+        allocation = {
+            "allocation_id": self.repository.next_id("allocation"),
+            "project_id": project["project_id"],
+            "total_revenue": total_revenue,
+            "currency": payload.get("currency", "CNY"),
+            "priority_allocation_amount": priority_amount,
+            "data_provider_revenue_pool": round(total_revenue - priority_amount, 2),
+            "allocation_mode": payload.get("allocation_mode", "MD_DSHAP_WEIGHT_WITH_CONSTRAINTS"),
+            "weight_task_id": task["task_id"],
+            "status": "DRAFT",
+            "locked_by": None,
+            "locked_at": None,
+            "version_no": 0,
+            "created_by": LOCAL_OPERATOR,
+            "created_at": now,
+            "updated_at": now,
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+        }
+        self.repository.put_allocation_scenario(allocation)
+        write_audit(
+            self.repository,
+            module_code="ALLOC",
+            menu_code="NAV_ALLOC_SIMULATION",
+            operation_type="CREATE_ALLOCATION_SCENARIO",
+            object_type="allocation_scenario",
+            object_id=allocation["allocation_id"],
+            status="SUCCESS",
+            after_value_json={"allocation": allocation, "weights": results},
+        )
+        return allocation
+
+    def simulate(self, allocation_id):
+        allocation = self._allocation(allocation_id)
+        task = self._resolve_weight_task(allocation["weight_task_id"], self.repository.get_project())
+        weight_results = self._weight_results(task["task_id"])
+        pool = float(allocation["data_provider_revenue_pool"])
+        constraints = [
+            item
+            for item in self.repository.list_contract_constraints()
+            if item["status"] == "ACTIVE"
+        ]
+        next_version = int(allocation["version_no"]) + 1
+        amounts = {
+            result["party_id"]: pool * float(result["normalized_weight"])
+            for result in weight_results
+        }
+        adjustment_reasons = {result["party_id"]: [] for result in weight_results}
+        traces, locked_upper, locked_lower, locked_exact = self._apply_constraints(
+            allocation_id,
+            next_version,
+            amounts,
+            constraints,
+            pool,
+            adjustment_reasons,
+        )
+        self._rebalance(amounts, pool, weight_results, locked_upper, locked_lower, locked_exact)
+        rounded_amounts, rounding_delta_by_party = self._round_amounts(
+            amounts,
+            pool,
+            weight_results,
+            locked_upper,
+            locked_lower,
+            locked_exact,
+        )
+        now = utc_now()
+        result_snapshot_id = self.repository.next_id("snapshot")
+        results = []
+        for weight in weight_results:
+            party_id = weight["party_id"]
+            reason = "；".join(adjustment_reasons[party_id]) or "无约束调整"
+            rounding_delta = rounding_delta_by_party.get(party_id, 0.0)
+            if rounding_delta:
+                reason = f"{reason}；四舍五入差额调整"
+            results.append(
+                {
+                    "result_id": self.repository.next_id("allocation_result"),
+                    "allocation_id": allocation_id,
+                    "party_id": party_id,
+                    "party_name": weight["party_name"],
+                    "raw_weight": round(float(weight["participant_weight"]), 6),
+                    "normalized_weight": round(float(weight["normalized_weight"]), 6),
+                    "pre_constraint_amount": round(pool * float(weight["normalized_weight"]), 2),
+                    "post_constraint_amount": rounded_amounts[party_id],
+                    "constraint_adjustment_reason": reason,
+                    "rounding_delta": rounding_delta,
+                    "version_no": next_version,
+                    "result_snapshot_id": result_snapshot_id,
+                    "created_at": now,
+                    "simulation_disclaimer": SIMULATION_DISCLAIMER,
+                }
+            )
+        snapshot = self._snapshot(
+            result_snapshot_id,
+            "RESULT",
+            {"allocation": allocation, "results": results, "constraint_traces": traces},
+            now,
+        )
+        updated_allocation = {
+            **allocation,
+            "status": "ALLOCATED",
+            "version_no": next_version,
+            "updated_at": now,
+            "result_snapshot_id": result_snapshot_id,
+        }
+        self.repository.put_snapshot(snapshot)
+        self.repository.put_allocation_scenario(updated_allocation)
+        self.repository.put_allocation_results(results, traces)
+        updated_project = self.repository.update_project(
+            project_status="ALLOCATED",
+            current_allocation_id=allocation_id,
+        )
+        write_audit(
+            self.repository,
+            module_code="ALLOC",
+            menu_code="NAV_ALLOC_SIMULATION",
+            operation_type="SIMULATE_ALLOCATION",
+            object_type="allocation_scenario",
+            object_id=allocation_id,
+            status="SUCCESS",
+            result_snapshot_id=result_snapshot_id,
+            after_value_json={"allocation": updated_allocation, "results": results, "constraint_traces": traces},
+        )
+        return {
+            "project_id": updated_project["project_id"],
+            "project_status": updated_project["project_status"],
+            "allocation": updated_allocation,
+            "results": results,
+            "constraint_traces": traces,
+        }
+
+    def lock(self, allocation_id):
+        allocation = self._allocation(allocation_id)
+        if allocation["status"] != "ALLOCATED":
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "只能锁定已完成模拟的参考方案",
+                field_errors=[{"field": "allocation_id", "reason": "只能锁定已完成模拟的参考方案"}],
+            )
+        updated = {
+            **allocation,
+            "status": "CONFIRMED",
+            "locked_by": LOCAL_OPERATOR,
+            "locked_at": utc_now(),
+            "updated_at": utc_now(),
+        }
+        self.repository.put_allocation_scenario(updated)
+        updated_project = self.repository.update_project(project_status="CONFIRMED")
+        write_audit(
+            self.repository,
+            module_code="ALLOC",
+            menu_code="NAV_ALLOC_SIMULATION",
+            operation_type="LOCK_ALLOCATION",
+            object_type="allocation_scenario",
+            object_id=allocation_id,
+            status="SUCCESS",
+            before_value_json=allocation,
+            after_value_json=updated,
+        )
+        return {
+            "project_id": updated_project["project_id"],
+            "project_status": updated_project["project_status"],
+            "allocation": updated,
+            "message": "已锁定模拟参考方案；不构成法律结算或付款指令。",
+        }
+
+    def results(self, allocation_id):
+        self._allocation(allocation_id)
+        return table_page(self.repository.list_allocation_results(allocation_id))
+
+    def _allocation(self, allocation_id):
+        allocation = self.repository.get_allocation_scenario(allocation_id)
+        if not allocation:
+            raise ApiError("DVAS_NOT_FOUND", "收益分配模拟方案不存在", status=404)
+        return allocation
+
+    def _resolve_weight_task(self, weight_task_id, project):
+        if project["project_status"] not in {"WEIGHT_CALCULATED", "ALLOCATED", "CONFIRMED"}:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "请先完成 MD-DShap 权重计算",
+                field_errors=[{"field": "weight_task_id", "reason": "请先完成 MD-DShap 权重计算"}],
+            )
+        task = self.repository.get_md_dshap_task(weight_task_id) if weight_task_id else None
+        if not task:
+            tasks = self.repository.list_md_dshap_tasks()
+            task = tasks[-1] if tasks else None
+        if not task:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "请先完成 MD-DShap 权重计算",
+                field_errors=[{"field": "weight_task_id", "reason": "请先完成 MD-DShap 权重计算"}],
+            )
+        return task
+
+    def _weight_results(self, task_id):
+        results = self.repository.list_md_dshap_results(task_id)
+        if not results:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "MD-DShap 权重结果不存在",
+                field_errors=[{"field": "weight_task_id", "reason": "MD-DShap 权重结果不存在"}],
+            )
+        total_weight = round(sum(float(item["normalized_weight"]) for item in results), 6)
+        if abs(total_weight - 1.0) > 0.000001:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "MD-DShap 归一化权重不等于 1",
+                field_errors=[{"field": "normalized_weight", "reason": "归一化权重之和必须为 1.000000"}],
+            )
+        return results
+
+    def _apply_constraints(
+        self,
+        allocation_id,
+        version_no,
+        amounts,
+        constraints,
+        pool,
+        adjustment_reasons,
+    ):
+        traces = []
+        locked_upper = set()
+        locked_lower = set()
+        locked_exact = set()
+        for constraint in constraints:
+            party_id = constraint["party_id"]
+            if party_id not in amounts:
+                continue
+            before = amounts[party_id]
+            after = before
+            value = float(constraint["constraint_value"])
+            constraint_type = constraint["constraint_type"]
+            if constraint_type in {"MAX_AMOUNT", "CAP_AMOUNT"}:
+                after = min(before, value)
+                locked_upper.add(party_id)
+            elif constraint_type in {"MIN_AMOUNT", "FLOOR_AMOUNT"}:
+                after = max(before, value)
+                locked_lower.add(party_id)
+            elif constraint_type == "FIXED_RATIO":
+                after = pool * value
+                locked_exact.add(party_id)
+            elif constraint_type == "PRIORITY_ALLOCATION":
+                after = before + value
+                locked_lower.add(party_id)
+            if round(after - before, 2) == 0:
+                continue
+            amounts[party_id] = after
+            adjustment_reasons[party_id].append(f"应用约束 {constraint['constraint_name']}({constraint_type})")
+            traces.append(
+                {
+                    "trace_id": self.repository.next_id("constraint_trace"),
+                    "allocation_id": allocation_id,
+                    "constraint_id": constraint["constraint_id"],
+                    "party_id": party_id,
+                    "before_amount": round(before, 2),
+                    "after_amount": round(after, 2),
+                    "adjustment_amount": round(after - before, 2),
+                    "reason": f"{constraint_type}: {constraint['constraint_name']}",
+                    "version_no": version_no,
+                    "created_at": utc_now(),
+                }
+            )
+        return traces, locked_upper, locked_lower, locked_exact
+
+    def _rebalance(self, amounts, pool, weight_results, locked_upper, locked_lower, locked_exact):
+        delta = round(pool - sum(amounts.values()), 6)
+        if abs(delta) < 0.000001:
+            return
+        if delta > 0:
+            candidates = [
+                item for item in weight_results if item["party_id"] not in locked_upper | locked_exact
+            ]
+        else:
+            candidates = [
+                item for item in weight_results if item["party_id"] not in locked_lower | locked_exact
+            ]
+        if not candidates:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "合同约束组合不可行",
+                field_errors=[{"field": "contract_constraints", "reason": "合同约束组合不可行"}],
+            )
+        target = max(candidates, key=lambda item: float(item["normalized_weight"]))
+        target_party_id = target["party_id"]
+        if amounts[target_party_id] + delta < -0.000001:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "合同约束组合不可行",
+                field_errors=[{"field": "contract_constraints", "reason": "合同约束组合不可行"}],
+            )
+        amounts[target_party_id] = amounts[target_party_id] + delta
+
+    def _round_amounts(
+        self,
+        amounts,
+        pool,
+        weight_results,
+        locked_upper,
+        locked_lower,
+        locked_exact,
+    ):
+        rounded = {party_id: round(amount, 2) for party_id, amount in amounts.items()}
+        delta = round(pool - sum(rounded.values()), 2)
+        rounding_delta_by_party = {party_id: 0.0 for party_id in rounded}
+        if delta:
+            if delta > 0:
+                candidates = [
+                    item for item in weight_results if item["party_id"] not in locked_upper | locked_exact
+                ]
+            else:
+                candidates = [
+                    item for item in weight_results if item["party_id"] not in locked_lower | locked_exact
+                ]
+            if not candidates:
+                candidates = weight_results
+            target = max(candidates, key=lambda item: float(item["normalized_weight"]))
+            target_party_id = target["party_id"]
+            rounded[target_party_id] = round(rounded[target_party_id] + delta, 2)
+            rounding_delta_by_party[target_party_id] = delta
+        return rounded, rounding_delta_by_party
+
+    def _amount(self, payload, field, default=None, required=False):
+        if required and field not in payload:
+            raise ApiError(
+                "DVAS_REQUIRED_FIELD_MISSING",
+                "收益分配参数缺失",
+                field_errors=[{"field": field, "reason": f"{field} 为必填字段"}],
+            )
+        try:
+            value = float(payload.get(field, default))
+        except (TypeError, ValueError) as exc:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "收益分配参数不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须是数字"}],
+            ) from exc
+        if value < 0:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "收益分配参数不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须大于等于 0"}],
+            )
+        return round(value, 2)
+
+    def _snapshot(self, snapshot_id, snapshot_type, content, now):
+        return {
+            "snapshot_id": snapshot_id,
+            "project_id": self.repository.get_project()["project_id"],
+            "snapshot_type": snapshot_type,
+            "content_json": copy.deepcopy(content),
+            "checksum": stable_checksum(content),
+            "created_by": LOCAL_OPERATOR,
+            "created_at": now,
+        }

@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
   title: DVAS P0 Local API
-  version: 0.4.0
+  version: 0.5.0
   description: >
-    BE-00 through BE-06 local demo API contract. Results are simulation
+    BE-00 through BE-07 local demo API contract. Results are simulation
     references only and are not legal settlement, statutory settlement,
     payment instructions, contract performance, or authority approval.
 servers:
@@ -372,6 +372,131 @@ paths:
           description: Paged marginal trace rows for the task.
         "404":
           description: MD-DShap task not found.
+  /contract-constraints:
+    get:
+      summary: List P0 contract constraints
+      responses:
+        "200":
+          description: Paged contract constraint list.
+    post:
+      summary: Create a P0 contract constraint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContractConstraintWriteRequest"
+      responses:
+        "200":
+          description: Created contract constraint.
+        "404":
+          description: Party not found.
+        "422":
+          description: Invalid amount, ratio, status, or constraint type.
+  /contract-constraints/{constraint_id}:
+    put:
+      summary: Update a P0 contract constraint
+      parameters:
+        - name: constraint_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContractConstraintWriteRequest"
+      responses:
+        "200":
+          description: Updated contract constraint with incremented version_no.
+        "404":
+          description: Constraint or party not found.
+        "422":
+          description: Invalid amount, ratio, status, or constraint type.
+  /contract-constraints/{constraint_id}/status:
+    patch:
+      summary: Enable or disable a P0 contract constraint
+      parameters:
+        - name: constraint_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContractConstraintStatusRequest"
+      responses:
+        "200":
+          description: Updated contract constraint status with incremented version_no.
+        "404":
+          description: Constraint not found.
+        "422":
+          description: Invalid status.
+  /allocation-scenarios:
+    post:
+      summary: Create a P0 allocation simulation scenario
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AllocationScenarioCreateRequest"
+      responses:
+        "200":
+          description: Created allocation scenario in DRAFT status.
+        "409":
+          description: Missing MD-DShap result or invalid revenue pool precondition.
+  /allocation-scenarios/{allocation_id}/simulate:
+    post:
+      summary: Simulate allocation with active contract constraints
+      parameters:
+        - name: allocation_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Allocation scenario, result rows, constraint trace rows, and project status.
+        "404":
+          description: Allocation scenario not found.
+        "409":
+          description: Weight or constraint precondition not satisfied.
+  /allocation-scenarios/{allocation_id}/lock:
+    post:
+      summary: Lock a simulated reference allocation result
+      parameters:
+        - name: allocation_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Confirmed simulation reference. Does not create legal settlement or payment instructions.
+        "404":
+          description: Allocation scenario not found.
+        "409":
+          description: Allocation scenario is not in ALLOCATED status.
+  /allocation-scenarios/{allocation_id}/results:
+    get:
+      summary: Get allocation result history for a scenario
+      parameters:
+        - name: allocation_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Paged allocation result rows across simulation versions.
+        "404":
+          description: Allocation scenario not found.
 components:
   schemas:
     StandardResponse:
@@ -556,3 +681,55 @@ components:
         save_marginal_detail:
           type: boolean
           default: true
+    ContractConstraintWriteRequest:
+      type: object
+      required: [party_id, constraint_type, constraint_value]
+      properties:
+        party_id:
+          type: string
+        constraint_name:
+          type: string
+        constraint_type:
+          type: string
+          enum: [MIN_AMOUNT, MAX_AMOUNT, CAP_AMOUNT, FLOOR_AMOUNT, FIXED_RATIO, PRIORITY_ALLOCATION]
+        value_type:
+          type: string
+          enum: [AMOUNT, RATIO]
+        constraint_value:
+          type: number
+        priority:
+          type: integer
+          default: 100
+        status:
+          type: string
+          enum: [ACTIVE, DISABLED]
+        description:
+          type: string
+    ContractConstraintStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ACTIVE, DISABLED]
+        description:
+          type: string
+    AllocationScenarioCreateRequest:
+      type: object
+      required: [total_revenue]
+      properties:
+        total_revenue:
+          type: number
+          minimum: 0
+        currency:
+          type: string
+          default: CNY
+        priority_allocation_amount:
+          type: number
+          minimum: 0
+          default: 0
+        allocation_mode:
+          type: string
+          default: MD_DSHAP_WEIGHT_WITH_CONSTRAINTS
+        weight_task_id:
+          type: string

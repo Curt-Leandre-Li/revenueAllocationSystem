@@ -63,6 +63,10 @@ class DvasApiContractTests(unittest.TestCase):
         self.request("POST", "/api/v1/contributions/run", {})
         return self.assert_ok(self.request("POST", "/api/v1/utilities/run", {}))
 
+    def run_demo_to_weights(self):
+        self.run_demo_to_utility()
+        return self.assert_ok(self.request("POST", "/api/v1/md-dshap/tasks", {}))
+
     def test_current_project_starts_as_draft_with_stable_envelope(self):
         data = self.assert_ok(self.request("GET", "/api/v1/projects/current"))
 
@@ -219,6 +223,9 @@ class DvasApiContractTests(unittest.TestCase):
             "/md-dshap/tasks/task_000001",
             "/md-dshap/tasks/task_000001/results",
             "/md-dshap/tasks/task_000001/marginal-traces",
+            "/contract-constraints",
+            "/allocation-scenarios",
+            "/allocation-scenarios/allocation_000001/results",
         ]
 
         for path in public_paths:
@@ -247,6 +254,13 @@ class DvasApiContractTests(unittest.TestCase):
         self.assertIn("/md-dshap/tasks/{task_id}", path_lines)
         self.assertIn("/md-dshap/tasks/{task_id}/results", path_lines)
         self.assertIn("/md-dshap/tasks/{task_id}/marginal-traces", path_lines)
+        self.assertIn("/contract-constraints", path_lines)
+        self.assertIn("/contract-constraints/{constraint_id}", path_lines)
+        self.assertIn("/contract-constraints/{constraint_id}/status", path_lines)
+        self.assertIn("/allocation-scenarios", path_lines)
+        self.assertIn("/allocation-scenarios/{allocation_id}/simulate", path_lines)
+        self.assertIn("/allocation-scenarios/{allocation_id}/lock", path_lines)
+        self.assertIn("/allocation-scenarios/{allocation_id}/results", path_lines)
 
     def test_quick_run_skeleton_returns_explainable_precondition_failure(self):
         response = self.request("POST", "/api/v1/dashboard/quick-run")
@@ -678,6 +692,233 @@ class DvasApiContractTests(unittest.TestCase):
             weighted["preconditions"],
         )
         self.assertIn("MDS-011", weighted["available_actions"])
+
+    def test_allocation_scenario_requires_md_dshap_weight_result(self):
+        self.run_demo_to_utility()
+
+        response = self.request(
+            "POST",
+            "/api/v1/allocation-scenarios",
+            {"total_revenue": 1000, "priority_allocation_amount": 0},
+        )
+
+        self.assertFalse(response["success"])
+        self.assertEqual("DVAS_PRECONDITION_NOT_MET", response["code"])
+        self.assertEqual(
+            [{"field": "weight_task_id", "reason": "请先完成 MD-DShap 权重计算"}],
+            response["field_errors"],
+        )
+
+    def test_create_allocation_scenario_after_weight_calculated(self):
+        weight = self.run_demo_to_weights()
+
+        scenario = self.assert_ok(
+            self.request(
+                "POST",
+                "/api/v1/allocation-scenarios",
+                {"total_revenue": 1000, "priority_allocation_amount": 100},
+            )
+        )
+
+        self.assertTrue(scenario["allocation_id"].startswith("allocation_"))
+        self.assertEqual(weight["task"]["task_id"], scenario["weight_task_id"])
+        self.assertEqual(1000.0, scenario["total_revenue"])
+        self.assertEqual(100.0, scenario["priority_allocation_amount"])
+        self.assertEqual(900.0, scenario["data_provider_revenue_pool"])
+        self.assertEqual("DRAFT", scenario["status"])
+
+    def test_allocation_simulation_creates_results_and_allocated_status(self):
+        self.run_demo_to_weights()
+        scenario = self.assert_ok(
+            self.request(
+                "POST",
+                "/api/v1/allocation-scenarios",
+                {"total_revenue": 1000, "priority_allocation_amount": 100},
+            )
+        )
+
+        simulated = self.assert_ok(
+            self.request("POST", f"/api/v1/allocation-scenarios/{scenario['allocation_id']}/simulate", {})
+        )
+
+        self.assertEqual("ALLOCATED", simulated["project_status"])
+        self.assertEqual("ALLOCATED", simulated["allocation"]["status"])
+        self.assertEqual(scenario["allocation_id"], simulated["allocation"]["allocation_id"])
+        self.assertGreaterEqual(len(simulated["results"]), 2)
+        self.assertEqual(
+            900.0,
+            round(sum(item["post_constraint_amount"] for item in simulated["results"]), 2),
+        )
+        project = self.assert_ok(self.request("GET", "/api/v1/projects/current"))
+        self.assertEqual(scenario["allocation_id"], project["current_allocation_id"])
+
+    def test_allocation_priority_amount_cannot_exceed_total_revenue(self):
+        self.run_demo_to_weights()
+
+        response = self.request(
+            "POST",
+            "/api/v1/allocation-scenarios",
+            {"total_revenue": 100, "priority_allocation_amount": 120},
+        )
+
+        self.assertFalse(response["success"])
+        self.assertEqual("DVAS_PRECONDITION_NOT_MET", response["code"])
+        self.assertEqual(
+            [{"field": "priority_allocation_amount", "reason": "优先分配金额不能超过总收益"}],
+            response["field_errors"],
+        )
+
+    def test_contract_constraint_validation_rejects_invalid_amount_and_ratio(self):
+        self.run_demo_to_weights()
+        party_id = self.assert_ok(self.request("GET", "/api/v1/parties"))["items"][0]["party_id"]
+
+        negative = self.request(
+            "POST",
+            "/api/v1/contract-constraints",
+            {
+                "party_id": party_id,
+                "constraint_name": "负数下限",
+                "constraint_type": "MIN_AMOUNT",
+                "value_type": "AMOUNT",
+                "constraint_value": -1,
+            },
+        )
+        invalid_ratio = self.request(
+            "POST",
+            "/api/v1/contract-constraints",
+            {
+                "party_id": party_id,
+                "constraint_name": "超额比例",
+                "constraint_type": "FIXED_RATIO",
+                "value_type": "RATIO",
+                "constraint_value": 1.2,
+            },
+        )
+
+        self.assertEqual("DVAS_FACTOR_INVALID", negative["code"])
+        self.assertEqual(
+            [{"field": "constraint_value", "reason": "金额类约束值必须大于等于 0"}],
+            negative["field_errors"],
+        )
+        self.assertEqual("DVAS_FACTOR_INVALID", invalid_ratio["code"])
+        self.assertEqual(
+            [{"field": "constraint_value", "reason": "比例类约束值必须在 0 到 1 之间"}],
+            invalid_ratio["field_errors"],
+        )
+
+    def test_disabled_constraints_do_not_affect_allocation_simulation(self):
+        self.run_demo_to_weights()
+        party_id = self.assert_ok(self.request("GET", "/api/v1/parties"))["items"][0]["party_id"]
+        constraint = self.assert_ok(
+            self.request(
+                "POST",
+                "/api/v1/contract-constraints",
+                {
+                    "party_id": party_id,
+                    "constraint_name": "停用上限",
+                    "constraint_type": "MAX_AMOUNT",
+                    "value_type": "AMOUNT",
+                    "constraint_value": 1,
+                    "status": "DISABLED",
+                },
+            )
+        )
+        scenario = self.assert_ok(
+            self.request("POST", "/api/v1/allocation-scenarios", {"total_revenue": 1000})
+        )
+
+        simulated = self.assert_ok(
+            self.request("POST", f"/api/v1/allocation-scenarios/{scenario['allocation_id']}/simulate", {})
+        )
+
+        self.assertEqual("DISABLED", constraint["status"])
+        self.assertEqual([], simulated["constraint_traces"])
+        self.assertGreater(
+            next(item for item in simulated["results"] if item["party_id"] == party_id)[
+                "post_constraint_amount"
+            ],
+            1,
+        )
+
+    def test_active_constraint_application_writes_trace_rows(self):
+        self.run_demo_to_weights()
+        parties = self.assert_ok(self.request("GET", "/api/v1/parties"))["items"]
+        target_party_id = parties[0]["party_id"]
+        self.assert_ok(
+            self.request(
+                "POST",
+                "/api/v1/contract-constraints",
+                {
+                    "party_id": target_party_id,
+                    "constraint_name": "上限测试",
+                    "constraint_type": "MAX_AMOUNT",
+                    "value_type": "AMOUNT",
+                    "constraint_value": 400,
+                    "priority": 1,
+                },
+            )
+        )
+        scenario = self.assert_ok(
+            self.request("POST", "/api/v1/allocation-scenarios", {"total_revenue": 1000})
+        )
+
+        simulated = self.assert_ok(
+            self.request("POST", f"/api/v1/allocation-scenarios/{scenario['allocation_id']}/simulate", {})
+        )
+
+        self.assertGreaterEqual(len(simulated["constraint_traces"]), 1)
+        trace = simulated["constraint_traces"][0]
+        self.assertEqual(target_party_id, trace["party_id"])
+        self.assertEqual(400.0, trace["after_amount"])
+        self.assertIn("MAX_AMOUNT", trace["reason"])
+
+    def test_lock_allocation_confirms_simulation_reference(self):
+        self.run_demo_to_weights()
+        scenario = self.assert_ok(
+            self.request("POST", "/api/v1/allocation-scenarios", {"total_revenue": 1000})
+        )
+        self.request("POST", f"/api/v1/allocation-scenarios/{scenario['allocation_id']}/simulate", {})
+
+        locked = self.assert_ok(
+            self.request("POST", f"/api/v1/allocation-scenarios/{scenario['allocation_id']}/lock", {})
+        )
+
+        self.assertEqual("CONFIRMED", locked["project_status"])
+        self.assertEqual("CONFIRMED", locked["allocation"]["status"])
+        self.assertEqual("local_operator", locked["allocation"]["locked_by"])
+        self.assertIn("模拟参考", locked["allocation"]["simulation_disclaimer"])
+
+    def test_allocation_resimulation_creates_new_result_version_without_overwrite(self):
+        self.run_demo_to_weights()
+        scenario = self.assert_ok(
+            self.request("POST", "/api/v1/allocation-scenarios", {"total_revenue": 1000})
+        )
+        first = self.assert_ok(
+            self.request("POST", f"/api/v1/allocation-scenarios/{scenario['allocation_id']}/simulate", {})
+        )
+        second = self.assert_ok(
+            self.request("POST", f"/api/v1/allocation-scenarios/{scenario['allocation_id']}/simulate", {})
+        )
+
+        all_results = self.assert_ok(
+            self.request("GET", f"/api/v1/allocation-scenarios/{scenario['allocation_id']}/results")
+        )
+
+        self.assertEqual(1, first["allocation"]["version_no"])
+        self.assertEqual(2, second["allocation"]["version_no"])
+        self.assertEqual(len(first["results"]) + len(second["results"]), all_results["total"])
+        self.assertNotEqual(first["results"][0]["result_id"], second["results"][0]["result_id"])
+
+    def test_reports_export_pdf_endpoints_not_implemented_in_be07(self):
+        for method, path in [
+            ("GET", "/api/v1/reports"),
+            ("POST", "/api/v1/reports/export"),
+            ("GET", "/api/v1/reports/report_000001/pdf"),
+        ]:
+            with self.subTest(path=path):
+                response = self.request(method, path, {})
+                self.assertFalse(response["success"])
+                self.assertEqual("DVAS_NOT_FOUND", response["code"])
 
 
 if __name__ == "__main__":

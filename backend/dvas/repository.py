@@ -18,6 +18,7 @@ def initial_state():
             "current_package_id": None,
             "current_input_snapshot_id": None,
             "current_algorithm_task_id": None,
+            "current_allocation_id": None,
             "created_at": now,
             "updated_at": now,
             "simulation_disclaimer": SIMULATION_DISCLAIMER,
@@ -38,6 +39,10 @@ def initial_state():
         "md_dshap_results": {},
         "md_dshap_marginal_traces": {},
         "algorithm_audit_snapshots": {},
+        "contract_constraints": {},
+        "allocation_scenarios": {},
+        "allocation_results": {},
+        "constraint_apply_traces": {},
         "snapshots": {},
         "audit_logs": {},
     }
@@ -57,8 +62,13 @@ class InMemoryRepository:
         self.state.setdefault("md_dshap_results", {})
         self.state.setdefault("md_dshap_marginal_traces", {})
         self.state.setdefault("algorithm_audit_snapshots", {})
+        self.state.setdefault("contract_constraints", {})
+        self.state.setdefault("allocation_scenarios", {})
+        self.state.setdefault("allocation_results", {})
+        self.state.setdefault("constraint_apply_traces", {})
         self.state.setdefault("snapshots", {})
         self.state["project"].setdefault("current_algorithm_task_id", None)
+        self.state["project"].setdefault("current_allocation_id", None)
 
     def next_id(self, prefix):
         current = self.state["counters"].get(prefix, 0) + 1
@@ -255,6 +265,56 @@ class InMemoryRepository:
         if task_id:
             items = [item for item in items if item["task_id"] == task_id]
         return sorted(items, key=lambda item: (item["iteration_no"], item["trace_id"]))
+
+    def put_contract_constraint(self, constraint):
+        self.state["contract_constraints"][constraint["constraint_id"]] = copy.deepcopy(constraint)
+        self.save()
+        return copy.deepcopy(constraint)
+
+    def get_contract_constraint(self, constraint_id):
+        constraint = self.state["contract_constraints"].get(constraint_id)
+        return copy.deepcopy(constraint) if constraint else None
+
+    def list_contract_constraints(self):
+        return sorted(
+            [copy.deepcopy(item) for item in self.state["contract_constraints"].values()],
+            key=lambda item: (item["priority"], item["constraint_id"]),
+        )
+
+    def put_allocation_scenario(self, allocation):
+        self.state["allocation_scenarios"][allocation["allocation_id"]] = copy.deepcopy(allocation)
+        self.save()
+        return copy.deepcopy(allocation)
+
+    def get_allocation_scenario(self, allocation_id):
+        allocation = self.state["allocation_scenarios"].get(allocation_id)
+        return copy.deepcopy(allocation) if allocation else None
+
+    def list_allocation_scenarios(self):
+        return sorted(
+            [copy.deepcopy(item) for item in self.state["allocation_scenarios"].values()],
+            key=lambda item: item["created_at"],
+        )
+
+    def put_allocation_results(self, results, traces):
+        for result in results:
+            self.state["allocation_results"][result["result_id"]] = copy.deepcopy(result)
+        for trace in traces:
+            self.state["constraint_apply_traces"][trace["trace_id"]] = copy.deepcopy(trace)
+        self.save()
+        return copy.deepcopy(results)
+
+    def list_allocation_results(self, allocation_id=None):
+        items = [copy.deepcopy(item) for item in self.state["allocation_results"].values()]
+        if allocation_id:
+            items = [item for item in items if item["allocation_id"] == allocation_id]
+        return sorted(items, key=lambda item: (item["version_no"], item["result_id"]))
+
+    def list_constraint_apply_traces(self, allocation_id=None):
+        items = [copy.deepcopy(item) for item in self.state["constraint_apply_traces"].values()]
+        if allocation_id:
+            items = [item for item in items if item["allocation_id"] == allocation_id]
+        return sorted(items, key=lambda item: (item["version_no"], item["trace_id"]))
 
     def put_audit_log(self, audit_log):
         self.state["audit_logs"][audit_log["log_id"]] = copy.deepcopy(audit_log)

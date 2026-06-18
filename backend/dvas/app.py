@@ -4,7 +4,9 @@ from urllib.parse import urlparse
 from .contracts import API_PREFIX, ApiError, error_response, ok_response
 from .repository import JsonFileRepository
 from .services import (
+    AllocationService,
     ContributionService,
+    ContractConstraintService,
     DashboardService,
     DataIngestionService,
     MdDshapService,
@@ -30,6 +32,8 @@ class DvasApplication:
         self.contribution_service = ContributionService(self.repository)
         self.utility_service = UtilityService(self.repository)
         self.md_dshap_service = MdDshapService(self.repository)
+        self.constraint_service = ContractConstraintService(self.repository)
+        self.allocation_service = AllocationService(self.repository)
 
     def handle(self, method, path, body=None):
         trace_id = None
@@ -159,6 +163,42 @@ class DvasApplication:
             and segments[3] == "marginal-traces"
         ):
             return self.md_dshap_service.marginal_traces(segments[2])
+        if method == "GET" and segments == ["contract-constraints"]:
+            return self.constraint_service.list()
+        if method == "POST" and segments == ["contract-constraints"]:
+            return self.constraint_service.create(body)
+        if method == "PUT" and len(segments) == 2 and segments[0] == "contract-constraints":
+            return self.constraint_service.update(segments[1], body)
+        if (
+            method == "PATCH"
+            and len(segments) == 3
+            and segments[0] == "contract-constraints"
+            and segments[2] == "status"
+        ):
+            return self.constraint_service.set_status(segments[1], body)
+        if method == "POST" and segments == ["allocation-scenarios"]:
+            return self.allocation_service.create(body)
+        if (
+            method == "POST"
+            and len(segments) == 3
+            and segments[0] == "allocation-scenarios"
+            and segments[2] == "simulate"
+        ):
+            return self.allocation_service.simulate(segments[1])
+        if (
+            method == "POST"
+            and len(segments) == 3
+            and segments[0] == "allocation-scenarios"
+            and segments[2] == "lock"
+        ):
+            return self.allocation_service.lock(segments[1])
+        if (
+            method == "GET"
+            and len(segments) == 3
+            and segments[0] == "allocation-scenarios"
+            and segments[2] == "results"
+        ):
+            return self.allocation_service.results(segments[1])
         raise ApiError("DVAS_NOT_FOUND", "接口不存在", status=404)
 
     def _normalize_path(self, path):
