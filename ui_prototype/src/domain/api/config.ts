@@ -1,0 +1,31 @@
+const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
+const API_PREFIX = "/api/v1";
+
+function trimTrailingSlash(value: string) {
+  return value.replace(/\/+$/, "");
+}
+
+function readEnvString(name: string) {
+  return String(import.meta.env[name] ?? "").trim();
+}
+
+export function getDvasApiBaseUrl() {
+  return trimTrailingSlash(readEnvString("VITE_DVAS_API_BASE_URL") || DEFAULT_API_BASE_URL);
+}
+
+export function getDvasApiRootUrl() {
+  const baseUrl = getDvasApiBaseUrl();
+  return baseUrl.endsWith(API_PREFIX) ? baseUrl : `${baseUrl}${API_PREFIX}`;
+}
+
+export function isDvasBackendEnabled() {
+  return readEnvString("VITE_DVAS_USE_BACKEND").toLowerCase() === "true";
+}
+
+export function getDvasApiConfig() {
+  return {
+    baseUrl: getDvasApiBaseUrl(),
+    apiRootUrl: getDvasApiRootUrl(),
+    useBackend: isDvasBackendEnabled(),
+  };
+}

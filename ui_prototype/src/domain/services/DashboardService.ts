@@ -1,7 +1,11 @@
 import type { MockDomainService } from "./serviceTypes";
-import { dvasApi } from "../apiClient";
-import { formatApiError, loadWorkbenchSnapshotFromBackend } from "../backendAdapter";
+import { dvasApi, normalizeApiError } from "../api";
 import type { WorkbenchSnapshot } from "../types";
+import {
+  markSnapshotSource,
+  refreshStoreFromBackend,
+  shouldUseBackend,
+} from "./backendWorkspace";
 import {
   appendAudit,
   appendSnapshot,
@@ -14,29 +18,15 @@ export const DashboardService: MockDomainService = {
   readPage: readPageFromStore,
   handleAction(store, action) {
     if (action.id === "SYS-002") {
-      if (store.snapshot.backend?.connected) {
-        return initializeDemoFromBackend(store);
+      const mockStore = selectDemoDataInMock(store);
+      if (shouldUseBackend()) {
+        return initializeDemoFromBackend(store, mockStore);
       }
 
-      let snapshot = appendSnapshot(store.snapshot, {
-        name: "演示数据输入快照",
-        type: "INPUT",
-        status: "已生成",
-      });
-      snapshot = appendAudit(snapshot, {
-        operation: "选择演示数据",
-        objectType: "数据包",
-        status: "成功",
-        summary: "初始化演示数据、资源清单和参与方边界。",
-      });
-
       return {
-        ...store,
-        snapshot: {
-          ...snapshot,
-          status: "INGESTED",
-        },
-        lastMessage: "演示数据已初始化，已生成输入快照和审计记录。",
+        ...mockStore,
+        snapshot: markSnapshotSource(mockStore.snapshot, "mock"),
+        lastMessage: "演示数据已初始化，已生成输入快照和审计记录。（数据来源：本地模拟）",
       };
     }
 
@@ -113,26 +103,59 @@ export const DashboardService: MockDomainService = {
       };
     }
 
+    if (action.id === "SYS-005" && shouldUseBackend()) {
+      const mockStore = writeMockServiceResult("DashboardService", store, action);
+      return refreshStoreFromBackend(
+        store,
+        "风险边界和仪表盘摘要已从后端刷新。",
+        mockStore,
+      );
+    }
+
     return writeMockServiceResult("DashboardService", store, action);
   },
 };
 
-async function initializeDemoFromBackend(store: Parameters<MockDomainService["handleAction"]>[0]) {
+function selectDemoDataInMock(store: Parameters<MockDomainService["handleAction"]>[0]) {
+  let snapshot = appendSnapshot(store.snapshot, {
+    name: "演示数据输入快照",
+    type: "INPUT",
+    status: "已生成",
+  });
+  snapshot = appendAudit(snapshot, {
+    operation: "选择演示数据",
+    objectType: "数据包",
+    status: "成功",
+    summary: "初始化演示数据、资源清单和参与方边界。",
+  });
+
+  return {
+    ...store,
+    snapshot: {
+      ...snapshot,
+      status: "INGESTED" as const,
+    },
+    lastMessage: "演示数据已初始化，已生成输入快照和审计记录。",
+  };
+}
+
+async function initializeDemoFromBackend(
+  store: Parameters<MockDomainService["handleAction"]>[0],
+  fallbackStore: Parameters<MockDomainService["handleAction"]>[0],
+) {
   try {
     await dvasApi.initializeDemoCase();
-    const snapshot = await loadWorkbenchSnapshotFromBackend();
-    return {
-      ...store,
-      snapshot: {
-        ...snapshot,
-        mock: store.snapshot.mock ?? snapshot.mock,
-      },
-      lastMessage: "演示数据已由后端初始化，仪表盘和前置条件已刷新。",
-    };
+    return refreshStoreFromBackend(
+      store,
+      "演示数据已由后端初始化，仪表盘和前置条件已刷新。",
+      fallbackStore,
+    );
   } catch (error) {
+    const normalized = normalizeApiError(error);
     return {
-      ...store,
-      lastMessage: `选择演示数据 未执行：${formatApiError(error)}`,
+      ...fallbackStore,
+      snapshot: markSnapshotSource(fallbackStore.snapshot, "mock_fallback"),
+      lastMessage: `后端初始化失败，已回退本地模拟：${normalized.errorMessage}`,
     };
   }
 }

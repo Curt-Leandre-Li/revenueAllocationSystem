@@ -1,57 +1,79 @@
 import type { MockDomainService } from "./serviceTypes";
 import { readPageFromStore, writeMockServiceResult } from "./serviceTypes";
-import { dvasApi } from "../apiClient";
-import { formatApiError, loadWorkbenchSnapshotFromBackend } from "../backendAdapter";
+import { dvasApi, normalizeApiError } from "../api";
+import {
+  markSnapshotSource,
+  refreshStoreFromBackend,
+  shouldUseBackend,
+} from "./backendWorkspace";
 
 export const DataPackageService: MockDomainService = {
   readPage: readPageFromStore,
   handleAction(store, action) {
-    if (store.snapshot.backend?.connected && action.id === "DATA-002") {
-      return initializeDemoFromBackend(store);
+    if (action.id === "DATA-002") {
+      const mockStore = writeMockServiceResult("DataPackageService", store, action);
+      if (shouldUseBackend()) {
+        return initializeDemoFromBackend(store, mockStore);
+      }
+      return {
+        ...mockStore,
+        snapshot: markSnapshotSource(mockStore.snapshot, "mock"),
+        lastMessage: `${mockStore.lastMessage}（数据来源：本地模拟）`,
+      };
     }
-    if (store.snapshot.backend?.connected && action.id === "DATA-003") {
-      return uploadJsonToBackend(store);
+    if (action.id === "DATA-003") {
+      const mockStore = writeMockServiceResult("DataPackageService", store, action);
+      if (shouldUseBackend()) {
+        return uploadJsonToBackend(store, mockStore);
+      }
+      return {
+        ...mockStore,
+        snapshot: markSnapshotSource(mockStore.snapshot, "mock"),
+        lastMessage: `${mockStore.lastMessage}（数据来源：本地模拟）`,
+      };
     }
     return writeMockServiceResult("DataPackageService", store, action);
   },
 };
 
-async function initializeDemoFromBackend(store: Parameters<MockDomainService["handleAction"]>[0]) {
+async function initializeDemoFromBackend(
+  store: Parameters<MockDomainService["handleAction"]>[0],
+  fallbackStore: Parameters<MockDomainService["handleAction"]>[0],
+) {
   try {
     await dvasApi.initializeDemoCase();
-    const snapshot = await loadWorkbenchSnapshotFromBackend();
-    return {
-      ...store,
-      snapshot: {
-        ...snapshot,
-        mock: store.snapshot.mock ?? snapshot.mock,
-      },
-      lastMessage: "演示数据已由后端初始化，数据包列表和前置条件已刷新。",
-    };
+    return refreshStoreFromBackend(
+      store,
+      "演示数据已由后端初始化，数据包列表和前置条件已刷新。",
+      fallbackStore,
+    );
   } catch (error) {
+    const normalized = normalizeApiError(error);
     return {
-      ...store,
-      lastMessage: `选择演示数据 未执行：${formatApiError(error)}`,
+      ...fallbackStore,
+      snapshot: markSnapshotSource(fallbackStore.snapshot, "mock_fallback"),
+      lastMessage: `后端初始化失败，已回退本地模拟：${normalized.errorMessage}`,
     };
   }
 }
 
-async function uploadJsonToBackend(store: Parameters<MockDomainService["handleAction"]>[0]) {
+async function uploadJsonToBackend(
+  store: Parameters<MockDomainService["handleAction"]>[0],
+  fallbackStore: Parameters<MockDomainService["handleAction"]>[0],
+) {
   try {
-    await dvasApi.uploadDemoJson();
-    const snapshot = await loadWorkbenchSnapshotFromBackend();
-    return {
-      ...store,
-      snapshot: {
-        ...snapshot,
-        mock: store.snapshot.mock ?? snapshot.mock,
-      },
-      lastMessage: "JSON 数据包已由后端校验接入，仪表盘和前置条件已刷新。",
-    };
+    await dvasApi.uploadJson();
+    return refreshStoreFromBackend(
+      store,
+      "JSON 数据包已由后端校验接入，仪表盘和前置条件已刷新。",
+      fallbackStore,
+    );
   } catch (error) {
+    const normalized = normalizeApiError(error);
     return {
-      ...store,
-      lastMessage: `上传 JSON 未执行：${formatApiError(error)}`,
+      ...fallbackStore,
+      snapshot: markSnapshotSource(fallbackStore.snapshot, "mock_fallback"),
+      lastMessage: `后端上传失败，已回退本地模拟：${normalized.errorMessage}`,
     };
   }
 }

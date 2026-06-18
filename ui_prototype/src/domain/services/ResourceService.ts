@@ -1,4 +1,10 @@
 import type { MockDomainService } from "./serviceTypes";
+import { dvasApi, normalizeApiError } from "../api";
+import {
+  markSnapshotSource,
+  refreshStoreFromBackend,
+  shouldUseBackend,
+} from "./backendWorkspace";
 import {
   appendAudit,
   appendExport,
@@ -11,6 +17,11 @@ import {
 export const ResourceService: MockDomainService = {
   readPage: readPageFromStore,
   handleAction(store, action, payload) {
+    if (action.id === "RES-002" && shouldUseBackend()) {
+      const fallbackStore = readResourceDetailInMock(store);
+      return readResourceDetailFromBackend(store, fallbackStore, payload);
+    }
+
     if (action.id === "RES-005" && payload?.kind === "resource-binding") {
       const mock = getMockState(store.snapshot);
       const resources = mock.resources.map((resource) =>
@@ -123,19 +134,51 @@ export const ResourceService: MockDomainService = {
     }
 
     if (action.id === "RES-002") {
-      const snapshot = appendAudit(store.snapshot, {
-        operation: "查看资源详情",
-        objectType: "数据资源",
-        status: "成功",
-        summary: "打开资源详情抽屉，读取字段统计、脱敏预览和主体归属。",
-      });
+      const mockStore = readResourceDetailInMock(store);
       return {
-        ...store,
-        snapshot,
-        lastMessage: "资源详情已打开，并记录只读审计。",
+        ...mockStore,
+        snapshot: markSnapshotSource(mockStore.snapshot, "mock"),
       };
     }
 
     return writeMockServiceResult("ResourceService", store, action);
   },
 };
+
+function readResourceDetailInMock(store: Parameters<MockDomainService["handleAction"]>[0]) {
+  const snapshot = appendAudit(store.snapshot, {
+    operation: "查看资源详情",
+    objectType: "数据资源",
+    status: "成功",
+    summary: "打开资源详情抽屉，读取字段统计、脱敏预览和主体归属。",
+  });
+  return {
+    ...store,
+    snapshot,
+    lastMessage: "资源详情已打开，并记录只读审计。（数据来源：本地模拟）",
+  };
+}
+
+async function readResourceDetailFromBackend(
+  store: Parameters<MockDomainService["handleAction"]>[0],
+  fallbackStore: Parameters<MockDomainService["handleAction"]>[0],
+  payload: Parameters<MockDomainService["handleAction"]>[2],
+) {
+  try {
+    if (payload?.kind === "resource-detail") {
+      await dvasApi.getDataResourceDetail(payload.resourceKey);
+    }
+    return refreshStoreFromBackend(
+      store,
+      "资源详情已从后端读取，资源列表已刷新。",
+      fallbackStore,
+    );
+  } catch (error) {
+    const normalized = normalizeApiError(error);
+    return {
+      ...fallbackStore,
+      snapshot: markSnapshotSource(fallbackStore.snapshot, "mock_fallback"),
+      lastMessage: `后端资源详情读取失败，已回退本地模拟：${normalized.errorMessage}`,
+    };
+  }
+}

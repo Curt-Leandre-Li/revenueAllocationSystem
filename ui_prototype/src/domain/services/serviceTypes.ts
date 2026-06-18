@@ -10,7 +10,15 @@ import type {
   SnapshotRecord,
   WorkbenchSnapshot,
 } from "../types";
+import type { ApiError } from "../api";
 import type { WorkbenchStore } from "../store";
+
+export type ServiceResult<T> = {
+  ok: boolean;
+  data?: T;
+  error?: ApiError;
+  source: "backend" | "mock" | "mock_fallback";
+};
 
 export type ServiceActionHandler = (
   store: WorkbenchStore,
