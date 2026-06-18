@@ -169,6 +169,10 @@ class DvasApiContractTests(unittest.TestCase):
             "/data-resources/resource_000001/party-relations",
             "/parties",
             "/quality-assessments/latest",
+            "/shuyuan-meterings/latest",
+            "/shuyuan-meterings/metering_000001/details",
+            "/utilities/latest",
+            "/utilities/utility_000001/trace",
         ]
 
         for path in public_paths:
@@ -191,6 +195,8 @@ class DvasApiContractTests(unittest.TestCase):
         self.assertIn("/dashboard/preconditions", path_lines)
         self.assertIn("/data-resources/{resource_id}/party-relations", path_lines)
         self.assertIn("/quality-assessments/{assessment_id}/details", path_lines)
+        self.assertIn("/shuyuan-meterings/{metering_id}/details", path_lines)
+        self.assertIn("/utilities/{utility_id}/trace", path_lines)
 
     def test_quick_run_skeleton_returns_explainable_precondition_failure(self):
         response = self.request("POST", "/api/v1/dashboard/quick-run")
@@ -375,6 +381,145 @@ class DvasApiContractTests(unittest.TestCase):
             [{"field": "package_id", "reason": "请先完成数据接入"}],
             response["field_errors"],
         )
+
+    def test_shuyuan_metering_requires_quality_assessment(self):
+        self.request("POST", "/api/v1/demo-cases/lung_screening_demo/initialize")
+
+        response = self.request("POST", "/api/v1/shuyuan-meterings/run", {})
+
+        self.assertFalse(response["success"])
+        self.assertEqual("DVAS_PRECONDITION_NOT_MET", response["code"])
+        self.assertEqual(
+            [{"field": "quality_assessment", "reason": "请先完成质量评估"}],
+            response["field_errors"],
+        )
+
+    def test_shuyuan_metering_run_latest_and_details_progress_project_to_metered(self):
+        self.request("POST", "/api/v1/demo-cases/lung_screening_demo/initialize")
+        quality = self.assert_ok(self.request("POST", "/api/v1/quality-assessments/run", {}))
+
+        result = self.assert_ok(self.request("POST", "/api/v1/shuyuan-meterings/run", {}))
+
+        metering = result["metering"]
+        parameters = metering["parameter_snapshot_json"]
+        expected_amount = round(
+            parameters["base_price"]
+            * parameters["scenario_coefficient"]
+            * parameters["quality_coefficient"]
+            * parameters["technology_coefficient"]
+            * parameters["expert_coefficient"]
+            * parameters["development_coefficient"]
+            * parameters["call_count"],
+            2,
+        )
+        self.assertEqual("METERED", result["project_status"])
+        self.assertTrue(metering["metering_id"].startswith("metering_"))
+        self.assertEqual(quality["assessment"]["assessment_id"], metering["assessment_id"])
+        self.assertEqual(expected_amount, metering["metering_amount"])
+        self.assertEqual("DVAS_SHUYUAN_METERING_SKELETON_V0", metering["algorithm_version"])
+        self.assertTrue(metering["parameter_snapshot_id"].startswith("snapshot_"))
+        self.assertTrue(metering["output_snapshot_id"].startswith("snapshot_"))
+        self.assertGreaterEqual(len(result["details"]), 2)
+        self.assertEqual(expected_amount, round(sum(item["metering_amount"] for item in result["details"]), 2))
+
+        latest = self.assert_ok(self.request("GET", "/api/v1/shuyuan-meterings/latest"))
+        self.assertEqual(metering["metering_id"], latest["metering_id"])
+
+        details = self.assert_ok(
+            self.request("GET", f"/api/v1/shuyuan-meterings/{metering['metering_id']}/details")
+        )
+        self.assertEqual(metering["metering_id"], details["metering_id"])
+        self.assertEqual(result["details"], details["details"])
+
+    def test_contribution_and_utility_flow_progresses_to_utility_calculated(self):
+        self.request("POST", "/api/v1/demo-cases/lung_screening_demo/initialize")
+        self.request("POST", "/api/v1/quality-assessments/run", {})
+        self.request("POST", "/api/v1/shuyuan-meterings/run", {})
+
+        contribution = self.assert_ok(self.request("POST", "/api/v1/contributions/run", {}))
+
+        self.assertEqual("METERED", contribution["project_status"])
+        self.assertGreaterEqual(len(contribution["records"]), 1)
+        normalized_total = round(
+            sum(item["normalized_contribution"] for item in contribution["records"]),
+            6,
+        )
+        self.assertEqual(1.0, normalized_total)
+        for record in contribution["records"]:
+            expected_score = round(
+                record["valid_units"]
+                * record["usage_weight"]
+                * record["coverage_weight"]
+                * record["scarcity_weight"],
+                6,
+            )
+            self.assertEqual(expected_score, record["contribution_score"])
+
+        utility = self.assert_ok(self.request("POST", "/api/v1/utilities/run", {}))
+        self.assertEqual("UTILITY_CALCULATED", utility["project_status"])
+        self.assertTrue(utility["utility"]["utility_id"].startswith("utility_"))
+        self.assertEqual("DVAS_UTILITY_SKELETON_V0", utility["utility"]["algorithm_version"])
+        self.assertGreaterEqual(len(utility["trace"]), 1)
+        for trace in utility["trace"]:
+            expected_value = round(
+                trace["normalized_contribution"]
+                * trace["quality_factor"]
+                * trace["usage_factor"]
+                * trace["scenario_factor"],
+                6,
+            )
+            self.assertEqual(expected_value, trace["utility_value"])
+
+        latest = self.assert_ok(self.request("GET", "/api/v1/utilities/latest"))
+        self.assertEqual(utility["utility"]["utility_id"], latest["utility_id"])
+
+        trace = self.assert_ok(
+            self.request("GET", f"/api/v1/utilities/{utility['utility']['utility_id']}/trace")
+        )
+        self.assertEqual(utility["utility"]["utility_id"], trace["utility_id"])
+        self.assertEqual(utility["trace"], trace["trace"])
+
+        preconditions = self.assert_ok(self.request("GET", "/api/v1/dashboard/preconditions"))
+        self.assertEqual("UTILITY_CALCULATED", preconditions["project_status"])
+        self.assertIn("MDS-011", preconditions["available_actions"])
+
+    def test_utility_requires_contribution_records(self):
+        self.request("POST", "/api/v1/demo-cases/lung_screening_demo/initialize")
+        self.request("POST", "/api/v1/quality-assessments/run", {})
+        self.request("POST", "/api/v1/shuyuan-meterings/run", {})
+
+        response = self.request("POST", "/api/v1/utilities/run", {})
+
+        self.assertFalse(response["success"])
+        self.assertEqual("DVAS_PRECONDITION_NOT_MET", response["code"])
+        self.assertEqual(
+            [{"field": "contribution_records", "reason": "请先完成贡献度计算"}],
+            response["field_errors"],
+        )
+
+    def test_dashboard_preconditions_progress_quality_metering_utility_actions(self):
+        self.request("POST", "/api/v1/demo-cases/lung_screening_demo/initialize")
+
+        ingested = self.assert_ok(self.request("GET", "/api/v1/dashboard/preconditions"))
+        self.assertIn({"button_code": "DU-009", "reason": "请先完成质量评估"}, ingested["disabled_actions"])
+        self.assertIn({"button_code": "UTIL-006", "reason": "请先完成数元计量"}, ingested["disabled_actions"])
+        self.assertIn({"button_code": "UTIL-008", "reason": "请先完成贡献度计算"}, ingested["disabled_actions"])
+        self.assertIn({"button_code": "MDS-011", "reason": "请先完成效用计算"}, ingested["disabled_actions"])
+
+        self.request("POST", "/api/v1/quality-assessments/run", {})
+        assessed = self.assert_ok(self.request("GET", "/api/v1/dashboard/preconditions"))
+        self.assertIn("DU-009", assessed["available_actions"])
+        self.assertIn({"button_code": "UTIL-006", "reason": "请先完成数元计量"}, assessed["disabled_actions"])
+
+        self.request("POST", "/api/v1/shuyuan-meterings/run", {})
+        metered = self.assert_ok(self.request("GET", "/api/v1/dashboard/preconditions"))
+        self.assertIn("UTIL-006", metered["available_actions"])
+        self.assertIn({"button_code": "UTIL-008", "reason": "请先完成贡献度计算"}, metered["disabled_actions"])
+
+        self.request("POST", "/api/v1/contributions/run", {})
+        contributed = self.assert_ok(self.request("GET", "/api/v1/dashboard/preconditions"))
+        self.assertIn("UTIL-008", contributed["available_actions"])
+        self.assertIn({"button_code": "MDS-011", "reason": "请先完成效用计算"}, contributed["disabled_actions"])
 
 
 if __name__ == "__main__":

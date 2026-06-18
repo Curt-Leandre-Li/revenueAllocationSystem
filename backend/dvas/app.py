@@ -4,12 +4,15 @@ from urllib.parse import urlparse
 from .contracts import API_PREFIX, ApiError, error_response, ok_response
 from .repository import JsonFileRepository
 from .services import (
+    ContributionService,
     DashboardService,
     DataIngestionService,
     PartyService,
     ProjectService,
     QualityAssessmentService,
     ResourceService,
+    ShuyuanMeteringService,
+    UtilityService,
 )
 
 
@@ -22,6 +25,9 @@ class DvasApplication:
         self.resource_service = ResourceService(self.repository)
         self.party_service = PartyService(self.repository)
         self.quality_service = QualityAssessmentService(self.repository)
+        self.shuyuan_service = ShuyuanMeteringService(self.repository)
+        self.contribution_service = ContributionService(self.repository)
+        self.utility_service = UtilityService(self.repository)
 
     def handle(self, method, path, body=None):
         trace_id = None
@@ -109,6 +115,30 @@ class DvasApplication:
             and segments[2] == "details"
         ):
             return self.quality_service.details(segments[1])
+        if method == "POST" and segments == ["shuyuan-meterings", "run"]:
+            return self.shuyuan_service.run(body)
+        if method == "GET" and segments == ["shuyuan-meterings", "latest"]:
+            return self.shuyuan_service.latest()
+        if (
+            method == "GET"
+            and len(segments) == 3
+            and segments[0] == "shuyuan-meterings"
+            and segments[2] == "details"
+        ):
+            return self.shuyuan_service.details(segments[1])
+        if method == "POST" and segments == ["contributions", "run"]:
+            return self.contribution_service.run(body)
+        if method == "POST" and segments == ["utilities", "run"]:
+            return self.utility_service.run(body)
+        if method == "GET" and segments == ["utilities", "latest"]:
+            return self.utility_service.latest()
+        if (
+            method == "GET"
+            and len(segments) == 3
+            and segments[0] == "utilities"
+            and segments[2] == "trace"
+        ):
+            return self.utility_service.trace(segments[1])
         raise ApiError("DVAS_NOT_FOUND", "接口不存在", status=404)
 
     def _normalize_path(self, path):

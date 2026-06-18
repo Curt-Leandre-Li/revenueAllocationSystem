@@ -28,6 +28,11 @@ def initial_state():
         "parties": {},
         "quality_assessments": {},
         "quality_details": {},
+        "shuyuan_meterings": {},
+        "shuyuan_metering_details": {},
+        "contribution_records": {},
+        "utility_records": {},
+        "utility_traces": {},
         "snapshots": {},
         "audit_logs": {},
     }
@@ -38,6 +43,11 @@ class InMemoryRepository:
         self.state = copy.deepcopy(state) if state is not None else initial_state()
         self.state.setdefault("quality_assessments", {})
         self.state.setdefault("quality_details", {})
+        self.state.setdefault("shuyuan_meterings", {})
+        self.state.setdefault("shuyuan_metering_details", {})
+        self.state.setdefault("contribution_records", {})
+        self.state.setdefault("utility_records", {})
+        self.state.setdefault("utility_traces", {})
         self.state.setdefault("snapshots", {})
 
     def next_id(self, prefix):
@@ -147,6 +157,56 @@ class InMemoryRepository:
 
     def get_quality_details(self, assessment_id):
         return copy.deepcopy(self.state["quality_details"].get(assessment_id, []))
+
+    def put_shuyuan_metering(self, metering, details):
+        self.state["shuyuan_meterings"][metering["metering_id"]] = copy.deepcopy(metering)
+        self.state["shuyuan_metering_details"][metering["metering_id"]] = copy.deepcopy(details)
+        self.save()
+        return copy.deepcopy(metering)
+
+    def get_shuyuan_metering(self, metering_id):
+        metering = self.state["shuyuan_meterings"].get(metering_id)
+        return copy.deepcopy(metering) if metering else None
+
+    def list_shuyuan_meterings(self):
+        return sorted(
+            [copy.deepcopy(item) for item in self.state["shuyuan_meterings"].values()],
+            key=lambda item: item["created_at"],
+        )
+
+    def get_shuyuan_metering_details(self, metering_id):
+        return copy.deepcopy(self.state["shuyuan_metering_details"].get(metering_id, []))
+
+    def put_contribution_records(self, records):
+        for record in records:
+            self.state["contribution_records"][record["contribution_id"]] = copy.deepcopy(record)
+        self.save()
+        return copy.deepcopy(records)
+
+    def list_contribution_records(self, contribution_run_id=None):
+        items = [copy.deepcopy(item) for item in self.state["contribution_records"].values()]
+        if contribution_run_id:
+            items = [item for item in items if item["contribution_run_id"] == contribution_run_id]
+        return sorted(items, key=lambda item: (item["created_at"], item["contribution_id"]))
+
+    def put_utility_record(self, utility, traces):
+        self.state["utility_records"][utility["utility_id"]] = copy.deepcopy(utility)
+        self.state["utility_traces"][utility["utility_id"]] = copy.deepcopy(traces)
+        self.save()
+        return copy.deepcopy(utility)
+
+    def get_utility_record(self, utility_id):
+        utility = self.state["utility_records"].get(utility_id)
+        return copy.deepcopy(utility) if utility else None
+
+    def list_utility_records(self):
+        return sorted(
+            [copy.deepcopy(item) for item in self.state["utility_records"].values()],
+            key=lambda item: item["created_at"],
+        )
+
+    def get_utility_traces(self, utility_id):
+        return copy.deepcopy(self.state["utility_traces"].get(utility_id, []))
 
     def put_audit_log(self, audit_log):
         self.state["audit_logs"][audit_log["log_id"]] = copy.deepcopy(audit_log)

@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
   title: DVAS P0 Local API
-  version: 0.2.0
+  version: 0.3.0
   description: >
-    BE-00 through BE-04 local demo API contract. Results are simulation
+    BE-00 through BE-05 local demo API contract. Results are simulation
     references only and are not legal settlement, statutory settlement,
     payment instructions, contract performance, or authority approval.
 servers:
@@ -230,6 +230,92 @@ paths:
           description: QualityAssessment plus detail rows.
         "404":
           description: Quality assessment not found.
+  /shuyuan-meterings/run:
+    post:
+      summary: Run BE-05 shuyuan metering skeleton
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShuyuanMeteringRunRequest"
+      responses:
+        "200":
+          description: Shuyuan metering master row, detail rows, snapshots, and project status update.
+        "409":
+          description: Quality assessment precondition not satisfied.
+  /shuyuan-meterings/latest:
+    get:
+      summary: Get latest shuyuan metering result
+      responses:
+        "200":
+          description: Latest ShuyuanMetering.
+        "404":
+          description: No shuyuan metering exists.
+  /shuyuan-meterings/{metering_id}/details:
+    get:
+      summary: Get shuyuan metering details
+      parameters:
+        - name: metering_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ShuyuanMetering plus detail rows.
+        "404":
+          description: Shuyuan metering not found.
+  /contributions/run:
+    post:
+      summary: Run BE-05 contribution skeleton
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContributionRunRequest"
+      responses:
+        "200":
+          description: Contribution records and parameter/result snapshots.
+        "409":
+          description: Shuyuan metering precondition not satisfied.
+  /utilities/run:
+    post:
+      summary: Run BE-05 utility skeleton
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UtilityRunRequest"
+      responses:
+        "200":
+          description: Utility result, trace rows, snapshots, and project status update.
+        "409":
+          description: Contribution precondition not satisfied.
+  /utilities/latest:
+    get:
+      summary: Get latest utility result
+      responses:
+        "200":
+          description: Latest UtilityRecord.
+        "404":
+          description: No utility result exists.
+  /utilities/{utility_id}/trace:
+    get:
+      summary: Get utility calculation trace
+      parameters:
+        - name: utility_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: UtilityRecord plus trace rows.
+        "404":
+          description: Utility result not found.
 components:
   schemas:
     StandardResponse:
@@ -358,3 +444,38 @@ components:
       properties:
         package_id:
           type: string
+    ShuyuanMeteringRunRequest:
+      type: object
+      properties:
+        base_price:
+          type: number
+        scenario_coefficient:
+          type: number
+        quality_coefficient:
+          type: number
+        technology_coefficient:
+          type: number
+        expert_coefficient:
+          type: number
+        development_coefficient:
+          type: number
+        call_count:
+          type: integer
+    ContributionRunRequest:
+      type: object
+      properties:
+        usage_weight:
+          type: number
+        coverage_weight:
+          type: number
+        scarcity_weight:
+          type: number
+    UtilityRunRequest:
+      type: object
+      properties:
+        quality_factor:
+          type: number
+        usage_factor:
+          type: number
+        scenario_factor:
+          type: number

@@ -65,6 +65,8 @@ class DashboardService:
         packages = self.repository.list_data_packages()
         resources = self.repository.list_data_resources()
         parties = self.repository.list_parties()
+        metering_count = len(self.repository.list_shuyuan_meterings())
+        utility_count = len(self.repository.list_utility_records())
         preconditions = self.preconditions()
         return {
             **project,
@@ -72,6 +74,8 @@ class DashboardService:
                 "data_package_count": len([item for item in packages if item["status"] == "VALIDATED"]),
                 "resource_count": len(resources),
                 "party_count": len(parties),
+                "metering_count": metering_count,
+                "utility_count": utility_count,
                 "audit_log_count": len(self.repository.list_audit_logs()),
             },
             "risk_notices": [
@@ -93,6 +97,11 @@ class DashboardService:
         has_resource_party_relation = any(
             resource.get("party_id") for resource in self.repository.list_data_resources()
         )
+        has_quality_assessment = bool(self.repository.list_quality_assessments())
+        has_shuyuan_metering = bool(self.repository.list_shuyuan_meterings())
+        contribution_records = self.repository.list_contribution_records()
+        has_contribution_records = bool(contribution_records)
+        has_utility_result = bool(self.repository.list_utility_records())
         preconditions = [
             {
                 "code": "HAS_VALID_DATA_PACKAGE",
@@ -104,6 +113,26 @@ class DashboardService:
                 "passed": has_resource_party_relation,
                 "message": "资源已关联数据源主体" if has_resource_party_relation else "请先关联数据源主体",
             },
+            {
+                "code": "HAS_QUALITY_ASSESSMENT",
+                "passed": has_quality_assessment,
+                "message": "已完成质量评估" if has_quality_assessment else "请先完成质量评估",
+            },
+            {
+                "code": "HAS_SHUYUAN_METERING",
+                "passed": has_shuyuan_metering,
+                "message": "已完成数元计量" if has_shuyuan_metering else "请先完成数元计量",
+            },
+            {
+                "code": "HAS_CONTRIBUTION_RECORDS",
+                "passed": has_contribution_records,
+                "message": "已完成贡献度计算" if has_contribution_records else "请先完成贡献度计算",
+            },
+            {
+                "code": "HAS_UTILITY_RESULT",
+                "passed": has_utility_result,
+                "message": "已完成效用计算" if has_utility_result else "请先完成效用计算",
+            },
         ]
         available_actions = ["SYS-002", "DATA-002", "DATA-003"]
         disabled_actions = []
@@ -114,6 +143,34 @@ class DashboardService:
             if has_valid_package and not has_resource_party_relation:
                 reason = "请先关联数据源主体"
             disabled_actions.append({"button_code": "QUAL-003", "reason": reason})
+        self._gate_action(
+            available_actions,
+            disabled_actions,
+            "DU-009",
+            has_quality_assessment,
+            "请先完成质量评估",
+        )
+        self._gate_action(
+            available_actions,
+            disabled_actions,
+            "UTIL-006",
+            has_shuyuan_metering,
+            "请先完成数元计量",
+        )
+        self._gate_action(
+            available_actions,
+            disabled_actions,
+            "UTIL-008",
+            has_contribution_records,
+            "请先完成贡献度计算",
+        )
+        self._gate_action(
+            available_actions,
+            disabled_actions,
+            "MDS-011",
+            project["project_status"] == "UTILITY_CALCULATED" and has_utility_result,
+            "请先完成效用计算",
+        )
         return {
             "project_id": project["project_id"],
             "project_status": project["project_status"],
@@ -152,7 +209,19 @@ class DashboardService:
             return {"label": "选择演示数据或上传 JSON", "button_code": "SYS-002"}
         if project_status == "INGESTED":
             return {"label": "启动质量评估", "button_code": "QUAL-003"}
+        if project_status == "ASSESSED":
+            return {"label": "执行数元计量", "button_code": "DU-003"}
+        if project_status == "METERED":
+            return {"label": "计算贡献度与效用", "button_code": "UTIL-006"}
+        if project_status == "UTILITY_CALCULATED":
+            return {"label": "进入 MD-DShap 权重计算", "button_code": "MDS-011"}
         return {"label": "查看当前状态", "button_code": "SYS-001"}
+
+    def _gate_action(self, available_actions, disabled_actions, button_code, passed, reason):
+        if passed:
+            available_actions.append(button_code)
+        else:
+            disabled_actions.append({"button_code": button_code, "reason": reason})
 
 
 class DataIngestionService:
@@ -771,4 +840,487 @@ class QualityAssessmentService:
             "weight": weight,
             "score": round(score, 2),
             "evidence": f"{dimension_name}演示评分由 BE-04 骨架生成。",
+        }
+
+
+class ShuyuanMeteringService:
+    def __init__(self, repository):
+        self.repository = repository
+
+    def run(self, payload):
+        quality = self._latest_quality()
+        package = self.repository.get_data_package(quality["package_id"])
+        resources = self.repository.list_data_resources(quality["package_id"])
+        if not resources:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "当前数据包无有效数据资源",
+                field_errors=[{"field": "resources", "reason": "当前数据包无有效数据资源"}],
+            )
+
+        now = utc_now()
+        version_no = len(self.repository.list_shuyuan_meterings()) + 1
+        call_count = int(payload.get("call_count", sum(item.get("sample_count", 0) for item in resources)))
+        parameters = {
+            "base_price": self._number(payload, "base_price", 2.0),
+            "scenario_coefficient": self._number(payload, "scenario_coefficient", 1.1),
+            "quality_coefficient": self._number(payload, "quality_coefficient", quality["quality_factor"]),
+            "technology_coefficient": self._number(payload, "technology_coefficient", 1.05),
+            "expert_coefficient": self._number(payload, "expert_coefficient", 1.0),
+            "development_coefficient": self._number(payload, "development_coefficient", 0.98),
+            "call_count": call_count,
+        }
+        raw_total = self._metering_amount(parameters, call_count)
+        total_amount = round(raw_total, 2)
+        details = self._details(resources, parameters, total_amount)
+        parameter_snapshot_id = self.repository.next_id("snapshot")
+        result_snapshot_id = self.repository.next_id("snapshot")
+        parameter_snapshot = self._snapshot(
+            parameter_snapshot_id,
+            "PARAMETER",
+            {
+                "formula": "base_price × scenario_coefficient × quality_coefficient × technology_coefficient × expert_coefficient × development_coefficient × call_count",
+                "parameters": parameters,
+            },
+            now,
+        )
+        result_payload = {
+            "metering_amount": total_amount,
+            "details": details,
+            "quality_assessment_id": quality["assessment_id"],
+        }
+        result_snapshot = self._snapshot(result_snapshot_id, "RESULT", result_payload, now)
+        metering = {
+            "metering_id": self.repository.next_id("metering"),
+            "project_id": self.repository.get_project()["project_id"],
+            "package_id": quality["package_id"],
+            "assessment_id": quality["assessment_id"],
+            "version_no": version_no,
+            "base_shuyuan_price": parameters["base_price"],
+            "scenario_coefficient": parameters["scenario_coefficient"],
+            "quality_coefficient": parameters["quality_coefficient"],
+            "technology_coefficient": parameters["technology_coefficient"],
+            "expert_coefficient": parameters["expert_coefficient"],
+            "development_coefficient": parameters["development_coefficient"],
+            "call_count": call_count,
+            "metering_amount": total_amount,
+            "formula_text": parameter_snapshot["content_json"]["formula"],
+            "parameter_snapshot_json": parameters,
+            "input_snapshot_id": package.get("input_snapshot_id") if package else None,
+            "parameter_snapshot_id": parameter_snapshot_id,
+            "output_snapshot_id": result_snapshot_id,
+            "algorithm_version": "DVAS_SHUYUAN_METERING_SKELETON_V0",
+            "created_by": LOCAL_OPERATOR,
+            "created_at": now,
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+        }
+
+        self.repository.put_snapshot(parameter_snapshot)
+        self.repository.put_snapshot(result_snapshot)
+        self.repository.put_shuyuan_metering(metering, details)
+        updated_project = self.repository.update_project(project_status="METERED")
+        write_audit(
+            self.repository,
+            module_code="DU",
+            menu_code="NAV_MEASURE_SHUYUAN",
+            operation_type="RUN_SHUYUAN_METERING",
+            object_type="shuyuan_metering",
+            object_id=metering["metering_id"],
+            status="SUCCESS",
+            input_snapshot_id=metering["input_snapshot_id"],
+            parameter_snapshot_id=parameter_snapshot_id,
+            result_snapshot_id=result_snapshot_id,
+            after_value_json={"metering": metering, "details": details},
+        )
+        return {
+            "project_id": updated_project["project_id"],
+            "project_status": updated_project["project_status"],
+            "metering": metering,
+            "details": details,
+        }
+
+    def latest(self):
+        meterings = self.repository.list_shuyuan_meterings()
+        if not meterings:
+            raise ApiError("DVAS_NOT_FOUND", "数元计量结果不存在", status=404)
+        return meterings[-1]
+
+    def details(self, metering_id):
+        metering = self.repository.get_shuyuan_metering(metering_id)
+        if not metering:
+            raise ApiError("DVAS_NOT_FOUND", "数元计量结果不存在", status=404)
+        return {
+            "metering_id": metering_id,
+            "metering": metering,
+            "details": self.repository.get_shuyuan_metering_details(metering_id),
+        }
+
+    def _latest_quality(self):
+        assessments = self.repository.list_quality_assessments()
+        if not assessments:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "请先完成质量评估",
+                field_errors=[{"field": "quality_assessment", "reason": "请先完成质量评估"}],
+            )
+        return assessments[-1]
+
+    def _number(self, payload, field, default):
+        try:
+            value = float(payload.get(field, default))
+        except (TypeError, ValueError) as exc:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "计量参数不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须是数字"}],
+            ) from exc
+        if value < 0:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "计量参数不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须大于等于 0"}],
+            )
+        return round(value, 6)
+
+    def _metering_amount(self, parameters, call_count):
+        return (
+            parameters["base_price"]
+            * parameters["scenario_coefficient"]
+            * parameters["quality_coefficient"]
+            * parameters["technology_coefficient"]
+            * parameters["expert_coefficient"]
+            * parameters["development_coefficient"]
+            * call_count
+        )
+
+    def _details(self, resources, parameters, total_amount):
+        total_units = sum(item.get("sample_count", 0) for item in resources) or 1
+        details = []
+        running_amount = 0.0
+        for index, resource in enumerate(resources):
+            valid_units = int(resource.get("sample_count", 0))
+            if index == len(resources) - 1:
+                amount = round(total_amount - running_amount, 2)
+            else:
+                amount = round(total_amount * valid_units / total_units, 2)
+                running_amount = round(running_amount + amount, 2)
+            party = self.repository.get_party(resource.get("party_id")) if resource.get("party_id") else None
+            details.append(
+                {
+                    "detail_id": self.repository.next_id("metering_detail"),
+                    "resource_id": resource["resource_id"],
+                    "resource_name": resource["resource_name"],
+                    "party_id": resource.get("party_id"),
+                    "party_name": party["party_name"] if party else resource.get("provider_party_name"),
+                    "valid_units": valid_units,
+                    "base_shuyuan_price": parameters["base_price"],
+                    "scenario_coefficient": parameters["scenario_coefficient"],
+                    "quality_coefficient": parameters["quality_coefficient"],
+                    "technology_coefficient": parameters["technology_coefficient"],
+                    "expert_coefficient": parameters["expert_coefficient"],
+                    "development_coefficient": parameters["development_coefficient"],
+                    "call_count": valid_units,
+                    "metering_amount": amount,
+                    "evidence": "BE-05 数元计量骨架按资源有效样本数分摊总数元值。",
+                }
+            )
+        return details
+
+    def _snapshot(self, snapshot_id, snapshot_type, content, now):
+        return {
+            "snapshot_id": snapshot_id,
+            "project_id": self.repository.get_project()["project_id"],
+            "snapshot_type": snapshot_type,
+            "content_json": copy.deepcopy(content),
+            "checksum": stable_checksum(content),
+            "created_by": LOCAL_OPERATOR,
+            "created_at": now,
+        }
+
+
+class ContributionService:
+    def __init__(self, repository):
+        self.repository = repository
+
+    def run(self, payload):
+        metering = self._latest_metering()
+        details = self.repository.get_shuyuan_metering_details(metering["metering_id"])
+        now = utc_now()
+        contribution_run_id = self.repository.next_id("contribution_run")
+        parameter_snapshot_id = self.repository.next_id("snapshot")
+        result_snapshot_id = self.repository.next_id("snapshot")
+        parameters = {
+            "usage_weight": self._number(payload, "usage_weight", 1.0),
+            "coverage_weight": self._number(payload, "coverage_weight", 1.0),
+            "scarcity_weight": self._number(payload, "scarcity_weight", 1.0),
+        }
+        records = self._records(details, parameters, contribution_run_id, now)
+        result_payload = {"contribution_run_id": contribution_run_id, "records": records}
+        self.repository.put_snapshot(self._snapshot(parameter_snapshot_id, "PARAMETER", parameters, now))
+        self.repository.put_snapshot(self._snapshot(result_snapshot_id, "RESULT", result_payload, now))
+        for record in records:
+            record["parameter_snapshot_id"] = parameter_snapshot_id
+            record["output_snapshot_id"] = result_snapshot_id
+        self.repository.put_contribution_records(records)
+        project = self.repository.get_project()
+        write_audit(
+            self.repository,
+            module_code="UTIL",
+            menu_code="NAV_MEASURE_UTILITY",
+            operation_type="RUN_CONTRIBUTION",
+            object_type="contribution_run",
+            object_id=contribution_run_id,
+            status="SUCCESS",
+            parameter_snapshot_id=parameter_snapshot_id,
+            result_snapshot_id=result_snapshot_id,
+            after_value_json=result_payload,
+        )
+        return {
+            "project_id": project["project_id"],
+            "project_status": project["project_status"],
+            "contribution_run_id": contribution_run_id,
+            "records": records,
+            "parameter_snapshot_id": parameter_snapshot_id,
+            "output_snapshot_id": result_snapshot_id,
+        }
+
+    def _latest_metering(self):
+        meterings = self.repository.list_shuyuan_meterings()
+        if not meterings:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "请先完成数元计量",
+                field_errors=[{"field": "shuyuan_metering", "reason": "请先完成数元计量"}],
+            )
+        return meterings[-1]
+
+    def _records(self, details, parameters, contribution_run_id, now):
+        grouped = {}
+        for detail in details:
+            party_id = detail.get("party_id") or "unknown_party"
+            grouped.setdefault(
+                party_id,
+                {
+                    "party_id": party_id,
+                    "party_name": detail.get("party_name") or "未绑定主体",
+                    "valid_units": 0,
+                },
+            )
+            grouped[party_id]["valid_units"] += int(detail.get("valid_units", 0))
+        scored = []
+        for item in grouped.values():
+            score = round(
+                item["valid_units"]
+                * parameters["usage_weight"]
+                * parameters["coverage_weight"]
+                * parameters["scarcity_weight"],
+                6,
+            )
+            scored.append({**item, "contribution_score": score})
+        total_score = sum(item["contribution_score"] for item in scored) or 1.0
+        records = []
+        for item in sorted(scored, key=lambda value: value["party_id"]):
+            records.append(
+                {
+                    "contribution_id": self.repository.next_id("contribution"),
+                    "contribution_run_id": contribution_run_id,
+                    "project_id": self.repository.get_project()["project_id"],
+                    "party_id": item["party_id"],
+                    "party_name": item["party_name"],
+                    "valid_units": item["valid_units"],
+                    "usage_weight": parameters["usage_weight"],
+                    "coverage_weight": parameters["coverage_weight"],
+                    "scarcity_weight": parameters["scarcity_weight"],
+                    "contribution_score": item["contribution_score"],
+                    "normalized_contribution": round(item["contribution_score"] / total_score, 6),
+                    "formula_text": "valid_units × usage_weight × coverage_weight × scarcity_weight",
+                    "created_by": LOCAL_OPERATOR,
+                    "created_at": now,
+                    "simulation_disclaimer": SIMULATION_DISCLAIMER,
+                }
+            )
+        return records
+
+    def _number(self, payload, field, default):
+        try:
+            value = float(payload.get(field, default))
+        except (TypeError, ValueError) as exc:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "贡献参数不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须是数字"}],
+            ) from exc
+        if value < 0:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "贡献参数不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须大于等于 0"}],
+            )
+        return round(value, 6)
+
+    def _snapshot(self, snapshot_id, snapshot_type, content, now):
+        return {
+            "snapshot_id": snapshot_id,
+            "project_id": self.repository.get_project()["project_id"],
+            "snapshot_type": snapshot_type,
+            "content_json": copy.deepcopy(content),
+            "checksum": stable_checksum(content),
+            "created_by": LOCAL_OPERATOR,
+            "created_at": now,
+        }
+
+
+class UtilityService:
+    def __init__(self, repository):
+        self.repository = repository
+
+    def run(self, payload):
+        contribution_records = self._latest_contribution_records()
+        quality = self._latest_quality()
+        now = utc_now()
+        version_no = len(self.repository.list_utility_records()) + 1
+        parameters = {
+            "quality_factor": self._number(payload, "quality_factor", quality["quality_factor"]),
+            "usage_factor": self._number(payload, "usage_factor", 1.0),
+            "scenario_factor": self._number(payload, "scenario_factor", 1.0),
+        }
+        utility_id = self.repository.next_id("utility")
+        parameter_snapshot_id = self.repository.next_id("snapshot")
+        result_snapshot_id = self.repository.next_id("snapshot")
+        trace = self._trace(utility_id, contribution_records, parameters, now)
+        utility_value = round(sum(item["utility_value"] for item in trace), 6)
+        utility = {
+            "utility_id": utility_id,
+            "project_id": self.repository.get_project()["project_id"],
+            "contribution_run_id": contribution_records[0]["contribution_run_id"],
+            "version_no": version_no,
+            "utility_value": utility_value,
+            "quality_factor": parameters["quality_factor"],
+            "usage_factor": parameters["usage_factor"],
+            "scenario_factor": parameters["scenario_factor"],
+            "formula_text": "normalized_contribution × quality_factor × usage_factor × scenario_factor",
+            "parameter_snapshot_json": parameters,
+            "parameter_snapshot_id": parameter_snapshot_id,
+            "output_snapshot_id": result_snapshot_id,
+            "algorithm_version": "DVAS_UTILITY_SKELETON_V0",
+            "created_by": LOCAL_OPERATOR,
+            "created_at": now,
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+        }
+        self.repository.put_snapshot(self._snapshot(parameter_snapshot_id, "PARAMETER", parameters, now))
+        self.repository.put_snapshot(
+            self._snapshot(result_snapshot_id, "RESULT", {"utility": utility, "trace": trace}, now)
+        )
+        self.repository.put_utility_record(utility, trace)
+        updated_project = self.repository.update_project(project_status="UTILITY_CALCULATED")
+        write_audit(
+            self.repository,
+            module_code="UTIL",
+            menu_code="NAV_MEASURE_UTILITY",
+            operation_type="RUN_UTILITY",
+            object_type="utility",
+            object_id=utility_id,
+            status="SUCCESS",
+            parameter_snapshot_id=parameter_snapshot_id,
+            result_snapshot_id=result_snapshot_id,
+            after_value_json={"utility": utility, "trace": trace},
+        )
+        return {
+            "project_id": updated_project["project_id"],
+            "project_status": updated_project["project_status"],
+            "utility": utility,
+            "trace": trace,
+        }
+
+    def latest(self):
+        utilities = self.repository.list_utility_records()
+        if not utilities:
+            raise ApiError("DVAS_NOT_FOUND", "效用计算结果不存在", status=404)
+        return utilities[-1]
+
+    def trace(self, utility_id):
+        utility = self.repository.get_utility_record(utility_id)
+        if not utility:
+            raise ApiError("DVAS_NOT_FOUND", "效用计算结果不存在", status=404)
+        return {
+            "utility_id": utility_id,
+            "utility": utility,
+            "trace": self.repository.get_utility_traces(utility_id),
+        }
+
+    def _latest_contribution_records(self):
+        records = self.repository.list_contribution_records()
+        if not records:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "请先完成贡献度计算",
+                field_errors=[{"field": "contribution_records", "reason": "请先完成贡献度计算"}],
+            )
+        latest_run_id = records[-1]["contribution_run_id"]
+        return [item for item in records if item["contribution_run_id"] == latest_run_id]
+
+    def _latest_quality(self):
+        assessments = self.repository.list_quality_assessments()
+        if not assessments:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "请先完成质量评估",
+                field_errors=[{"field": "quality_assessment", "reason": "请先完成质量评估"}],
+            )
+        return assessments[-1]
+
+    def _trace(self, utility_id, contribution_records, parameters, now):
+        trace = []
+        for record in contribution_records:
+            utility_value = round(
+                record["normalized_contribution"]
+                * parameters["quality_factor"]
+                * parameters["usage_factor"]
+                * parameters["scenario_factor"],
+                6,
+            )
+            trace.append(
+                {
+                    "trace_id": self.repository.next_id("utility_trace"),
+                    "utility_id": utility_id,
+                    "contribution_id": record["contribution_id"],
+                    "party_id": record["party_id"],
+                    "party_name": record["party_name"],
+                    "normalized_contribution": record["normalized_contribution"],
+                    "quality_factor": parameters["quality_factor"],
+                    "usage_factor": parameters["usage_factor"],
+                    "scenario_factor": parameters["scenario_factor"],
+                    "utility_value": utility_value,
+                    "formula_text": "normalized_contribution × quality_factor × usage_factor × scenario_factor",
+                    "created_at": now,
+                }
+            )
+        return trace
+
+    def _number(self, payload, field, default):
+        try:
+            value = float(payload.get(field, default))
+        except (TypeError, ValueError) as exc:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "效用参数不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须是数字"}],
+            ) from exc
+        if value < 0:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "效用参数不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须大于等于 0"}],
+            )
+        return round(value, 6)
+
+    def _snapshot(self, snapshot_id, snapshot_type, content, now):
+        return {
+            "snapshot_id": snapshot_id,
+            "project_id": self.repository.get_project()["project_id"],
+            "snapshot_type": snapshot_type,
+            "content_json": copy.deepcopy(content),
+            "checksum": stable_checksum(content),
+            "created_by": LOCAL_OPERATOR,
+            "created_at": now,
         }
