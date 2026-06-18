@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { menuGroups } from "./menu";
 import { getRoute, resolveRoute, routeComponents } from "./routes";
 import { fieldLabels } from "../domain/fieldMap";
+import { formatApiError } from "../domain/backendAdapter";
 import { dispatchWorkbenchAction } from "../domain/services";
 import { projectStatusLabels } from "../domain/status";
 import {
   createWorkbenchStore,
   loadBackendWorkbenchStore,
 } from "../domain/store";
+import type { WorkbenchStore } from "../domain/store";
 import type { ActionDefinition, ActionPayload, DataRow, RoutePath } from "../domain/types";
 import { ConfirmModal, DetailDrawer, TraceDrawer } from "../ui";
 import { WorkbenchPage } from "../pages/WorkbenchPage";
@@ -17,12 +19,17 @@ interface RowDetail {
   row: DataRow;
 }
 
+interface PendingConfirmation {
+  action: ActionDefinition;
+  payload?: ActionPayload;
+}
+
 export function AppShell() {
   const [activePath, setActivePath] = useState<RoutePath>(() =>
     resolveRoute(window.location.pathname),
   );
   const [store, setStore] = useState(createWorkbenchStore);
-  const [confirmAction, setConfirmAction] = useState<ActionDefinition | null>(null);
+  const [confirmAction, setConfirmAction] = useState<PendingConfirmation | null>(null);
   const [traceOpen, setTraceOpen] = useState(false);
   const [rowDetail, setRowDetail] = useState<RowDetail | null>(null);
 
@@ -65,7 +72,7 @@ export function AppShell() {
 
   function handleAction(action: ActionDefinition, payload?: ActionPayload) {
     if (action.requiresConfirmation) {
-      setConfirmAction(action);
+      setConfirmAction({ action, payload });
       return;
     }
 
@@ -73,12 +80,30 @@ export function AppShell() {
   }
 
   function confirm(action: ActionDefinition) {
+    const payload = confirmAction?.payload;
     setConfirmAction(null);
-    executeAction(action);
+    executeAction(action, payload);
   }
 
   function executeAction(action: ActionDefinition, payload?: ActionPayload) {
-    setStore((current) => dispatchWorkbenchAction(current, action, payload));
+    setStore((current) => {
+      const result = dispatchWorkbenchAction(current, action, payload);
+      if (isAsyncActionResult(result)) {
+        void result
+          .then((nextStore) => setStore(nextStore))
+          .catch((error) =>
+            setStore((latest) => ({
+              ...latest,
+              lastMessage: `${action.label} 未执行：${formatApiError(error)}`,
+            })),
+          );
+        return {
+          ...current,
+          lastMessage: `${action.label} 执行中，正在同步后端结果。`,
+        };
+      }
+      return result;
+    });
   }
 
   return (
@@ -173,10 +198,19 @@ export function AppShell() {
       />
 
       <ConfirmModal
-        action={confirmAction}
+        action={confirmAction?.action ?? null}
         onCancel={() => setConfirmAction(null)}
         onConfirm={confirm}
       />
     </div>
+  );
+}
+
+function isAsyncActionResult(
+  value: ReturnType<typeof dispatchWorkbenchAction>,
+): value is Promise<WorkbenchStore> {
+  return Boolean(
+    value &&
+      typeof (value as unknown as { then?: unknown }).then === "function",
   );
 }

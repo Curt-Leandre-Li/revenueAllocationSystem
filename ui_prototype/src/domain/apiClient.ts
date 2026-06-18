@@ -127,6 +127,7 @@ export interface BackendQualityAssessment {
   evidence_summary: string;
   algorithm_version: string;
   input_snapshot_id?: string | null;
+  parameter_snapshot_id?: string | null;
   output_snapshot_id: string;
   created_at: string;
 }

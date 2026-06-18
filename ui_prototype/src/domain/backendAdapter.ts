@@ -13,7 +13,7 @@ import {
   type BackendQualityDetail,
 } from "./apiClient";
 import { workbenchSnapshot } from "./mockData";
-import { projectStatusLabels } from "./status";
+import { getStatusIndex, projectStatusLabels } from "./status";
 import type {
   ActionId,
   DataRow,
@@ -46,6 +46,22 @@ const preconditionLabels: Record<
     name: "资源主体关系",
     targetPath: "/data/resources",
   },
+  HAS_QUALITY_ASSESSMENT: {
+    name: "质量评估",
+    targetPath: "/measure/quality",
+  },
+  HAS_SHUYUAN_METERING: {
+    name: "数元计量",
+    targetPath: "/measure/shuyuan",
+  },
+  HAS_CONTRIBUTION_RECORDS: {
+    name: "贡献度计算",
+    targetPath: "/measure/utility",
+  },
+  HAS_UTILITY_RESULT: {
+    name: "效用计算",
+    targetPath: "/measure/utility",
+  },
 };
 
 export async function loadWorkbenchSnapshotFromBackend(): Promise<WorkbenchSnapshot> {
@@ -57,7 +73,9 @@ export async function loadWorkbenchSnapshotFromBackend(): Promise<WorkbenchSnaps
     dvasApi.listParties(),
   ]);
   const quality =
-    overview.project_status === "ASSESSED" ? await loadQualityIfPresent() : null;
+    getStatusIndex(overview.project_status) >= getStatusIndex("ASSESSED")
+      ? await loadQualityIfPresent()
+      : null;
 
   return buildSnapshotFromBackend({
     overview,
@@ -409,6 +427,12 @@ function buildQualityPage(payload: BackendWorkspacePayload): PageWorkspaceData {
         hint: "BE-04 骨架",
         tone: "neutral",
       },
+      {
+        label: "质量因子",
+        value: assessment ? assessment.quality_factor.toFixed(4) : "待生成",
+        hint: "供 BE-05 计量与效用使用",
+        tone: assessment ? "success" : "neutral",
+      },
     ],
     preconditions: toPreconditions(payload.preconditions.preconditions),
     rows: payload.qualityDetails.map((item) => ({
@@ -422,13 +446,19 @@ function buildQualityPage(payload: BackendWorkspacePayload): PageWorkspaceData {
       low_quality_warning: item.score < 80 ? "需关注" : "无",
       assessment_id: assessment?.assessment_id ?? "",
       detail_id: item.detail_id,
+      metric_version: assessment ? String(assessment.version_no) : "",
+      input_snapshot_id: assessment?.input_snapshot_id ?? "",
+      parameter_snapshot_id: assessment?.parameter_snapshot_id ?? "",
       output_snapshot_id: assessment?.output_snapshot_id ?? "",
       algorithm_version: assessment?.algorithm_version ?? "",
+      created_at: assessment ? formatDateTime(assessment.created_at) : "-",
     })),
     technicalDetails: {
       project_id: payload.overview.project_id,
       assessment_id: assessment?.assessment_id ?? "",
+      metric_version: assessment ? String(assessment.version_no) : "",
       input_snapshot_id: assessment?.input_snapshot_id ?? "",
+      parameter_snapshot_id: assessment?.parameter_snapshot_id ?? "",
       output_snapshot_id: assessment?.output_snapshot_id ?? "",
       algorithm_version: assessment?.algorithm_version ?? "",
       menu_code: "NAV_MEASURE_QUALITY",

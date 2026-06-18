@@ -1,4 +1,6 @@
 import type { MockDomainService } from "./serviceTypes";
+import { dvasApi } from "../apiClient";
+import { formatApiError, loadWorkbenchSnapshotFromBackend } from "../backendAdapter";
 import type { WorkbenchSnapshot } from "../types";
 import {
   appendAudit,
@@ -12,6 +14,10 @@ export const DashboardService: MockDomainService = {
   readPage: readPageFromStore,
   handleAction(store, action) {
     if (action.id === "SYS-002") {
+      if (store.snapshot.backend?.connected) {
+        return initializeDemoFromBackend(store);
+      }
+
       let snapshot = appendSnapshot(store.snapshot, {
         name: "演示数据输入快照",
         type: "INPUT",
@@ -110,3 +116,23 @@ export const DashboardService: MockDomainService = {
     return writeMockServiceResult("DashboardService", store, action);
   },
 };
+
+async function initializeDemoFromBackend(store: Parameters<MockDomainService["handleAction"]>[0]) {
+  try {
+    await dvasApi.initializeDemoCase();
+    const snapshot = await loadWorkbenchSnapshotFromBackend();
+    return {
+      ...store,
+      snapshot: {
+        ...snapshot,
+        mock: store.snapshot.mock ?? snapshot.mock,
+      },
+      lastMessage: "演示数据已由后端初始化，仪表盘和前置条件已刷新。",
+    };
+  } catch (error) {
+    return {
+      ...store,
+      lastMessage: `选择演示数据 未执行：${formatApiError(error)}`,
+    };
+  }
+}
