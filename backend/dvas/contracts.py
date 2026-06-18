@@ -44,22 +44,34 @@ def stable_checksum(value):
 
 
 def ok_response(data=None, message="操作成功", trace_id=None):
-    return {
+    data = data or {}
+    response = {
         "success": True,
         "code": "OK",
         "message": message,
         "trace_id": trace_id or new_trace_id(),
-        "data": data or {},
+        "data": data,
     }
+    if isinstance(data, dict) and data.get("project_status"):
+        response["project_status"] = data["project_status"]
+    return response
 
 
 def error_response(error, trace_id=None):
+    trace_id = trace_id or new_trace_id()
+    field_error = error.field_errors[0] if error.field_errors else {}
     return {
         "success": False,
         "code": error.code,
         "message": error.message,
-        "trace_id": trace_id or new_trace_id(),
+        "trace_id": trace_id,
         "field_errors": error.field_errors,
+        "error": {
+            "code": error.code,
+            "field": field_error.get("field"),
+            "message": field_error.get("reason") or error.message,
+            "detail": {"field_errors": error.field_errors},
+        },
     }
 
 

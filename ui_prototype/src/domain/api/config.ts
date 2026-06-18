@@ -1,4 +1,4 @@
-const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
+const DEFAULT_API_BASE_URL = "/api/v1";
 const API_PREFIX = "/api/v1";
 
 function trimTrailingSlash(value: string) {
@@ -10,7 +10,11 @@ function readEnvString(name: string) {
 }
 
 export function getDvasApiBaseUrl() {
-  return trimTrailingSlash(readEnvString("VITE_DVAS_API_BASE_URL") || DEFAULT_API_BASE_URL);
+  return trimTrailingSlash(
+    readEnvString("VITE_API_BASE_URL") ||
+      readEnvString("VITE_DVAS_API_BASE_URL") ||
+      DEFAULT_API_BASE_URL,
+  );
 }
 
 export function getDvasApiRootUrl() {
@@ -19,7 +23,7 @@ export function getDvasApiRootUrl() {
 }
 
 export function isDvasBackendEnabled() {
-  return readEnvString("VITE_DVAS_USE_BACKEND").toLowerCase() === "true";
+  return readEnvString("VITE_DVAS_USE_BACKEND").toLowerCase() !== "false";
 }
 
 export function getDvasApiConfig() {

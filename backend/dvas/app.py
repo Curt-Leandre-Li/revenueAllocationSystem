@@ -77,24 +77,49 @@ class DvasApplication:
         segments = [segment for segment in path.removeprefix(API_PREFIX).split("/") if segment]
         if method == "GET" and segments == ["projects", "current"]:
             return self.project_service.current_project()
+        if method == "GET" and segments == ["projects", "current", "status"]:
+            return self.project_service.status()
+        if method == "GET" and len(segments) == 3 and segments[0] == "projects" and segments[2] == "status":
+            return self.project_service.status(segments[1])
+        if method == "GET" and len(segments) == 3 and segments[0] == "projects" and segments[2] == "flow":
+            return self.project_service.flow(segments[1])
         if method == "GET" and segments == ["navigation", "menu-tree"]:
+            return self.navigation_service.menu_tree()
+        if method == "GET" and segments == ["navigation", "menus"]:
             return self.navigation_service.menu_tree()
         if method == "GET" and segments == ["navigation", "button-permissions"]:
             return self.navigation_service.button_permissions()
         if method == "GET" and segments == ["dashboard"]:
             return self.dashboard_service.overview()
+        if method == "GET" and segments == ["sys", "home"]:
+            return self.dashboard_service.overview()
         if method == "GET" and segments == ["dashboard", "preconditions"]:
             return self.dashboard_service.preconditions()
         if method == "POST" and segments == ["dashboard", "actions", "quick-run"]:
-            return self.dashboard_service.quick_run()
+            return self.dashboard_service.quick_run(body)
+        if (
+            method == "POST"
+            and len(segments) == 4
+            and segments[0] == "projects"
+            and segments[2:] == ["pipeline", "run"]
+        ):
+            return self.dashboard_service.quick_run(body)
         if method == "POST" and len(segments) == 3 and segments[:1] == ["demo-cases"] and segments[2] == "initialize":
+            return self.ingestion_service.initialize_demo_case(segments[1])
+        if method == "POST" and len(segments) == 3 and segments[:1] == ["demo-cases"] and segments[2] == "select":
             return self.ingestion_service.initialize_demo_case(segments[1])
         if method == "POST" and segments == ["data-packages", "upload"]:
             return self.ingestion_service.upload_json(body)
+        if method == "POST" and segments == ["data", "packages", "upload"]:
+            return self.ingestion_service.upload_json(body)
         if method == "GET" and segments == ["data-packages"]:
+            return self.ingestion_service.list_packages()
+        if method == "GET" and segments == ["data", "packages"]:
             return self.ingestion_service.list_packages()
         if method == "GET" and len(segments) == 2 and segments[0] == "data-packages":
             return self.ingestion_service.package_detail(segments[1])
+        if method == "GET" and len(segments) == 4 and segments[:2] == ["data", "packages"] and segments[3] == "preview":
+            return self.ingestion_service.package_detail(segments[2])
         if (
             method == "GET"
             and len(segments) == 3
@@ -103,6 +128,8 @@ class DvasApplication:
         ):
             return self.ingestion_service.validation_result(segments[1])
         if method == "GET" and segments == ["data-resources"]:
+            return self.ingestion_service.list_resources()
+        if method == "GET" and segments == ["data", "resources"]:
             return self.ingestion_service.list_resources()
         if (
             method == "PUT"
@@ -115,10 +142,16 @@ class DvasApplication:
             return self.ingestion_service.resource_detail(segments[1])
         if method == "GET" and segments == ["parties"]:
             return self.ingestion_service.list_parties()
+        if method == "GET" and segments == ["data", "parties"]:
+            return self.ingestion_service.list_parties()
         if method == "POST" and segments == ["parties"]:
+            return self.party_service.create_party(body)
+        if method == "POST" and segments == ["data", "parties"]:
             return self.party_service.create_party(body)
         if method == "PUT" and len(segments) == 2 and segments[0] == "parties":
             return self.party_service.update_party(segments[1], body)
+        if method == "PATCH" and len(segments) == 3 and segments[:2] == ["data", "parties"]:
+            return self.party_service.update_party(segments[2], body)
         if (
             method == "PATCH"
             and len(segments) == 3
@@ -126,7 +159,22 @@ class DvasApplication:
             and segments[2] == "status"
         ):
             return self.party_service.set_status(segments[1], body)
+        if method == "PATCH" and len(segments) == 4 and segments[:2] == ["data", "parties"] and segments[3] == "status":
+            return self.party_service.set_status(segments[2], body)
         if method == "POST" and segments == ["quality-assessments", "run"]:
+            return self.quality_service.run(body)
+        if method == "GET" and segments == ["metering", "quality", "weights"]:
+            return {
+                "project_status": self.repository.get_project()["project_status"],
+                "items": [
+                    {"dimension_code": "completeness", "weight": 0.35},
+                    {"dimension_code": "consistency", "weight": 0.30},
+                    {"dimension_code": "usability", "weight": 0.35},
+                ],
+            }
+        if method == "PUT" and segments == ["metering", "quality", "weights"]:
+            return {"project_status": self.repository.get_project()["project_status"], "items": body.get("items", [])}
+        if method == "POST" and segments == ["metering", "quality", "evaluate"]:
             return self.quality_service.run(body)
         if method == "GET" and segments == ["quality-assessments", "latest"]:
             return self.quality_service.latest()
@@ -139,6 +187,12 @@ class DvasApplication:
             return self.quality_service.details(segments[1])
         if method == "POST" and segments == ["shuyuan-meterings", "run"]:
             return self.shuyuan_service.run(body)
+        if method == "PUT" and segments == ["metering", "shuyuan", "parameters"]:
+            return {"project_status": self.repository.get_project()["project_status"], "parameters": body}
+        if method == "PUT" and segments == ["metering", "shuyuan", "call-counts"]:
+            return {"project_status": self.repository.get_project()["project_status"], "call_counts": body}
+        if method == "POST" and segments == ["metering", "shuyuan", "calculate"]:
+            return self.shuyuan_service.run(body)
         if method == "GET" and segments == ["shuyuan-meterings", "latest"]:
             return self.shuyuan_service.latest()
         if (
@@ -150,6 +204,14 @@ class DvasApplication:
             return self.shuyuan_service.details(segments[1])
         if method == "POST" and segments == ["contributions", "run"]:
             return self.contribution_service.run(body)
+        if method == "PUT" and segments == ["metering", "utility", "contribution-factors"]:
+            return {"project_status": self.repository.get_project()["project_status"], "contribution_factors": body}
+        if method == "POST" and segments == ["metering", "utility", "contribution", "calculate"]:
+            return self.contribution_service.run(body)
+        if method == "PUT" and segments == ["metering", "utility", "function"]:
+            return {"project_status": self.repository.get_project()["project_status"], "utility_function": body}
+        if method == "POST" and segments == ["metering", "utility", "calculate"]:
+            return self.utility_service.run(body)
         if method == "POST" and segments == ["utilities", "run"]:
             return self.utility_service.run(body)
         if method == "GET" and segments == ["utilities", "latest"]:
@@ -163,8 +225,24 @@ class DvasApplication:
             return self.utility_service.trace(segments[1])
         if method == "POST" and segments == ["md-dshap", "tasks"]:
             return self.md_dshap_service.run(body)
+        if method == "GET" and segments == ["allocation", "md-dshap", "config"]:
+            return {
+                "project_status": self.repository.get_project()["project_status"],
+                "algorithm_mode": "MD_DSHAP",
+                "seed": 42,
+                "sample_rounds": 64,
+                "epsilon": 0.000001,
+            }
+        if method == "PUT" and segments == ["allocation", "md-dshap", "config"]:
+            return {"project_status": self.repository.get_project()["project_status"], "config": body}
+        if method == "GET" and segments == ["allocation", "md-dshap", "participant-pool"]:
+            return self.md_dshap_service.participant_pool()
+        if method == "POST" and segments == ["allocation", "md-dshap", "tasks"]:
+            return self.md_dshap_service.run(body)
         if method == "GET" and len(segments) == 3 and segments[:2] == ["md-dshap", "tasks"]:
             return self.md_dshap_service.task(segments[2])
+        if method == "GET" and len(segments) == 4 and segments[:3] == ["allocation", "md-dshap", "tasks"]:
+            return self.md_dshap_service.task(segments[3])
         if (
             method == "GET"
             and len(segments) == 4
@@ -172,6 +250,8 @@ class DvasApplication:
             and segments[3] == "results"
         ):
             return self.md_dshap_service.results(segments[2])
+        if method == "GET" and len(segments) == 5 and segments[:3] == ["allocation", "md-dshap", "tasks"] and segments[4] == "results":
+            return self.md_dshap_service.results(segments[3])
         if (
             method == "GET"
             and len(segments) == 4
@@ -181,10 +261,16 @@ class DvasApplication:
             return self.md_dshap_service.marginal_traces(segments[2])
         if method == "GET" and segments == ["contract-constraints"]:
             return self.constraint_service.list()
+        if method == "GET" and segments == ["allocation", "constraints"]:
+            return self.constraint_service.list()
         if method == "POST" and segments == ["contract-constraints"]:
+            return self.constraint_service.create(body)
+        if method == "POST" and segments == ["allocation", "constraints"]:
             return self.constraint_service.create(body)
         if method == "PUT" and len(segments) == 2 and segments[0] == "contract-constraints":
             return self.constraint_service.update(segments[1], body)
+        if method == "PATCH" and len(segments) == 3 and segments[:2] == ["allocation", "constraints"]:
+            return self.constraint_service.update(segments[2], body)
         if (
             method == "PATCH"
             and len(segments) == 3
@@ -192,8 +278,18 @@ class DvasApplication:
             and segments[2] == "status"
         ):
             return self.constraint_service.set_status(segments[1], body)
+        if method == "PATCH" and len(segments) == 4 and segments[:2] == ["allocation", "constraints"] and segments[3] == "status":
+            return self.constraint_service.set_status(segments[2], body)
         if method == "POST" and segments == ["allocation-scenarios"]:
             return self.allocation_service.create(body)
+        if method == "PUT" and segments == ["allocation", "simulation", "revenue-pool"]:
+            return {"project_status": self.repository.get_project()["project_status"], "revenue_pool": body}
+        if method == "PUT" and segments == ["allocation", "simulation", "priority-items"]:
+            return {"project_status": self.repository.get_project()["project_status"], "priority_items": body}
+        if method == "PUT" and segments == ["allocation", "simulation", "mode"]:
+            return {"project_status": self.repository.get_project()["project_status"], "mode": body}
+        if method == "POST" and segments == ["allocation", "simulation", "run"]:
+            return self.allocation_service.run(body)
         if (
             method == "POST"
             and len(segments) == 3
@@ -208,6 +304,10 @@ class DvasApplication:
             and segments[2] == "lock"
         ):
             return self.allocation_service.lock(segments[1])
+        if method == "POST" and len(segments) == 4 and segments[:2] == ["allocation", "simulation"] and segments[3] == "lock":
+            return self.allocation_service.lock(segments[2])
+        if method == "POST" and len(segments) == 4 and segments[:2] == ["allocation", "simulation"] and segments[3] == "export":
+            return self.report_service.generate_json()
         if (
             method == "GET"
             and len(segments) == 3
@@ -217,6 +317,8 @@ class DvasApplication:
             return self.allocation_service.results(segments[1])
         if method == "GET" and segments == ["reports"]:
             return self.report_service.list()
+        if method == "GET" and segments == ["reports", "preview"]:
+            return self.report_service.preview()
         if method == "POST" and segments == ["reports", "markdown"]:
             return self.report_service.generate_markdown()
         if method == "POST" and segments == ["reports", "csv"]:
@@ -240,8 +342,12 @@ class DvasApplication:
             return self.system_parameter_service.restore_default(segments[2])
         if method == "GET" and segments == ["audit-logs"]:
             return self.audit_log_service.list(body)
+        if method == "GET" and segments == ["system", "audit", "logs"]:
+            return self.audit_log_service.list(body)
         if method == "GET" and len(segments) == 2 and segments[0] == "audit-logs":
             return self.audit_log_service.detail(segments[1])
+        if method == "GET" and len(segments) == 4 and segments[:3] == ["system", "audit", "logs"]:
+            return self.audit_log_service.detail(segments[3])
         raise ApiError("DVAS_NOT_FOUND", "接口不存在", status=404)
 
     def _normalize_path(self, path):

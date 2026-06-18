@@ -37,6 +37,12 @@ interface BackendWorkspaceData {
   parties: ReturnType<typeof mapPartyDto>[];
   reports: ReturnType<typeof mapReportRecordDto>[];
   auditLogs: ReturnType<typeof mapAuditLogDto>[];
+  participantPool: Record<string, unknown>;
+  mdTask: Record<string, unknown> | null;
+  mdResults: Record<string, unknown>[];
+  allocationResults: Record<string, unknown>[];
+  currentAlgorithmTaskId: string;
+  currentAllocationId: string;
 }
 
 const preconditionLabels: Record<
@@ -70,13 +76,7 @@ const preconditionLabels: Record<
 };
 
 export function shouldUseBackend() {
-  if (isDvasBackendEnabled()) {
-    return true;
-  }
-  if (typeof window === "undefined") {
-    return false;
-  }
-  return new URLSearchParams(window.location.search).get("backend") === "1";
+  return isDvasBackendEnabled();
 }
 
 export async function loadBackendWorkspaceSnapshot(
@@ -103,6 +103,30 @@ export async function loadBackendWorkspaceSnapshot(
         dvasApi.listReports(),
         dvasApi.listAuditLogs(),
       ]);
+    const currentAlgorithmTaskId = String(projectDto.current_algorithm_task_id ?? "");
+    const currentAllocationId = String(projectDto.current_allocation_id ?? "");
+    const [participantPool, mdTask, mdResultsPage, allocationResultsPage] = await Promise.all([
+      optionalBackendCall(() => dvasApi.listMdDshapParticipantPool(), {}),
+      currentAlgorithmTaskId
+        ? optionalBackendCall(() => dvasApi.getMdDshapTask(currentAlgorithmTaskId), null)
+        : Promise.resolve(null),
+      currentAlgorithmTaskId
+        ? optionalBackendCall(() => dvasApi.getMdDshapTaskResults(currentAlgorithmTaskId), {
+            items: [],
+            total: 0,
+            page: 1,
+            page_size: 0,
+          })
+        : Promise.resolve({ items: [], total: 0, page: 1, page_size: 0 }),
+      currentAllocationId
+        ? optionalBackendCall(() => dvasApi.getAllocationResults(currentAllocationId), {
+            items: [],
+            total: 0,
+            page: 1,
+            page_size: 0,
+          })
+        : Promise.resolve({ items: [], total: 0, page: 1, page_size: 0 }),
+    ]);
 
     const data: BackendWorkspaceData = {
       overview: mapDashboardSummaryDto({
@@ -117,6 +141,12 @@ export async function loadBackendWorkspaceSnapshot(
       parties: partiesPage.items.map(mapPartyDto),
       reports: reportsPage.items.map(mapReportRecordDto),
       auditLogs: auditPage.items.map(mapAuditLogDto),
+      participantPool: participantPool as Record<string, unknown>,
+      mdTask,
+      mdResults: mdResultsPage.items,
+      allocationResults: allocationResultsPage.items,
+      currentAlgorithmTaskId,
+      currentAllocationId,
     };
 
     return {
@@ -133,10 +163,17 @@ export async function loadBackendWorkspaceSnapshot(
   }
 }
 
+async function optionalBackendCall<T>(call: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await call();
+  } catch {
+    return fallback;
+  }
+}
+
 export async function refreshStoreFromBackend(
   store: WorkbenchStore,
   successMessage: string,
-  fallbackStore?: WorkbenchStore,
 ): Promise<WorkbenchStore> {
   const result = await loadBackendWorkspaceSnapshot(store.snapshot);
   if (result.ok && result.data) {
@@ -153,16 +190,50 @@ export async function refreshStoreFromBackend(
     };
   }
 
-  const fallback = fallbackStore ?? store;
   return {
-    ...fallback,
-    snapshot: markSnapshotSource(fallback.snapshot, "mock_fallback"),
-    lastMessage: `后端请求失败，已回退本地模拟数据。位置：workspace refresh。建议：${result.error?.repairSuggestion ?? "确认后端服务已启动后刷新页面。"}`,
+    ...store,
+    snapshot: markSnapshotSource(store.snapshot, "mock_fallback"),
+    lastMessage: `后端刷新失败，当前页面未用 mock 伪造成功。位置：workspace refresh。${formatBackendError(result.error)}`,
     dataSource: {
       mode: "mock_fallback",
       lastError: result.error,
       backendAvailable: false,
     },
+  };
+}
+
+export async function mutateBackendAndRefresh(
+  store: WorkbenchStore,
+  mutation: () => Promise<unknown>,
+  successMessage: string,
+  location: string,
+): Promise<WorkbenchStore> {
+  try {
+    await mutation();
+    return refreshStoreFromBackend(store, successMessage);
+  } catch (error) {
+    const normalized = normalizeApiError(error);
+    return {
+      ...store,
+      snapshot: markSnapshotSource(store.snapshot, "mock_fallback"),
+      lastMessage: `后端操作失败，当前页面未用 mock 伪造成功。位置：${location}。${formatBackendError(normalized)}`,
+      dataSource: {
+        mode: "mock_fallback",
+        lastError: normalized,
+        backendAvailable: false,
+      },
+    };
+  }
+}
+
+export function backendUnavailableStore(
+  store: WorkbenchStore,
+  actionLabel: string,
+  location: string,
+): WorkbenchStore {
+  return {
+    ...store,
+    lastMessage: `${actionLabel} 未执行：接口未接入/暂不可用。位置：${location}。未写入前端 mock 成功状态。`,
   };
 }
 
@@ -193,6 +264,8 @@ function buildSnapshotFromBackend(
     "/data/packages": buildPackagesPage(data),
     "/data/resources": buildResourcesPage(data),
     "/data/parties": buildPartiesPage(data),
+    "/allocation/md-dshap": buildMDDShapPage(data),
+    "/allocation/simulation": buildSimulationPage(data),
     "/reports": buildReportsPage(data),
     "/system/audit": buildAuditPage(data, mock),
   };
@@ -227,9 +300,77 @@ function buildMockState(
     dataProviders: data.parties.map((party) =>
       mapPartyToProviderOption(party, linkedResourceCount(party.partyId, data.resources)),
     ),
+    mdsParticipants: mdParticipantsFromBackend(data),
+    mdsWeights: mdWeightsFromBackend(data),
+    mdsTraces: mdTracesFromBackend(data),
+    mdsTasks: mdTasksFromBackend(data, base),
+    currentRevenuePool: currentRevenuePoolFromBackend(data, base.currentRevenuePool),
     reports: data.reports,
     auditLogs: data.auditLogs,
   };
+}
+
+function mdParticipantsFromBackend(data: BackendWorkspaceData) {
+  const items = arrayRecord(data.participantPool.items);
+  return items.map((item) => ({
+    name: stringValue(item.party_name, "数据源主体"),
+    partyType: "DATA_PROVIDER" as const,
+    contributionScore: numberValue(item.contribution_score),
+    utilityValue: numberValue(item.utility_value),
+    qualityFactor: numberValue(item.quality_factor, 1),
+    includeInMDDShap: Boolean(item.include_in_md_dshap ?? true),
+  }));
+}
+
+function mdWeightsFromBackend(data: BackendWorkspaceData) {
+  return data.mdResults.map((item) => ({
+    partyName: stringValue(item.party_name, "数据源主体"),
+    normalizedWeight: numberValue(item.normalized_weight),
+    marginalContribution: numberValue(item.participant_weight),
+    qualityFactor: 1,
+    utilityValue: numberValue(item.normalized_weight),
+    status: "后端已归一化",
+  }));
+}
+
+function mdTracesFromBackend(data: BackendWorkspaceData) {
+  return data.mdResults.map((item, index) => ({
+    coalition: index === 0 ? "{}" : "{前序参与方}",
+    partyName: stringValue(item.party_name, "数据源主体"),
+    vBefore: 0,
+    vAfter: numberValue(item.normalized_weight),
+    marginalContribution: numberValue(item.participant_weight),
+  }));
+}
+
+function mdTasksFromBackend(data: BackendWorkspaceData, base: MockWorkspaceState) {
+  if (!data.mdTask) {
+    return base.mdsTasks;
+  }
+  return [
+    {
+      taskName: stringValue(data.mdTask.task_id, "MD-DShap 后端任务"),
+      algorithmMode: stringValue(data.mdTask.algorithm_mode, "MD_DSHAP"),
+      status: stringValue(data.mdTask.status, "COMPLETED") === "COMPLETED" ? "已完成" : "执行中",
+      progress: stringValue(data.mdTask.status, "COMPLETED") === "COMPLETED" ? 100 : 50,
+      seed: numberValue(data.mdTask.seed, 42),
+      sampleRounds: numberValue(data.mdTask.sample_rounds, 64),
+      epsilon: numberValue(data.mdTask.epsilon, 0.000001),
+      saveMarginalDetail: true,
+      createdAt: stringValue(data.mdTask.created_at, data.overview.updatedAt),
+    },
+  ];
+}
+
+function currentRevenuePoolFromBackend(data: BackendWorkspaceData, fallback: number) {
+  const first = data.allocationResults[0];
+  if (!first) {
+    return fallback;
+  }
+  return data.allocationResults.reduce(
+    (sum, item) => sum + numberValue(item.post_constraint_amount),
+    0,
+  );
 }
 
 function buildOverviewPage(data: BackendWorkspaceData): PageWorkspaceData {
@@ -306,19 +447,19 @@ function buildProcessPage(data: BackendWorkspaceData): PageWorkspaceData {
 
 function buildOneClickPage(data: BackendWorkspaceData): PageWorkspaceData {
   return {
-    summary: "后端一键计算仍为 PARTIAL，本页只读取前置条件并保留 mock 编排。",
-    primaryTask: "GAP-API-001 未关闭前，不直连 SYS-004 完整链路计算。",
+    summary: "一键计算调用后端 pipeline/run，按质量、计量、贡献、效用、MD-DShap、分配模拟推进。",
+    primaryTask: "前置条件满足后可执行 SYS-004 后端完整链路计算。",
     metrics: [
       metric("通过检查", data.overview.preconditions.filter((item) => item.passed).length, "可继续节点", "success"),
       metric("未通过检查", data.overview.preconditions.filter((item) => !item.passed).length, "阻塞节点", "warning"),
-      metric("一键计算", "暂不直连", "GAP-API-001", "neutral"),
+      metric("一键计算", "后端直连", "pipeline/run", "success"),
     ],
     preconditions: toPreconditions(data.overview.preconditions),
     rows: data.overview.preconditions.map((item) => ({
       precondition_name: preconditionLabels[item.code]?.name ?? item.code,
       check_result: item.passed ? "通过" : "阻塞",
       failed_stage: item.passed ? "无" : item.message,
-      run_mode: "前端 mock 编排保留",
+      run_mode: "后端同步 pipeline",
       algorithm_mode: "MD-DShap",
       pipeline_stage: data.overview.nextStep.label,
       stage_status: projectStatusLabel(data.overview.status),
@@ -334,7 +475,7 @@ function buildOneClickPage(data: BackendWorkspaceData): PageWorkspaceData {
 function buildPackagesPage(data: BackendWorkspaceData): PageWorkspaceData {
   const invalidCount = data.packages.filter((item) => item.status !== "VALIDATED").length;
   return {
-    summary: "数据包列表来自后端；演示数据初始化和 JSON 上传可直连后端并回退 mock。",
+    summary: "数据包列表来自后端；演示数据初始化和 JSON 上传均调用真实接口。",
     primaryTask: data.packages.length ? "检查最新数据包校验结果。" : "选择演示数据或上传 JSON。",
     metrics: [
       metric("数据包", data.packages.length, "来自 /data-packages", "neutral"),
@@ -367,7 +508,7 @@ function buildPackagesPage(data: BackendWorkspaceData): PageWorkspaceData {
 function buildResourcesPage(data: BackendWorkspaceData): PageWorkspaceData {
   const unboundCount = data.resources.filter((item) => item.providerName === "未关联").length;
   return {
-    summary: "资源清单来自后端；主体关系读取已接入，计算纳入变更仍保留 mock。",
+    summary: "资源清单来自后端；主体关系读取已接入，未接入写操作会明确提示暂不可用。",
     primaryTask: unboundCount ? "补齐资源与数据源主体关系。" : "资源主体关系已满足质量评估前置条件。",
     metrics: [
       metric("资源", data.resources.length, "来自 /data-resources", "neutral"),
@@ -415,9 +556,94 @@ function buildPartiesPage(data: BackendWorkspaceData): PageWorkspaceData {
   };
 }
 
+function buildMDDShapPage(data: BackendWorkspaceData): PageWorkspaceData {
+  const participantCount = mdParticipantsFromBackend(data).length;
+  const weightTotal = data.mdResults.reduce(
+    (sum, item) => sum + numberValue(item.normalized_weight),
+    0,
+  );
+  return {
+    summary: "MD-DShap 参与方池、任务和权重结果来自后端。",
+    primaryTask: data.mdTask ? "查看后端权重结果。" : "完成效用计算后启动 MD-DShap。",
+    metrics: [
+      metric("参与方池", participantCount, "include_in_md_dshap=true", "neutral"),
+      metric("权重结果", data.mdResults.length, "后端 task results", data.mdResults.length ? "success" : "warning"),
+      metric("权重合计", weightTotal ? weightTotal.toFixed(6) : "待计算", "目标为 1.000000", Math.abs(weightTotal - 1) < 0.000001 ? "success" : "warning"),
+    ],
+    preconditions: toPreconditions(data.overview.preconditions),
+    rows: data.mdResults.length
+      ? data.mdResults.map((item) => ({
+          algorithm_mode: stringValue(data.mdTask?.algorithm_mode, "MD_DSHAP"),
+          participant_set: participantCount,
+          task_set: "P0_DETERMINISTIC_UTILITY",
+          sample_rounds: numberValue(data.mdTask?.sample_rounds, 64),
+          epsilon: numberValue(data.mdTask?.epsilon, 0.000001).toFixed(6),
+          task_status: stringValue(data.mdTask?.status, "COMPLETED"),
+          party_name: stringValue(item.party_name, "数据源主体"),
+          participant_weight: numberValue(item.participant_weight).toFixed(6),
+          normalized_weight: numberValue(item.normalized_weight).toFixed(6),
+          marginal_contribution: numberValue(item.weight_diff).toFixed(6),
+        }))
+      : mdParticipantsFromBackend(data).map((item) => ({
+          algorithm_mode: "MD_DSHAP",
+          participant_set: participantCount,
+          task_set: "P0_DETERMINISTIC_UTILITY",
+          sample_rounds: 64,
+          epsilon: "0.000001",
+          task_status: "待启动",
+          party_name: item.name,
+          participant_weight: "待计算",
+          normalized_weight: "待计算",
+          marginal_contribution: "待计算",
+        })),
+    technicalDetails: {
+      project_id: data.overview.projectId,
+      current_algorithm_task_id: data.currentAlgorithmTaskId,
+      menu_code: "NAV_ALLOC_MDS",
+      module_code: "MDS",
+    },
+  };
+}
+
+function buildSimulationPage(data: BackendWorkspaceData): PageWorkspaceData {
+  const total = data.allocationResults.reduce(
+    (sum, item) => sum + numberValue(item.post_constraint_amount),
+    0,
+  );
+  return {
+    summary: "收益分配模拟结果来自后端 allocation results。",
+    primaryTask: data.allocationResults.length ? "查看模拟结果或锁定方案。" : "完成权重计算后执行收益分配模拟。",
+    metrics: [
+      metric("结果行", data.allocationResults.length, "后端 allocation results", data.allocationResults.length ? "success" : "warning"),
+      metric("数据源收益池", total.toFixed(2), "约束后金额合计", "neutral"),
+      metric("锁定/导出", projectStatusLabel(data.overview.status), "项目状态", "neutral"),
+    ],
+    preconditions: toPreconditions(data.overview.preconditions),
+    rows: data.allocationResults.map((item) => ({
+      total_revenue: total.toFixed(2),
+      priority_allocation_amount: "0.00",
+      data_provider_revenue_pool: total.toFixed(2),
+      allocation_mode: "MD-DShap 权重分配",
+      party_name: stringValue(item.party_name, "数据源主体"),
+      raw_weight: numberValue(item.raw_weight).toFixed(6),
+      normalized_weight: numberValue(item.normalized_weight).toFixed(6),
+      pre_constraint_amount: numberValue(item.pre_constraint_amount).toFixed(2),
+      post_constraint_amount: numberValue(item.post_constraint_amount).toFixed(2),
+      adjustment_reason: stringValue(item.constraint_adjustment_reason, "无约束调整"),
+      scenario_status: projectStatusLabel(data.overview.status),
+    })),
+    technicalDetails: {
+      project_id: data.overview.projectId,
+      current_allocation_id: data.currentAllocationId,
+      menu_code: "NAV_ALLOC_SIMULATION",
+      module_code: "ALLOC",
+    },
+  };
+}
+
 function buildReportsPage(data: BackendWorkspaceData): PageWorkspaceData {
   return {
-    summary: "报告记录读取已接入；独立 export_file 列表 endpoint 缺失，导出文件清单继续使用 mock。",
+    summary: "报告记录读取已接入；Markdown、CSV、JSON、JSONL 导出调用真实后端。",
     primaryTask: data.reports.length ? "查看最近报告记录。" : "完成分配模拟后生成报告。",
     metrics: [
       metric("报告记录", data.reports.length, "来自 /reports", "neutral"),
@@ -438,6 +664,16 @@ function buildReportsPage(data: BackendWorkspaceData): PageWorkspaceData {
       module_code: "REP",
     },
   };
+}
+
+function formatBackendError(error: ReturnType<typeof normalizeApiError> | undefined) {
+  if (!error) {
+    return "建议：确认后端服务已启动后重试。";
+  }
+  const detail = error.detail ? ` ${error.detail}` : "";
+  const field = error.errorField ? ` 字段：${error.errorField}` : "";
+  const suggestion = error.repairSuggestion ? ` 建议：${error.repairSuggestion}` : "";
+  return `${error.errorMessage}${field}${detail}${suggestion}`;
 }
 
 function buildAuditPage(
@@ -487,6 +723,33 @@ function linkedResourceCount(partyId: string, resources: Array<{ partyId: string
       item.partyId === partyId ||
       item.relations.some((relation) => relation.partyId === partyId),
   ).length;
+}
+
+function arrayRecord(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+    : [];
+}
+
+function stringValue(value: unknown, fallback = "") {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return fallback;
+}
+
+function numberValue(value: unknown, fallback = 0) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+  return fallback;
 }
 
 function metric(

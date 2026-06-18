@@ -10,7 +10,7 @@ import {
 import type { PageProps } from "../pageTypes";
 
 const roles = [
-  { role: "本地操作员", scope: "P0 可用", permission: "本地模拟操作、导出和审计查看" },
+  { role: "本地操作员", scope: "P0 可用", permission: "本地演示操作、导出和审计查看" },
   { role: "系统管理员", scope: "P1 规划", permission: "用户、角色和权限配置" },
   { role: "审计查看员", scope: "P1 规划", permission: "跨用户审计查询与导出" },
 ];

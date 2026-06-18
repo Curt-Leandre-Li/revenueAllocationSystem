@@ -1528,6 +1528,71 @@ class DvasApiContractTests(unittest.TestCase):
                 self.assertFalse(response["success"])
                 self.assertEqual("DVAS_NOT_FOUND", response["code"])
 
+    def test_phase2c_navigation_and_status_aliases_preserve_system_home_contract(self):
+        menus = self.assert_ok(self.request("GET", "/api/v1/navigation/menus"))
+        status = self.assert_ok(self.request("GET", "/api/v1/projects/current/status"))
+        flow = self.assert_ok(self.request("GET", "/api/v1/projects/project_p0_local_demo/flow"))
+        home = self.assert_ok(self.request("GET", "/api/v1/sys/home?project_id=project_p0_local_demo"))
+
+        system_home = next(item for item in menus["items"] if item["menu_code"] == "NAV_SYS_HOME")
+        self.assertEqual([], system_home["children"])
+        self.assertEqual("/dashboard", system_home["route_path"])
+        self.assertEqual("DRAFT", status["project_status"])
+        self.assertEqual("DRAFT", flow["project_status"])
+        self.assertEqual("DRAFT", home["project_status"])
+
+        forbidden_text = json.dumps(menus, ensure_ascii=False)
+        for forbidden in [
+            "NAV_SYS_OVERVIEW",
+            "NAV_SYS_PROCESS",
+            "NAV_SYS_RISK",
+            "NAV_SYS_ONE_CLICK",
+        ]:
+            self.assertNotIn(forbidden, forbidden_text)
+
+    def test_phase2c_pipeline_run_executes_real_complete_chain_and_writes_sys004_audit(self):
+        self.assert_ok(self.request("POST", "/api/v1/demo-cases/lung_screening_demo/select", {}))
+
+        result = self.assert_ok(
+            self.request("POST", "/api/v1/projects/project_p0_local_demo/pipeline/run", {})
+        )
+
+        self.assertEqual("COMPLETED", result["pipeline_status"])
+        self.assertEqual("ALLOCATED", result["project_status"])
+        self.assertTrue(result["steps"]["quality"]["assessment"]["assessment_id"].startswith("assessment_"))
+        self.assertTrue(result["steps"]["shuyuan"]["metering"]["metering_id"].startswith("metering_"))
+        self.assertTrue(result["steps"]["utility"]["utility"]["utility_id"].startswith("utility_"))
+        self.assertTrue(result["steps"]["md_dshap"]["task"]["task_id"].startswith("task_"))
+        self.assertGreaterEqual(len(result["steps"]["allocation"]["results"]), 1)
+
+        logs = self.repository.list_audit_logs()
+        pipeline_log = next(item for item in logs if item["operation_type"] == "RUN_FULL_PIPELINE")
+        self.assertEqual("SYS", pipeline_log["module_code"])
+        self.assertEqual("NAV_SYS_HOME", pipeline_log["menu_code"])
+        self.assertEqual("SYS-004", pipeline_log["button_code"])
+
+    def test_phase2c_md_dshap_participant_pool_explains_non_data_exclusions(self):
+        self.run_demo_to_utility()
+
+        pool = self.assert_ok(self.request("GET", "/api/v1/allocation/md-dshap/participant-pool"))
+
+        included_names = {item["party_name"] for item in pool["items"]}
+        excluded_by_name = {item["party_name"]: item for item in pool["excluded_items"]}
+        self.assertIn("示例数据源主体A", included_names)
+        self.assertIn("示例数据源主体B", included_names)
+        self.assertIn("示例运营服务方", excluded_by_name)
+        self.assertIn("非数据源主体", excluded_by_name["示例运营服务方"]["excluded_reason"])
+
+    def test_phase2c_error_envelope_includes_nested_error_and_trace_id(self):
+        response = self.request("POST", "/api/v1/metering/shuyuan/calculate", {})
+
+        self.assertFalse(response["success"])
+        self.assertEqual("DVAS_PRECONDITION_NOT_MET", response["code"])
+        self.assertIn("trace_id", response)
+        self.assertEqual("DVAS_PRECONDITION_NOT_MET", response["error"]["code"])
+        self.assertEqual("quality_assessment", response["error"]["field"])
+        self.assertEqual("请先完成质量评估", response["error"]["message"])
+
 
 if __name__ == "__main__":
     unittest.main()

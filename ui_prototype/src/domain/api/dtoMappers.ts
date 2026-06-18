@@ -20,6 +20,8 @@ export interface BackendProjectDto extends BackendRecord {
   operator_id: string;
   current_package_id?: string | null;
   current_input_snapshot_id?: string | null;
+  current_algorithm_task_id?: string | null;
+  current_allocation_id?: string | null;
   updated_at: string;
   simulation_disclaimer?: string;
 }
@@ -699,6 +701,7 @@ function auditStatusLabel(value: unknown) {
 
 function operationLabel(value: unknown) {
   const labels: Record<string, string> = {
+    INITIALIZE_DEMO: "选择演示数据",
     INITIALIZE_DEMO_CASE: "初始化演示数据",
     UPLOAD_JSON: "上传 JSON 数据包",
     READ_PROJECT: "读取项目状态",
@@ -717,6 +720,7 @@ function operationLabel(value: unknown) {
     RUN_SHUYUAN_METERING: "运行数元计量",
     RUN_CONTRIBUTION: "运行贡献度计算",
     RUN_UTILITY: "运行效用计算",
+    RUN_FULL_PIPELINE: "执行完整链路计算",
     RUN_MD_DSHAP: "启动 MD-DShap 计算",
     RERUN_MD_DSHAP: "重新计算 MD-DShap",
     VIEW_MD_DSHAP_TRACE: "查看边际贡献明细",

@@ -73,12 +73,14 @@ def write_audit(
     result_snapshot_id=None,
     before_value_json=None,
     after_value_json=None,
+    button_code=None,
 ):
     audit_log = {
         "log_id": repository.next_id("audit"),
         "project_id": repository.get_project()["project_id"],
         "module_code": module_code,
         "menu_code": menu_code,
+        "button_code": button_code,
         "operation_type": operation_type,
         "object_type": object_type,
         "object_id": object_id,
@@ -109,6 +111,21 @@ class ProjectService:
 
     def current_project(self):
         return self.repository.get_project()
+
+    def status(self, project_id=None):
+        project = self.repository.get_project()
+        if project_id and project_id != project["project_id"]:
+            raise ApiError("DVAS_NOT_FOUND", "项目不存在", status=404)
+        return {
+            **project,
+            "flow": DashboardService(self.repository).preconditions(),
+        }
+
+    def flow(self, project_id=None):
+        project = self.repository.get_project()
+        if project_id and project_id != project["project_id"]:
+            raise ApiError("DVAS_NOT_FOUND", "项目不存在", status=404)
+        return DashboardService(self.repository).preconditions()
 
 
 class NavigationService:
@@ -628,9 +645,15 @@ class DashboardService:
             "disabled_actions": disabled_actions,
         }
 
-    def quick_run(self):
+    def quick_run(self, payload=None):
+        payload = payload or {}
         preconditions = self.preconditions()
-        failures = [item for item in preconditions["preconditions"] if not item["passed"]]
+        failures = [
+            item
+            for item in preconditions["preconditions"]
+            if item["code"] in {"HAS_VALID_DATA_PACKAGE", "HAS_RESOURCE_PARTY_RELATION"}
+            and not item["passed"]
+        ]
         if failures:
             raise ApiError(
                 "DVAS_PRECONDITION_NOT_MET",
@@ -646,11 +669,50 @@ class DashboardService:
                     if item["code"] == "HAS_RESOURCE_PARTY_RELATION"
                 ],
             )
+        quality = QualityAssessmentService(self.repository).run(payload.get("quality", {}))
+        metering = ShuyuanMeteringService(self.repository).run(payload.get("shuyuan", {}))
+        contribution = ContributionService(self.repository).run(payload.get("contribution", {}))
+        utility = UtilityService(self.repository).run(payload.get("utility", {}))
+        weights = MdDshapService(self.repository).run(payload.get("md_dshap", {}))
+        allocation_payload = {
+            "total_revenue": payload.get("total_revenue", 1000),
+            "priority_allocation_amount": payload.get("priority_allocation_amount", 0),
+            "currency": payload.get("currency", "CNY"),
+        }
+        allocation = AllocationService(self.repository).create(allocation_payload)
+        simulation = AllocationService(self.repository).simulate(allocation["allocation_id"])
+        write_audit(
+            self.repository,
+            module_code="SYS",
+            menu_code="NAV_SYS_HOME",
+            button_code="SYS-004",
+            operation_type="RUN_FULL_PIPELINE",
+            object_type="pipeline_run",
+            object_id=simulation["allocation"]["allocation_id"],
+            status="SUCCESS",
+            after_value_json={
+                "quality_assessment_id": quality["assessment"]["assessment_id"],
+                "metering_id": metering["metering"]["metering_id"],
+                "contribution_run_id": contribution["contribution_run_id"],
+                "utility_id": utility["utility"]["utility_id"],
+                "md_dshap_task_id": weights["task"]["task_id"],
+                "allocation_id": simulation["allocation"]["allocation_id"],
+            },
+        )
         return {
-            "project_status": preconditions["project_status"],
-            "pipeline_status": "READY",
-            "message": "BE-01 已完成一键计算入口骨架；质量评估及后续计算属于 BE-04+。",
-            "available_actions": preconditions["available_actions"],
+            "project_id": simulation["project_id"],
+            "project_status": simulation["project_status"],
+            "pipeline_status": "COMPLETED",
+            "steps": {
+                "quality": quality,
+                "shuyuan": metering,
+                "contribution": contribution,
+                "utility": utility,
+                "md_dshap": weights,
+                "allocation": simulation,
+            },
+            "message": "完整链路已按后端真实服务执行至收益分配模拟。",
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
         }
 
     def _next_step(self, project_status):
@@ -689,8 +751,8 @@ class DashboardService:
         participants = [
             party
             for party in self.repository.list_parties()
-            if party["party_type"] == "DATA_PROVIDER"
-            and party["status"] == "ENABLED"
+            if self._is_data_provider_party(party)
+            and self._is_active_party(party)
             and party.get("include_in_md_dshap")
         ]
         if not participants:
@@ -702,6 +764,12 @@ class DashboardService:
         if len(participants) > 1 and total_utility <= 0:
             return False, "效用总值必须大于 0"
         return True, ""
+
+    def _is_data_provider_party(self, party):
+        return bool(party.get("is_data_provider", party.get("party_type") == "DATA_PROVIDER"))
+
+    def _is_active_party(self, party):
+        return party.get("status") in {"ACTIVE", "ENABLED"}
 
 
 class DataIngestionService:
@@ -923,6 +991,7 @@ class DataIngestionService:
             status="SUCCESS",
             input_snapshot_id=snapshot_id,
             after_value_json={"package": package, "resources": created_resources, "parties": created_parties},
+            button_code="SYS-002" if source_type == "DEMO" else None,
         )
         return {
             "project_id": updated_project["project_id"],
@@ -941,12 +1010,16 @@ class DataIngestionService:
         for party_payload in parties:
             party = existing_by_name.get(party_payload["party_name"])
             if not party:
+                party_type = party_payload.get("party_type", "DATA_PROVIDER")
                 party = {
                     "party_id": self.repository.next_id("party"),
                     "project_id": project_id,
                     "party_name": party_payload["party_name"],
-                    "party_type": party_payload.get("party_type", "DATA_PROVIDER"),
-                    "include_in_md_dshap": bool(party_payload.get("include_in_md_dshap", True)),
+                    "party_type": party_type,
+                    "is_data_provider": party_type == "DATA_PROVIDER",
+                    "include_in_md_dshap": bool(
+                        party_payload.get("include_in_md_dshap", party_type == "DATA_PROVIDER")
+                    ),
                     "status": "ENABLED",
                     "created_at": now,
                     "updated_at": now,
@@ -988,6 +1061,7 @@ class DataIngestionService:
         failure_reason=None,
         input_snapshot_id=None,
         after_value_json=None,
+        button_code=None,
     ):
         return write_audit(
             self.repository,
@@ -1000,6 +1074,7 @@ class DataIngestionService:
             failure_reason=failure_reason,
             input_snapshot_id=input_snapshot_id,
             after_value_json=after_value_json,
+            button_code=button_code,
         )
 
 
@@ -1108,6 +1183,7 @@ class PartyService:
             "project_id": self.repository.get_project()["project_id"],
             "party_name": party_name,
             "party_type": party_type,
+            "is_data_provider": party_type == "DATA_PROVIDER",
             "include_in_md_dshap": self._default_include(payload, party_type),
             "status": "ENABLED",
             "credit_code": payload.get("credit_code"),
@@ -1140,6 +1216,7 @@ class PartyService:
             **party,
             "party_name": new_name,
             "party_type": party_type,
+            "is_data_provider": party_type == "DATA_PROVIDER",
             "include_in_md_dshap": self._default_include(payload, party_type, party),
             "credit_code": payload.get("credit_code", party.get("credit_code")),
             "contact_name": payload.get("contact_name", party.get("contact_name")),
@@ -2007,10 +2084,48 @@ class MdDshapService:
         return [
             party
             for party in self.repository.list_parties()
-            if party["party_type"] == "DATA_PROVIDER"
-            and party["status"] == "ENABLED"
+            if self._is_data_provider_party(party)
+            and self._is_active_party(party)
             and party.get("include_in_md_dshap")
         ]
+
+    def participant_pool(self):
+        included = []
+        excluded = []
+        for party in self.repository.list_parties():
+            is_data_provider = self._is_data_provider_party(party)
+            is_active = self._is_active_party(party)
+            include_in_md_dshap = bool(party.get("include_in_md_dshap"))
+            row = {
+                **party,
+                "is_data_provider": is_data_provider,
+                "active_status": "ACTIVE" if is_active else "INACTIVE",
+            }
+            if is_data_provider and is_active and include_in_md_dshap:
+                included.append(row)
+                continue
+            reasons = []
+            if not is_active:
+                reasons.append("参与方未启用")
+            if not is_data_provider:
+                reasons.append("非数据源主体默认不进入 MD-DShap 权重池")
+            if not include_in_md_dshap:
+                reasons.append("include_in_md_dshap=false")
+            excluded.append({**row, "excluded_reason": "；".join(reasons)})
+        return {
+            "project_id": self.repository.get_project()["project_id"],
+            "project_status": self.repository.get_project()["project_status"],
+            "items": included,
+            "excluded_items": excluded,
+            "total": len(included),
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+        }
+
+    def _is_data_provider_party(self, party):
+        return bool(party.get("is_data_provider", party.get("party_type") == "DATA_PROVIDER"))
+
+    def _is_active_party(self, party):
+        return party.get("status") in {"ACTIVE", "ENABLED"}
 
     def _parameters(self, payload, participant_count):
         return {
@@ -2343,6 +2458,23 @@ class ContractConstraintService:
 class AllocationService:
     def __init__(self, repository):
         self.repository = repository
+
+    def run(self, payload):
+        payload = payload or {}
+        allocation_id = payload.get("allocation_id") or self.repository.get_project().get(
+            "current_allocation_id"
+        )
+        if allocation_id:
+            return self.simulate(allocation_id)
+        allocation = self.create(
+            {
+                "total_revenue": payload.get("total_revenue", 1000),
+                "priority_allocation_amount": payload.get("priority_allocation_amount", 0),
+                "currency": payload.get("currency", "CNY"),
+                "allocation_mode": payload.get("allocation_mode", "MD_DSHAP_WEIGHT_WITH_CONSTRAINTS"),
+            }
+        )
+        return self.simulate(allocation["allocation_id"])
 
     def create(self, payload):
         project = self.repository.get_project()
@@ -2724,6 +2856,17 @@ class ReportService:
     def list(self):
         return table_page(self.repository.list_report_records())
 
+    def preview(self):
+        context = self._optional_export_context()
+        return {
+            "project_id": context["project"]["project_id"],
+            "project_status": context["project"]["project_status"],
+            "preview_markdown": self._markdown_content(context),
+            "report_count": len(self.repository.list_report_records()),
+            "allocation_ready": bool(context["allocation"] and context["allocation_results"]),
+            "simulation_disclaimer": self.EXTENDED_DISCLAIMER,
+        }
+
     def generate_markdown(self):
         context = self._final_export_context()
         context["project"] = self.repository.update_project(project_status="EXPORTED")
@@ -2861,8 +3004,7 @@ class ReportService:
         now = utc_now()
         project = context["project"]
         report_id = self.repository.next_id("report")
-        report_dir = self._export_root() / report_id
-        report_dir.mkdir(parents=True, exist_ok=False)
+        report_dir = self._prepare_report_dir(report_id)
         export_files = []
         for file_name, content in files:
             file_path = report_dir / file_name
@@ -3291,6 +3433,18 @@ class ReportService:
 
     def _export_root(self):
         return Path(getattr(self.repository, "runtime_dir", "backend/runtime")) / "exports"
+
+    def _prepare_report_dir(self, report_id):
+        export_root = self._export_root()
+        report_dir = export_root / report_id
+        suffix = 1
+        while True:
+            try:
+                report_dir.mkdir(parents=True, exist_ok=False)
+                return report_dir
+            except FileExistsError:
+                suffix += 1
+                report_dir = export_root / f"{report_id}_{suffix}"
 
     def _format_for_file(self, file_name, default):
         suffix = Path(file_name).suffix.lower()

@@ -23,9 +23,25 @@ const allocationRows = [
 export function SimulationPage({ route, snapshot, onAction }: PageProps) {
   const [drawer, setDrawer] = useState<"" | "revenue" | "priority" | "mode" | "compare" | "export" | "trace">("");
   const mock = getMockWorkspace(snapshot);
-  const totalRevenue = mock.currentRevenuePool;
-  const priorityAmount = 64000;
-  const dataPool = totalRevenue - priorityAmount;
+  const backendRows = snapshot.pages["/allocation/simulation"].rows;
+  const displayRows = backendRows.length
+    ? backendRows.map((row) => ({
+        party: readCell(row, "party_name", "数据源主体"),
+        before: readNumber(row, "pre_constraint_amount"),
+        after: readNumber(row, "post_constraint_amount"),
+        weight: readCell(row, "normalized_weight", "0.000000"),
+        status: readCell(row, "scenario_status", "已生成"),
+      }))
+    : allocationRows;
+  const totalRevenue = backendRows.length
+    ? readNumber(backendRows[0], "total_revenue")
+    : mock.currentRevenuePool;
+  const priorityAmount = backendRows.length
+    ? readNumber(backendRows[0], "priority_allocation_amount")
+    : 64000;
+  const dataPool = backendRows.length
+    ? readNumber(backendRows[0], "data_provider_revenue_pool")
+    : totalRevenue - priorityAmount;
 
   return (
     <div className="pageWorkspace phase2Page simulationPage">
@@ -86,7 +102,7 @@ export function SimulationPage({ route, snapshot, onAction }: PageProps) {
             <table className="dataTable phase2Table">
               <thead><tr><th>参与方</th><th>权重</th><th>约束前金额</th><th>约束后金额</th><th>状态</th></tr></thead>
               <tbody>
-                {allocationRows.map((row) => (
+                {displayRows.map((row) => (
                   <tr key={row.party}>
                     <td><strong>{row.party}</strong></td>
                     <td>{row.weight}</td>
@@ -186,7 +202,7 @@ export function SimulationPage({ route, snapshot, onAction }: PageProps) {
       >
         <DrawerSection title="约束前后金额">
           <div className="dimensionGrid">
-            {allocationRows.map((row) => (
+            {displayRows.map((row) => (
               <article key={row.party}>
                 <strong>{row.party}</strong>
                 <span>{formatAmount(row.after - row.before)}</span>
@@ -238,4 +254,14 @@ export function SimulationPage({ route, snapshot, onAction }: PageProps) {
       </DetailDrawer>
     </div>
   );
+}
+
+function readCell(row: Record<string, string | number | boolean>, key: string, fallback: string) {
+  const value = row[key];
+  return value === undefined || value === null || value === "" ? fallback : String(value);
+}
+
+function readNumber(row: Record<string, string | number | boolean>, key: string) {
+  const value = Number(row[key] ?? 0);
+  return Number.isFinite(value) ? value : 0;
 }

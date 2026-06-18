@@ -62,7 +62,7 @@ export function normalizeApiError(error: unknown): ApiError {
       errorCode: "DVAS_NETWORK_ERROR",
       errorMessage: "后端 API 暂不可用",
       detail: error.message,
-      repairSuggestion: "检查后端服务是否已启动，或继续使用本地模拟数据。",
+      repairSuggestion: "检查后端服务是否已启动；当前操作不会用前端 mock 伪造成功。",
       raw: error,
       retryable: true,
       status: 0,
@@ -74,7 +74,7 @@ export function normalizeApiError(error: unknown): ApiError {
       errorCode: "DVAS_CLIENT_ERROR",
       errorMessage: error.message,
       detail: error.name,
-      repairSuggestion: "检查前端 DTO 映射或请求参数，并保留本地模拟数据回退。",
+      repairSuggestion: "检查前端 DTO 映射或请求参数；当前操作不会用前端 mock 伪造成功。",
       raw: error,
       retryable: false,
     };
@@ -84,7 +84,7 @@ export function normalizeApiError(error: unknown): ApiError {
     errorCode: "DVAS_UNKNOWN_ERROR",
     errorMessage: "未知错误",
     detail: "无法识别的异常对象",
-    repairSuggestion: "请查看后端服务状态或使用本地模拟数据继续验收。",
+    repairSuggestion: "请查看后端服务状态；当前操作不会用前端 mock 伪造成功。",
     raw: error,
     retryable: false,
   };

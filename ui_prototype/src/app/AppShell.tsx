@@ -49,7 +49,7 @@ export function AppShell() {
     let mounted = true;
     setStore((current) => ({
       ...current,
-      lastMessage: "正在读取后端只读工作区数据。",
+      lastMessage: "正在读取后端工作区数据。",
     }));
     void loadBackendWorkbenchStore().then((nextStore) => {
       if (mounted) {
@@ -113,24 +113,24 @@ export function AppShell() {
   }
 
   function executeAction(action: ActionDefinition, payload?: ActionPayload) {
-    setStore((current) => {
-      const result = dispatchWorkbenchAction(current, action, payload);
-      if (isAsyncActionResult(result)) {
-        void result
-          .then((nextStore) => setStore(nextStore))
-          .catch((error) =>
-            setStore((latest) => ({
-              ...latest,
-              lastMessage: `${action.label} 未执行：${formatApiError(error)}`,
-            })),
-          );
-        return {
-          ...current,
-          lastMessage: `${action.label} 执行中，正在同步后端结果。`,
-        };
-      }
-      return result;
-    });
+    const result = dispatchWorkbenchAction(store, action, payload);
+    if (isAsyncActionResult(result)) {
+      setStore((current) => ({
+        ...current,
+        lastMessage: `${action.label} 执行中，正在同步后端结果。`,
+      }));
+      void result
+        .then((nextStore) => setStore(nextStore))
+        .catch((error) =>
+          setStore((latest) => ({
+            ...latest,
+            lastMessage: `${action.label} 未执行：${formatApiError(error)}`,
+          })),
+        );
+      return;
+    }
+
+    setStore(result);
   }
 
   return (
@@ -167,7 +167,7 @@ export function AppShell() {
           <button type="button" onClick={() => navigate("/dashboard")}>
             风险提示
           </button>
-          <button type="button" onClick={() => setTraceOpen(true)}>
+          <button type="button" onClick={() => navigate("/system/audit")}>
             审计追溯
           </button>
         </section>

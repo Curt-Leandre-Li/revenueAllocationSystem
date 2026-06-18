@@ -41,10 +41,10 @@ paths:
           description: Preconditions plus available_actions and disabled_actions.
   /dashboard/actions/quick-run:
     post:
-      summary: One-click calculation entry skeleton
+      summary: Run the real P0 one-click calculation pipeline
       responses:
         "200":
-          description: Ready response when BE-04+ preconditions are satisfied.
+          description: Runs quality, shuyuan, contribution, utility, MD-DShap, and allocation simulation.
         "409":
           description: Structured precondition failure.
   /demo-cases/{demo_case_id}/initialize:
@@ -649,6 +649,361 @@ paths:
           description: Audit log detail plus snapshot references and available snapshot content.
         "404":
           description: Audit log not found.
+  /navigation/menus:
+    get:
+      summary: Phase 2C navigation alias
+      responses:
+        "200":
+          description: Same menu tree as /navigation/menu-tree. NAV_SYS_HOME children is always [].
+  /projects/current/status:
+    get:
+      summary: Get current project status and flow preconditions
+      responses:
+        "200":
+          description: Standard response envelope with project_status and trace_id.
+  /projects/{project_id}/status:
+    get:
+      summary: Get project status by project id
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Standard response envelope with project_status and trace_id.
+        "404":
+          description: Project not found.
+  /projects/{project_id}/flow:
+    get:
+      summary: Get project flow preconditions by project id
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Preconditions, available_actions, disabled_actions, project_status, and trace_id.
+  /projects/{project_id}/pipeline/run:
+    post:
+      summary: Run real P0 complete calculation pipeline
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Pipeline steps and project_status=ALLOCATED after successful simulation.
+        "409":
+          description: Missing ingestion or resource-party precondition.
+  /sys/home:
+    get:
+      summary: System home aggregate
+      parameters:
+        - name: project_id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Dashboard overview with SYS/NAV_SYS_HOME ownership.
+  /demo-cases/{demo_case_id}/select:
+    post:
+      summary: Select built-in demo data and advance DRAFT to INGESTED
+      parameters:
+        - name: demo_case_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Created package, resources, parties, snapshots, project_status, and trace_id.
+  /data/packages:
+    get:
+      summary: Phase 2C data package list alias
+      responses:
+        "200":
+          description: Paged package list.
+  /data/packages/upload:
+    post:
+      summary: Phase 2C JSON upload endpoint
+      responses:
+        "200":
+          description: Created validated package and project_status=INGESTED.
+        "422":
+          description: Validation error envelope with error.message and trace_id.
+  /data/packages/{package_id}/preview:
+    get:
+      summary: Preview data package content
+      parameters:
+        - name: package_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Package, input snapshot, validation result, and resources.
+  /data/resources:
+    get:
+      summary: Phase 2C data resources endpoint
+      responses:
+        "200":
+          description: Paged resource list from backend state.
+  /data/parties:
+    get:
+      summary: Phase 2C participant list endpoint
+      responses:
+        "200":
+          description: Paged participants with is_data_provider and include_in_md_dshap.
+    post:
+      summary: Create participant
+      responses:
+        "200":
+          description: Created participant. Data providers default into MD-DShap pool.
+  /data/parties/{party_id}:
+    patch:
+      summary: Update participant
+      parameters:
+        - name: party_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated participant.
+  /data/parties/{party_id}/status:
+    patch:
+      summary: Update participant status
+      parameters:
+        - name: party_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated participant status.
+  /metering/quality/weights:
+    get:
+      summary: Read P0 quality weights
+      responses:
+        "200":
+          description: Current quality weight rows.
+    put:
+      summary: Save P0 quality weights
+      responses:
+        "200":
+          description: Echoes accepted P0 weight rows with project_status.
+  /metering/quality/evaluate:
+    post:
+      summary: Run quality assessment
+      responses:
+        "200":
+          description: Quality result and project_status=ASSESSED.
+  /metering/shuyuan/parameters:
+    put:
+      summary: Save shuyuan parameter draft
+      responses:
+        "200":
+          description: Accepted parameters with project_status.
+  /metering/shuyuan/call-counts:
+    put:
+      summary: Save shuyuan call counts
+      responses:
+        "200":
+          description: Accepted call counts with project_status.
+  /metering/shuyuan/calculate:
+    post:
+      summary: Run shuyuan metering
+      responses:
+        "200":
+          description: Metering result and project_status=METERED.
+  /metering/utility/contribution-factors:
+    put:
+      summary: Save contribution factor draft
+      responses:
+        "200":
+          description: Accepted factors with project_status.
+  /metering/utility/contribution/calculate:
+    post:
+      summary: Calculate contribution records
+      responses:
+        "200":
+          description: Contribution records with project_status.
+  /metering/utility/function:
+    put:
+      summary: Save utility function draft
+      responses:
+        "200":
+          description: Accepted function with project_status.
+  /metering/utility/calculate:
+    post:
+      summary: Calculate utility values
+      responses:
+        "200":
+          description: Utility trace and project_status=UTILITY_CALCULATED.
+  /allocation/md-dshap/config:
+    get:
+      summary: Read MD-DShap default config
+      responses:
+        "200":
+          description: Algorithm mode, seed, sample_rounds, epsilon, and project_status.
+    put:
+      summary: Save MD-DShap config draft
+      responses:
+        "200":
+          description: Accepted config with project_status.
+  /allocation/md-dshap/participant-pool:
+    get:
+      summary: Read MD-DShap participant pool
+      responses:
+        "200":
+          description: Included data-provider parties plus excluded_items with reasons.
+  /allocation/md-dshap/tasks:
+    post:
+      summary: Run MD-DShap task
+      responses:
+        "200":
+          description: Task, weights, project_status=WEIGHT_CALCULATED, and trace_id.
+  /allocation/md-dshap/tasks/{task_id}:
+    get:
+      summary: Get MD-DShap task by id
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Task metadata.
+  /allocation/md-dshap/tasks/{task_id}/results:
+    get:
+      summary: Get MD-DShap task weights
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Paged weight rows.
+  /allocation/simulation/revenue-pool:
+    put:
+      summary: Save revenue pool draft
+      responses:
+        "200":
+          description: Accepted draft with project_status.
+  /allocation/simulation/priority-items:
+    put:
+      summary: Save priority allocation draft
+      responses:
+        "200":
+          description: Accepted draft with project_status.
+  /allocation/simulation/mode:
+    put:
+      summary: Save allocation mode draft
+      responses:
+        "200":
+          description: Accepted mode with project_status.
+  /allocation/simulation/run:
+    post:
+      summary: Create and run allocation simulation
+      responses:
+        "200":
+          description: Allocation result rows and project_status=ALLOCATED.
+  /allocation/simulation/{allocation_id}/lock:
+    post:
+      summary: Lock allocation simulation reference
+      parameters:
+        - name: allocation_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Locked reference and project_status=CONFIRMED.
+  /allocation/simulation/{allocation_id}/export:
+    post:
+      summary: Export allocation result as P0 JSON
+      parameters:
+        - name: allocation_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: JSON report/export metadata and project_status=EXPORTED.
+  /allocation/constraints:
+    get:
+      summary: List allocation constraints
+      responses:
+        "200":
+          description: Paged constraints.
+    post:
+      summary: Create allocation constraint
+      responses:
+        "200":
+          description: Created constraint.
+  /allocation/constraints/{constraint_id}:
+    patch:
+      summary: Update allocation constraint
+      parameters:
+        - name: constraint_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated constraint.
+  /allocation/constraints/{constraint_id}/status:
+    patch:
+      summary: Update allocation constraint status
+      parameters:
+        - name: constraint_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated constraint status.
+  /reports/preview:
+    get:
+      summary: Preview report content
+      responses:
+        "200":
+          description: Markdown preview and readiness flags; does not export files.
+  /system/audit/logs:
+    get:
+      summary: Query audit logs through system management route
+      responses:
+        "200":
+          description: Paged audit log rows.
+  /system/audit/logs/{log_id}:
+    get:
+      summary: Get audit log detail through system management route
+      parameters:
+        - name: log_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Audit log detail with snapshot refs.
 components:
   schemas:
     StandardResponse:
@@ -665,6 +1020,9 @@ components:
           type: string
         data:
           type: object
+        project_status:
+          type: string
+          description: Present on responses that mutate or expose project state.
     ErrorResponse:
       type: object
       required: [success, code, message, trace_id, field_errors]
@@ -693,6 +1051,19 @@ components:
                 type: string
               reason:
                 type: string
+        error:
+          type: object
+          required: [code, message, detail]
+          properties:
+            code:
+              type: string
+            field:
+              type: string
+              nullable: true
+            message:
+              type: string
+            detail:
+              type: object
     DataPackageUploadRequest:
       type: object
       required: [package_name, resources, parties]

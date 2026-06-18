@@ -57,7 +57,7 @@ export interface WorkbenchStore {
 export function createWorkbenchStore(): WorkbenchStore {
   return {
     snapshot: markSnapshotSource(initialWorkbenchSnapshot, "mock"),
-    lastMessage: "演示工作区已加载，所有操作会写入本地模拟记录。",
+    lastMessage: "工作区已加载，正在等待后端同步；写操作不会使用前端 mock 伪造成功。",
     dataSource: {
       mode: "mock",
       backendAvailable: false,
@@ -107,5 +107,5 @@ export function fallbackMessage(error: ApiError | undefined, location: string) {
   const problem = error?.errorMessage ?? "后端 API 暂不可用";
   const suggestion =
     error?.repairSuggestion ?? "确认后端服务已启动后刷新页面。";
-  return `${problem}，已回退本地模拟数据。位置：${location}。建议：${suggestion}`;
+  return `${problem}，当前页面未用 mock 伪造成功。位置：${location}。建议：${suggestion}`;
 }

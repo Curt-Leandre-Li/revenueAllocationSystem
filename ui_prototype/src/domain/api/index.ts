@@ -34,7 +34,7 @@ const demoUploadPayload = {
 };
 
 export const dvasApi = {
-  getProject: () => apiRequest<BackendProjectDto>(endpoints.projectCurrent),
+  getProject: () => apiRequest<BackendProjectDto>(endpoints.projectCurrentStatus),
   getDashboardOverview: () =>
     apiRequest<BackendDashboardSummaryDto>(endpoints.dashboardOverview),
   getDashboardPreconditions: () =>
@@ -50,6 +50,13 @@ export const dvasApi = {
       method: "POST",
       bodyJson: {},
     }),
+  runPipeline: async () => {
+    const project = await apiRequest<BackendProjectDto>(endpoints.projectCurrent);
+    return apiRequest<unknown>(endpoints.pipelineRun(project.project_id), {
+      method: "POST",
+      bodyJson: {},
+    });
+  },
   uploadJson: (payload: unknown = demoUploadPayload) =>
     apiRequest<unknown>(endpoints.uploadDataPackage, {
       method: "POST",
@@ -67,10 +74,110 @@ export const dvasApi = {
     apiRequest<TablePage<BackendDataResourceDto>>(endpoints.dataResources),
   getDataResourceDetail: (resourceId: string) =>
     apiRequest<BackendDataResourceDto>(endpoints.dataResourceDetail(resourceId)),
+  bindResourceParty: async (resourceId: string, providerName: string, splitRatio: number) => {
+    const parties = await apiRequest<TablePage<BackendPartyDto>>(endpoints.parties);
+    const party = parties.items.find((item) => item.party_name === providerName);
+    if (!party) {
+      throw new Error(`后端参与方不存在：${providerName}`);
+    }
+    return apiRequest<unknown>(endpoints.resourcePartyRelations(resourceId), {
+      method: "PUT",
+      bodyJson: {
+        relations: [
+          {
+            party_id: party.party_id,
+            split_ratio: splitRatio / 100,
+            is_primary_provider: true,
+          },
+        ],
+      },
+    });
+  },
   listParties: () => apiRequest<TablePage<BackendPartyDto>>(endpoints.parties),
+  runQualityAssessment: () =>
+    apiRequest<unknown>(endpoints.qualityEvaluate, {
+      method: "POST",
+      bodyJson: {},
+    }),
+  runShuyuanMetering: () =>
+    apiRequest<unknown>(endpoints.shuyuanCalculate, {
+      method: "POST",
+      bodyJson: {},
+    }),
+  runContribution: () =>
+    apiRequest<unknown>(endpoints.contributionCalculate, {
+      method: "POST",
+      bodyJson: {},
+    }),
+  runUtility: () =>
+    apiRequest<unknown>(endpoints.utilityCalculate, {
+      method: "POST",
+      bodyJson: {},
+    }),
+  listMdDshapParticipantPool: () =>
+    apiRequest<unknown>(endpoints.mdDshapParticipantPool),
+  getMdDshapTask: (taskId: string) =>
+    apiRequest<Record<string, unknown>>(endpoints.mdDshapTask(taskId)),
+  getMdDshapTaskResults: (taskId: string) =>
+    apiRequest<TablePage<Record<string, unknown>>>(endpoints.mdDshapTaskResults(taskId)),
+  runMdDshap: () =>
+    apiRequest<unknown>(endpoints.mdDshapTasks, {
+      method: "POST",
+      bodyJson: {},
+    }),
+  runAllocationSimulation: () =>
+    apiRequest<unknown>(endpoints.allocationRun, {
+      method: "POST",
+      bodyJson: { total_revenue: 1000, priority_allocation_amount: 0 },
+    }),
+  getAllocationResults: (allocationId: string) =>
+    apiRequest<TablePage<Record<string, unknown>>>(endpoints.allocationResults(allocationId)),
+  lockCurrentAllocation: async () => {
+    const project = await apiRequest<BackendProjectDto>(endpoints.projectCurrent);
+    const allocationId = String(project.current_allocation_id ?? "");
+    if (!allocationId) {
+      throw new Error("后端未返回 current_allocation_id，无法锁定分配方案");
+    }
+    return apiRequest<unknown>(endpoints.allocationLock(allocationId), {
+      method: "POST",
+      bodyJson: {},
+    });
+  },
+  exportCurrentAllocationJson: async () => {
+    const project = await apiRequest<BackendProjectDto>(endpoints.projectCurrent);
+    const allocationId = String(project.current_allocation_id ?? "");
+    if (!allocationId) {
+      throw new Error("后端未返回 current_allocation_id，无法导出分配结果");
+    }
+    return apiRequest<unknown>(endpoints.allocationExport(allocationId), {
+      method: "POST",
+      bodyJson: {},
+    });
+  },
   listReports: () => apiRequest<TablePage<BackendReportRecordDto>>(endpoints.reports),
+  previewReport: () => apiRequest<unknown>(endpoints.reportPreview),
+  generateMarkdownReport: () =>
+    apiRequest<unknown>(endpoints.reportMarkdown, {
+      method: "POST",
+      bodyJson: {},
+    }),
+  generateCsvReport: () =>
+    apiRequest<unknown>(endpoints.reportCsv, {
+      method: "POST",
+      bodyJson: {},
+    }),
+  generateJsonReport: () =>
+    apiRequest<unknown>(endpoints.reportJson, {
+      method: "POST",
+      bodyJson: {},
+    }),
+  exportAuditLog: () =>
+    apiRequest<unknown>(endpoints.reportAuditLog, {
+      method: "POST",
+      bodyJson: {},
+    }),
   listAuditLogs: (limit = 50) =>
-    apiRequest<TablePage<BackendAuditLogDto>>(`${endpoints.auditLogs}?limit=${limit}`),
+    apiRequest<TablePage<BackendAuditLogDto>>(`${endpoints.systemAuditLogs}?limit=${limit}`),
   getAuditLogDetail: (logId: string) =>
     apiRequest<BackendAuditLogDetailDto>(endpoints.auditLogDetail(logId)),
 };

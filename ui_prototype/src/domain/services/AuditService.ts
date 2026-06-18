@@ -1,30 +1,28 @@
 import type { MockDomainService } from "./serviceTypes";
-import { readPageFromStore, writeMockServiceResult } from "./serviceTypes";
+import { readPageFromStore } from "./serviceTypes";
+import { dvasApi } from "../api";
 import {
-  markSnapshotSource,
+  backendUnavailableStore,
+  mutateBackendAndRefresh,
   refreshStoreFromBackend,
-  shouldUseBackend,
 } from "./backendWorkspace";
 
 export const AuditService: MockDomainService = {
   readPage: readPageFromStore,
   handleAction(store, action) {
-    if (action.id === "AUD-002") {
-      const mockStore = writeMockServiceResult("AuditService", store, action);
-      if (shouldUseBackend()) {
-        return refreshStoreFromBackend(
-          store,
-          "审计日志已从后端读取，日志列表已刷新。",
-          mockStore,
-        );
-      }
-      return {
-        ...mockStore,
-        snapshot: markSnapshotSource(mockStore.snapshot, "mock"),
-        lastMessage: `${mockStore.lastMessage}（数据来源：本地模拟）`,
-      };
+    if (action.id === "AUD-002" || action.id === "AUD-006") {
+      return refreshStoreFromBackend(store, "审计日志已从后端读取，日志列表已刷新。");
     }
 
-    return writeMockServiceResult("AuditService", store, action);
+    if (action.id === "AUD-007") {
+      return mutateBackendAndRefresh(
+        store,
+        () => dvasApi.exportAuditLog(),
+        "审计日志 JSONL 已由后端导出，项目状态和报告记录已刷新。",
+        "audit log export",
+      );
+    }
+
+    return backendUnavailableStore(store, action.label, "audit action");
   },
 };

@@ -96,7 +96,7 @@ function packageFromRow(row: DataRow, index: number): PackageListItem {
   const active = status.includes("通过") || status.includes("有效") || accessStatus.includes("接入");
   return {
     name: readCell(row, "package_name", `数据包 ${index + 1}`),
-    source: readCell(row, "source_type", "本地模拟"),
+    source: readCell(row, "source_type", "后端未同步"),
     status,
     fileName: readCell(row, "file_name", "-"),
     fileSize: readCell(row, "file_size", "-"),
