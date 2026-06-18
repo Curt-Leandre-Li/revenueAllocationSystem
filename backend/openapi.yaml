@@ -1,0 +1,198 @@
+openapi: 3.1.0
+info:
+  title: DVAS P0 Local API
+  version: 0.1.0
+  description: >
+    BE-00/BE-01/BE-02 local demo API contract. Results are simulation references
+    only and are not legal settlement, statutory settlement, payment
+    instructions, contract performance, or authority approval.
+servers:
+  - url: http://127.0.0.1:8000/api/v1
+paths:
+  /projects/current:
+    get:
+      summary: Get current P0 local project
+      responses:
+        "200":
+          description: Standard response envelope containing AllocationProject.
+  /dashboard/overview:
+    get:
+      summary: Get project status aggregation and next step
+      responses:
+        "200":
+          description: Dashboard overview with metrics, risk notices, preconditions, and actions.
+  /dashboard/preconditions:
+    get:
+      summary: Get backend-owned button preconditions and action state
+      responses:
+        "200":
+          description: Preconditions plus available_actions and disabled_actions.
+  /dashboard/quick-run:
+    post:
+      summary: One-click calculation entry skeleton
+      responses:
+        "200":
+          description: Ready response when BE-04+ preconditions are satisfied.
+        "409":
+          description: Structured precondition failure.
+  /demo-cases/{demo_case_id}/initialize:
+    post:
+      summary: Initialize a built-in demo data case
+      parameters:
+        - name: demo_case_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Created data package, input snapshot, resources, parties, and audit log.
+        "404":
+          description: Demo case not found.
+  /data-packages/upload:
+    post:
+      summary: Upload and validate JSON data package
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DataPackageUploadRequest"
+      responses:
+        "200":
+          description: Created validated package, input snapshot, resources, and parties.
+        "422":
+          description: Validation failure with field_errors and failure detail.
+  /data-packages:
+    get:
+      summary: List data packages
+      responses:
+        "200":
+          description: Paged package list.
+  /data-packages/{package_id}:
+    get:
+      summary: Get data package detail
+      parameters:
+        - name: package_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Package, input snapshot, validation result, and resources.
+  /data-packages/{package_id}/validation-result:
+    get:
+      summary: Get upload validation result and failure details
+      parameters:
+        - name: package_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: UploadValidationResult.
+  /data-resources:
+    get:
+      summary: List resources identified from current packages
+      responses:
+        "200":
+          description: Paged data resource list.
+  /data-resources/{resource_id}:
+    get:
+      summary: Get data resource detail
+      parameters:
+        - name: resource_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: DataResource.
+  /parties:
+    get:
+      summary: List parties available after ingestion
+      responses:
+        "200":
+          description: Paged party list.
+components:
+  schemas:
+    StandardResponse:
+      type: object
+      required: [success, code, message, trace_id, data]
+      properties:
+        success:
+          type: boolean
+        code:
+          type: string
+        message:
+          type: string
+        trace_id:
+          type: string
+        data:
+          type: object
+    ErrorResponse:
+      type: object
+      required: [success, code, message, trace_id, field_errors]
+      properties:
+        success:
+          const: false
+        code:
+          type: string
+          enum:
+            - DVAS_INPUT_FORMAT_ERROR
+            - DVAS_REQUIRED_FIELD_MISSING
+            - DVAS_PRECONDITION_NOT_MET
+            - DVAS_NOT_FOUND
+        message:
+          type: string
+        trace_id:
+          type: string
+        field_errors:
+          type: array
+          items:
+            type: object
+            required: [field, reason]
+            properties:
+              field:
+                type: string
+              reason:
+                type: string
+    DataPackageUploadRequest:
+      type: object
+      required: [package_name, resources, parties]
+      properties:
+        package_name:
+          type: string
+        file_name:
+          type: string
+        resources:
+          type: array
+          items:
+            type: object
+            required: [resource_name, provider_party_name]
+            properties:
+              resource_name:
+                type: string
+              modality:
+                type: string
+              field_count:
+                type: integer
+              sample_count:
+                type: integer
+              provider_party_name:
+                type: string
+        parties:
+          type: array
+          items:
+            type: object
+            required: [party_name]
+            properties:
+              party_name:
+                type: string
+              party_type:
+                type: string
+              include_in_md_dshap:
+                type: boolean

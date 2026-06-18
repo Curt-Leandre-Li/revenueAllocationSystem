@@ -1,0 +1,72 @@
+import hashlib
+import json
+from datetime import datetime, timezone
+from uuid import uuid4
+
+
+API_PREFIX = "/api/v1"
+LOCAL_OPERATOR = "local_operator"
+SIMULATION_DISCLAIMER = "系统结果仅为模拟参考，非法律结算 / 非法定结算结果。"
+
+PROJECT_STATUSES = [
+    "DRAFT",
+    "INGESTED",
+    "ASSESSED",
+    "METERED",
+    "UTILITY_CALCULATED",
+    "WEIGHT_CALCULATED",
+    "ALLOCATED",
+    "CONFIRMED",
+    "EXPORTED",
+]
+
+
+class ApiError(Exception):
+    def __init__(self, code, message, status=400, field_errors=None):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.status = status
+        self.field_errors = field_errors or []
+
+
+def utc_now():
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def new_trace_id():
+    return f"trace_{uuid4().hex[:12]}"
+
+
+def stable_checksum(value):
+    payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def ok_response(data=None, message="操作成功", trace_id=None):
+    return {
+        "success": True,
+        "code": "OK",
+        "message": message,
+        "trace_id": trace_id or new_trace_id(),
+        "data": data or {},
+    }
+
+
+def error_response(error, trace_id=None):
+    return {
+        "success": False,
+        "code": error.code,
+        "message": error.message,
+        "trace_id": trace_id or new_trace_id(),
+        "field_errors": error.field_errors,
+    }
+
+
+def table_page(items):
+    return {
+        "items": items,
+        "total": len(items),
+        "page": 1,
+        "page_size": len(items),
+    }
