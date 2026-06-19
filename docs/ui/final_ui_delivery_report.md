@@ -6,7 +6,7 @@
 
 本次继续修正左侧导航层级：有二级页面的一级结构改为抽屉式展开；系统首页只保留一个一级入口，项目总览、流程入口、风险提示和一键计算合并为系统首页同页区块。
 
-本次进一步将系统首页从研发验收页调整为业务用户首页：移除首页直出技术字段、按钮编号、菜单编码、route_path、snapshot_id 和 checksum；这些信息改由“审计详情”抽屉承载。首页主体改为业务总览指标、完整流程入口、一键计算主操作、失败详情与计算日志、快捷操作和显著风险提示。
+本次进一步将系统首页从研发验收页调整为业务用户首页：移除首页直出技术字段、按钮编号、菜单编码、route_path、snapshot_id 和 checksum；这些信息不进入首页主内容，需在审计日志管理或报告记录中追溯。首页主体改为业务总览指标、完整流程入口、一键计算主操作、失败详情与计算日志、快捷操作和显著风险提示。
 
 系统输出在页面、弹窗和报告说明中统一展示：系统结果仅为模拟参考，非法律结算；不构成法律结算、财务付款、合同履约或主管单位审批结果。
 
@@ -26,7 +26,7 @@
 | `docs/ui/screenshots/pages/*.png` | 14 张 1440x900 页面级截图。 |
 | `docs/ui/screenshots/button_demos/**.png` | 66 个按钮目录，共 210 张点击前/点击后/确认/运行/成功/失败/审计截图。 |
 | `docs/ui/screenshots/flows/full_pipeline/*.png` | 12 张完整链路流程演示截图。 |
-| `ui_prototype/` | 新增本地 React + Vite + TypeScript 原型，用 Mock 数据表达三份源文档字段和状态；左侧导航实现一级抽屉和二级缩进；系统首页改为业务看板和审计详情抽屉。 |
+| `ui_prototype/` | 新增本地 React + Vite + TypeScript 原型，用 Mock 数据表达三份源文档字段和状态；左侧导航实现有二级页面的一级展开和二级缩进；系统首页改为业务看板，风险提示为内联区块，不设置二级窗口。 |
 | `ui_prototype/scripts/generate-ui-docs.mjs` | 从共享 UI inventory 生成文档交付物。 |
 | `ui_prototype/scripts/capture-ui-screenshots.mjs` | 使用 Playwright 自动生成页面、按钮和流程截图，并清理旧页面图避免残留。 |
 | `scripts/check_ui_deliverables.py` | 检查文档、图片非空、1440x900 尺寸、免责声明、P1 边界、MD-DShap、baseline_check、report_id/checksum、审计快照、导航标签和系统首页单一入口。 |

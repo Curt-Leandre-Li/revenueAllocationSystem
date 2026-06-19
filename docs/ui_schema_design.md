@@ -58,9 +58,9 @@ Style freeze:
 
 Navigation labels must have no Arabic numeric prefixes.
 
-| Top Level | Children |
+| Top Level | Secondary pages or internal sections |
 |---|---|
-| 系统首页 | 项目总览, 流程入口, 风险提示, 一键计算 |
+| 系统首页 | 内部区块: 项目总览, 流程入口, 风险提示, 一键计算 |
 | 数据管理 | 数据接入管理, 数据资源管理, 参与方管理 |
 | 数元贡献度计量 | 质量评估管理, 数元计量管理, 贡献度与效用计算 |
 | 收益分配计算 | MD-DShap 计算管理, 收益分配模拟, 合同约束管理 |

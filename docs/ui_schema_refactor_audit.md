@@ -85,7 +85,7 @@ Target schema inventory for the next implementation phase:
 
 | Target `page_id` | Module | Canonical Route | Current Prototype Alias | Notes |
 |---|---:|---|---|---|
-| `SYS_OVERVIEW` | SYS | `/dashboard` | `system_home` | Aggregates 项目总览, 流程入口, 风险提示, 一键计算 as sections. Preserve source menu-code aliases. |
+| `SYS_OVERVIEW` | SYS | `/dashboard` | `system_home` | Aggregates 项目总览, 流程入口, 风险提示, 一键计算 as sections. No system-home section keeps a separate route, menu code, or permission node. |
 | `DATA_INGESTION` | DATA | `/data/ingestion` | `data_ingestion` | Data package, upload, validation, snapshots. |
 | `RES_MANAGEMENT` | RES | `/data/resources` | `data_resources` | Resource table, field stats, party relation. |
 | `PARTY_MANAGEMENT` | PARTY | `/data/parties` | `data_parties` | Data-provider and non-data party management. |
@@ -180,17 +180,15 @@ EXPORTED 已导出
 store it. The derived rule must be explicit: data package is valid, resources
 are identified, and at least one effective data-source party relation exists.
 
-### P0. System-home route and menu-code conflict is unresolved
+### P0. System-home route and menu-code conflict is resolved
 
-Source database/design docs define four system-home menu codes and routes:
+Current database/design/requirements docs define one system-home menu node:
 
-- `NAV_SYS_HOME` -> `/dashboard`
-- `NAV_SYS_HOME` -> `/dashboard`
-- `NAV_SYS_HOME` -> `/dashboard`
 - `NAV_SYS_HOME` -> `/dashboard`
 
-Newer UI docs and prototype collapse them into `/dashboard` and introduce
-`NAV_SYS_HOME`.
+Project overview, process entry, risk notices, and one-click calculation are
+in-page sections, not source routes, menu-code aliases, secondary windows, or
+permission menu nodes.
 
 Freeze decision:
 

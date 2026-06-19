@@ -48,12 +48,12 @@ deleted or removed from the active app path instead of patched:
 |---|---|---|
 | `ui_prototype/src/ui-renderer/` | Delete or fully retire from runtime | Generic schema renderer exposes engineering metadata and cannot express page-specific workflows. |
 | `ui_prototype/src/ui-schema/` | Delete or archive as historical contract input | Current schema validates old assumptions and should not be the running UI authority. |
-| `ui_prototype/src/routes/schemaRoutes.ts` | Replace with source-of-truth route registry | Current canonical routes use `/dashboard` and `/data/packages`, which are compatibility paths only. |
+| `ui_prototype/src/routes/schemaRoutes.ts` | Replace with source-of-truth route registry | Keep `/dashboard` as the canonical system-home route; audit legacy data-ingestion aliases such as `/data/packages` against `/data/ingestion`. |
 | `ui_prototype/src/dvasData.json` | Replace with typed fixtures | Mixed UI inventory, screenshots, buttons, and sample data in one JSON file is not a domain boundary. |
 | `ui_prototype/dist/` | Delete generated output | Build artifacts must not be source-owned in the redesign contract. |
 | `ui_prototype/node_modules/` | Delete from repo/worktree handoff scope | Installed dependencies are local artifacts, not source files. |
 | `ui_prototype/scripts/generate-ui-docs.mjs` | Retire unless rewritten for the new contract | The old generator is tied to schema-renderer assumptions. |
-| `docs/ui*` and `docs/ui/**` old route claims | Mark superseded or update before implementation | Existing UI docs may state `系统首页` is a single `/dashboard` entry; this conflicts with current source-of-truth navigation. |
+| `docs/ui*` and `docs/ui/**` old route claims | Mark superseded or update before implementation | Existing UI docs that split `系统首页` into multiple routes, menu codes, or secondary windows conflict with the current source-of-truth navigation. |
 
 Do not delete package/config files, source-of-truth documents, or reusable
 domain rules as part of old UI cleanup.
@@ -81,12 +81,9 @@ clearer runtime boundaries:
 Historical routes may be compatibility aliases, but the left navigation and
 primary route registry must use this list.
 
-| Level 1 | Page | route_path | menu_code | module_code | Phase |
+| Level 1 | Page / internal sections | route_path | menu_code | module_code | Phase |
 |---|---|---|---|---|---|
-| 系统首页 | 项目总览 | `/dashboard` | `NAV_SYS_HOME` | `SYS` | P0 |
-| 系统首页 | 流程入口 | `/dashboard` | `NAV_SYS_HOME` | `SYS` | P0 |
-| 系统首页 | 风险提示 | `/dashboard` | `NAV_SYS_HOME` | `SYS` | P0 |
-| 系统首页 | 一键计算 | `/dashboard` | `NAV_SYS_HOME` | `SYS` | P0 |
+| 系统首页 | 无二级页面；内部区块为项目总览、流程入口、风险提示、一键计算 | `/dashboard` | `NAV_SYS_HOME` | `SYS` | P0 |
 | 数据管理 | 数据接入管理 | `/data/ingestion` | `NAV_DATA_PACKAGE` | `DATA` | P0 |
 | 数据管理 | 数据资源管理 | `/data/resources` | `NAV_DATA_RESOURCE` | `RES` | P0 |
 | 数据管理 | 参与方管理 | `/data/parties` | `NAV_DATA_PARTY` | `PARTY` | P0 |
@@ -203,9 +200,11 @@ belong in service/action handlers.
 - Do not modify `ui_prototype/`, `src/`, `demo_ui/`, tests, scripts, dependency
   files, database DDL, or generated output in this documentation round.
 - Do not keep schema/debug metadata visible in normal page content.
-- Do not treat `/dashboard` or `/data/packages` as canonical navigation paths.
-- Do not collapse the four system-home pages into a single left-nav entry when
-  implementing the new navigation baseline.
+- Do not restore retired system-home split pages, routes, menu codes, or
+  secondary windows; the current baseline is one `NAV_SYS_HOME` entry at
+  `/dashboard` with `children=[]`.
+- Do not treat historical or compatibility paths as replacements for the
+  current navigation baseline.
 - Do not describe Basic Shapley as the default final allocation mode. It is only
   a small-scale `baseline_check`.
 - Do not let non-data contribution parties enter the MD-DShap pool by default.

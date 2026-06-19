@@ -323,7 +323,7 @@ Implemented runtime foundations:
   ASSESSABLE`.
 - `ui_prototype/src/routes/schemaRoutes.ts`: canonical route and alias registry.
   `/metering/*` is canonical, `/measure/*` is compatibility-only, and
-  `/dashboard` preserves four source menu-code aliases.
+  `/dashboard` is the only current system-home route.
 - `ui_prototype/src/ui-schema/action.registry.ts`: normalized runtime action
   registry, including `USER-008 = 角色管理`, `SYS-004 = 启动完整计算`, high-risk
   confirmation rules, export confirmation rules, success/failure UI, handlers,
@@ -352,7 +352,7 @@ Phase 2 drift handling:
 | `SYS-004` | Restored to full calculation: quality assessment, shuyuan metering, contribution/utility, MD-DShap, allocation. |
 | `USER-008` | Added to schema, action registry, USER page actions, validation, and role-management drawer placeholder handler. |
 | `ASSESSABLE` | Added to state machine as derived UI state when backend persistence is not available. |
-| Route aliases | `/dashboard` is aggregate alias; four system-home source routes keep menu-code lineage. `/metering/*` is canonical and `/measure/*` is alias. |
+| Route aliases | `/dashboard` is the canonical system-home route; former system-home split routes and menu-code lineage are retired. `/metering/*` is canonical and `/measure/*` is alias. |
 | Modal/drawer schema | Required overlays are schema records and open through `SchemaModalHost` / `SchemaDrawerHost`. |
 | Export confirmation | Required export actions carry report/checksum/disclaimer/field-scope/audit schema. |
 | App shell | `App.tsx` no longer contains hardcoded page layout as the main rendering path. |

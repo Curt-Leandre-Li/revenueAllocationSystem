@@ -28,4 +28,4 @@
 
 ## Compatibility Aliases
 
-系统首页历史拆分路由 `/dashboard`、`/dashboard`、`/dashboard`、`/dashboard` 统一兼容到 `/dashboard`。历史路由如 `/quality`、`/shuyuan`、`/utility`、`/md-dshap`、`/allocation`、`/constraints`、`/audit`、`/parameters`、`/users` 可作为兼容别名记录，但不得替代新版左侧导航主展示路径。
+系统首页历史拆分路由、独立菜单码和二级窗口口径均已废止，不作为当前兼容别名或权限菜单节点保留。历史路由如 `/quality`、`/shuyuan`、`/utility`、`/md-dshap`、`/allocation`、`/constraints`、`/audit`、`/parameters`、`/users` 可作为兼容别名记录，但不得替代新版左侧导航主展示路径。
