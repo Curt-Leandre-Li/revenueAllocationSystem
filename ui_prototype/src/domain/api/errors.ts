@@ -20,6 +20,13 @@ export interface ApiErrorEnvelope {
   message?: string;
   trace_id?: string | null;
   field_errors?: ApiFieldError[];
+  disabled_reason?: string;
+  error?: {
+    code?: string;
+    field?: string | null;
+    message?: string;
+    detail?: unknown;
+  };
 }
 
 export class DvasApiError extends Error {
@@ -39,13 +46,22 @@ export function apiErrorFromEnvelope(
 ): ApiError {
   const firstFieldError = envelope.field_errors?.[0];
   const retryable = status === 0 || status >= 500;
+  const nestedMessage = envelope.error?.message;
+  const topLevelMessage = envelope.message;
+  const disabledReason = envelope.disabled_reason;
+  const traceDetail = envelope.trace_id ? `trace_id=${envelope.trace_id}` : "";
+  const nestedDetail =
+    envelope.error?.detail === undefined
+      ? ""
+      : `error.detail=${JSON.stringify(envelope.error.detail)}`;
+  const detail = [traceDetail, nestedDetail].filter(Boolean).join(" ");
 
   return {
-    errorCode: envelope.code || "DVAS_API_ERROR",
-    errorMessage: envelope.message || "后端请求失败",
-    errorField: firstFieldError?.field,
-    detail: envelope.trace_id ? `trace_id=${envelope.trace_id}` : undefined,
-    repairSuggestion: firstFieldError?.reason,
+    errorCode: envelope.error?.code || envelope.code || "DVAS_API_ERROR",
+    errorMessage: nestedMessage || topLevelMessage || disabledReason || "后端请求失败",
+    errorField: envelope.error?.field ?? firstFieldError?.field,
+    detail: detail || undefined,
+    repairSuggestion: firstFieldError?.reason || disabledReason,
     raw,
     retryable,
     status,
@@ -95,5 +111,6 @@ export function formatApiError(error: unknown) {
   const fieldText = normalized.errorField
     ? `（${normalized.errorField}: ${normalized.repairSuggestion ?? normalized.errorMessage}）`
     : "";
-  return `${normalized.errorMessage}${fieldText}`;
+  const detailText = normalized.detail ? ` ${normalized.detail}` : "";
+  return `${normalized.errorMessage}${fieldText}${detailText}`;
 }

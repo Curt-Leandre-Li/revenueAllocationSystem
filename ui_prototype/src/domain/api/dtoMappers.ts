@@ -37,6 +37,20 @@ export interface BackendDisabledActionDto extends BackendRecord {
   reason: string;
 }
 
+export interface BackendNavigationMenuDto extends BackendRecord {
+  menu_id: string;
+  parent_id?: string | null;
+  menu_code: string;
+  menu_name: string;
+  module_code: string;
+  route_path: string;
+  sort_no: number;
+  p0_required?: boolean;
+  p1_only?: boolean;
+  status?: string;
+  children?: BackendNavigationMenuDto[];
+}
+
 export interface BackendDashboardSummaryDto extends BackendProjectDto {
   metrics: BackendRecord;
   risk_notices: string[];

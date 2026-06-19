@@ -6,8 +6,9 @@ import {
   routeComponents,
   sectionIdForRoute,
 } from "./routes";
+import { getSideNavNodes, type MenuNode } from "./menu";
 import { fieldLabels } from "../domain/fieldMap";
-import { formatApiError } from "../domain/api";
+import { dvasApi, formatApiError, type BackendNavigationMenuDto } from "../domain/api";
 import { dispatchWorkbenchAction } from "../domain/services";
 import { projectStatusLabels } from "../domain/status";
 import {
@@ -40,6 +41,7 @@ export function AppShell() {
   const [rowDetail, setRowDetail] = useState<RowDetail | null>(null);
   const [sideNavCollapsed, setSideNavCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [sideNavNodes, setSideNavNodes] = useState<MenuNode[]>(() => getSideNavNodes());
 
   useEffect(() => {
     if (!shouldAttemptBackendSync(window.location.search)) {
@@ -51,11 +53,19 @@ export function AppShell() {
       ...current,
       lastMessage: "正在读取后端工作区数据。",
     }));
-    void loadBackendWorkbenchStore().then((nextStore) => {
-      if (mounted) {
-        setStore(nextStore);
-      }
-    });
+    void Promise.all([loadBackendWorkbenchStore(), loadBackendSideNavNodes()]).then(
+      ([nextStore, navigationResult]) => {
+        if (mounted) {
+          setSideNavNodes(navigationResult.nodes);
+          setStore({
+            ...nextStore,
+            lastMessage: navigationResult.fallbackMessage
+              ? `${nextStore.lastMessage} ${navigationResult.fallbackMessage}`
+              : nextStore.lastMessage,
+          });
+        }
+      },
+    );
     return () => {
       mounted = false;
     };
@@ -139,6 +149,7 @@ export function AppShell() {
         activePath={activePath}
         collapsed={sideNavCollapsed}
         mobileOpen={mobileNavOpen}
+        nodes={sideNavNodes}
         onCollapseChange={setSideNavCollapsed}
         onMobileOpenChange={setMobileNavOpen}
         onNavigate={navigate}
@@ -223,6 +234,70 @@ export function AppShell() {
       />
     </div>
   );
+}
+
+async function loadBackendSideNavNodes(): Promise<{
+  nodes: MenuNode[];
+  fallbackMessage?: string;
+}> {
+  try {
+    const response = await dvasApi.getNavigationMenus();
+    return { nodes: mapBackendMenuNodes(response.items) };
+  } catch (error) {
+    return {
+      nodes: getSideNavNodes(),
+      fallbackMessage: `导航菜单使用本地 fallback：${formatApiError(error)}`,
+    };
+  }
+}
+
+function mapBackendMenuNodes(items: BackendNavigationMenuDto[]): MenuNode[] {
+  return items
+    .map(mapBackendMenuNode)
+    .filter((node) => node.visibleInSideNav !== false)
+    .sort((left, right) => left.sortNo - right.sortNo);
+}
+
+function mapBackendMenuNode(item: BackendNavigationMenuDto): MenuNode {
+  const children = (item.children ?? [])
+    .map(mapBackendMenuNode)
+    .filter((node) => node.visibleInSideNav !== false)
+    .sort((left, right) => left.sortNo - right.sortNo);
+  const menuCode = String(item.menu_code);
+  return {
+    menuCode,
+    moduleCode: String(item.module_code) as MenuNode["moduleCode"],
+    label: String(item.menu_name),
+    routePath: resolveRoute(String(item.route_path || "/dashboard")),
+    icon: iconForMenuCode(menuCode),
+    p1Only: Boolean(item.p1_only),
+    phase: item.p1_only ? "P1" : "P0",
+    sortNo: Number(item.sort_no) || 0,
+    visibleInSideNav: item.status !== "DISABLED",
+    children,
+  };
+}
+
+function iconForMenuCode(menuCode: string): MenuNode["icon"] {
+  if (menuCode.includes("SYS_HOME")) {
+    return "home";
+  }
+  if (menuCode.includes("DATA")) {
+    return "data";
+  }
+  if (menuCode.includes("MEASURE")) {
+    return "measure";
+  }
+  if (menuCode.includes("ALLOC")) {
+    return "allocation";
+  }
+  if (menuCode.includes("REPORT")) {
+    return "report";
+  }
+  if (menuCode.includes("SYSTEM")) {
+    return "system";
+  }
+  return undefined;
 }
 
 function isAsyncActionResult(

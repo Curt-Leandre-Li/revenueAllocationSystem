@@ -27,7 +27,7 @@ export const appRoutes: AppRoute[] = [
     actionIds: ["SYS-002", "DATA-003", "SYS-004", "SYS-005", "REP-001"],
   },
   {
-    path: "/data/packages",
+    path: "/data/ingestion",
     label: "数据接入管理",
     menuCode: "NAV_DATA_PACKAGE",
     moduleCode: "DATA",
@@ -171,7 +171,7 @@ export const dashboardSectionRouteMap: Record<string, { path: RoutePath; section
 export const compatibilityRouteMap: Record<string, RoutePath> = {
   "/": "/dashboard",
   "/dashboard": "/dashboard",
-  "/data/ingestion": "/data/packages",
+  "/data/packages": "/data/ingestion",
   "/metering/quality": "/measure/quality",
   "/metering/shuyuan": "/measure/shuyuan",
   "/metering/utility": "/measure/utility",
@@ -188,7 +188,7 @@ export const compatibilityRouteMap: Record<string, RoutePath> = {
 
 export const routeComponents: Record<RoutePath, ComponentType<PageProps>> = {
   "/dashboard": OverviewPage,
-  "/data/packages": DataPackagesPage,
+  "/data/ingestion": DataPackagesPage,
   "/data/resources": DataResourcesPage,
   "/data/parties": DataPartiesPage,
   "/measure/quality": QualityPage,

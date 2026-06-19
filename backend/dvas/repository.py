@@ -23,6 +23,7 @@ def default_system_parameters(now=None):
         ("DEFAULT_MD_DSHAP_SEED", "默认 MD-DShap 随机种子", "INTEGER", 42, True),
         ("DEFAULT_MD_DSHAP_SAMPLE_ROUNDS", "默认 MD-DShap 抽样轮次", "INTEGER", 64, True),
         ("DEFAULT_MD_DSHAP_EPSILON", "默认 MD-DShap 收敛阈值", "NUMBER", 0.000001, True),
+        ("DEFAULT_MD_DSHAP_BASELINE_ENABLED", "默认 MD-DShap baseline_check", "BOOLEAN", True, True),
         ("AMOUNT_DISPLAY_PRECISION", "金额显示精度", "INTEGER", 2, False),
         ("WEIGHT_DISPLAY_PRECISION", "权重显示精度", "INTEGER", 6, False),
     ]

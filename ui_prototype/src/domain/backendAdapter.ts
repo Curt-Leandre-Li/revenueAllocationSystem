@@ -40,7 +40,7 @@ const preconditionLabels: Record<
 > = {
   HAS_VALID_DATA_PACKAGE: {
     name: "输入快照",
-    targetPath: "/data/packages",
+    targetPath: "/data/ingestion",
   },
   HAS_RESOURCE_PARTY_RELATION: {
     name: "资源主体关系",
@@ -104,7 +104,7 @@ function buildSnapshotFromBackend(payload: BackendWorkspacePayload): WorkbenchSn
   const pages = {
     ...workbenchSnapshot.pages,
     "/dashboard": buildOverviewPage(payload),
-    "/data/packages": buildPackagesPage(payload),
+    "/data/ingestion": buildPackagesPage(payload),
     "/data/resources": buildResourcesPage(payload),
     "/data/parties": buildPartiesPage(payload),
     "/measure/quality": buildQualityPage(payload),

@@ -5,6 +5,7 @@ import type { RoutePath } from "../domain/types";
 interface SideNavProps {
   activePath: RoutePath;
   collapsed: boolean;
+  nodes?: MenuNode[];
   onCollapseChange: (collapsed: boolean) => void;
   mobileOpen: boolean;
   onMobileOpenChange: (open: boolean) => void;
@@ -14,12 +15,13 @@ interface SideNavProps {
 export function SideNav({
   activePath,
   collapsed,
+  nodes: menuNodes,
   onCollapseChange,
   mobileOpen,
   onMobileOpenChange,
   onNavigate,
 }: SideNavProps) {
-  const nodes = useMemo(() => getSideNavNodes(), []);
+  const nodes = useMemo(() => menuNodes ?? getSideNavNodes(), [menuNodes]);
   const activeGroupCode = useMemo(
     () => nodes.find((node) => isNodeActive(node, activePath))?.menuCode ?? "",
     [activePath, nodes],

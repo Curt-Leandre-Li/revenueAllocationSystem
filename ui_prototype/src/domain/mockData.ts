@@ -19,7 +19,7 @@ const sharedPreconditions: PreconditionItem[] = [
   {
     name: "输入快照",
     status: "PASS",
-    targetPath: "/data/packages",
+    targetPath: "/data/ingestion",
     message: "已完成演示数据接入和字段安全摘要。",
   },
   {
@@ -94,7 +94,7 @@ const pageContent: Record<
       },
     ],
   },
-  "/data/packages": {
+  "/data/ingestion": {
     summary: "管理演示数据选择、UTF-8 JSON 上传、校验失败详情和输入快照生成。",
     primaryTask: "优先处理上传校验错误，确保后续资源识别和参与方维护有稳定输入。",
     metrics: [
@@ -153,7 +153,7 @@ const pageContent: Record<
       {
         name: "输入快照",
         status: "PASS",
-        targetPath: "/data/packages",
+        targetPath: "/data/ingestion",
         message: "已有有效输入快照。",
       },
       {

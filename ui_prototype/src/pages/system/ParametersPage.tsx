@@ -12,6 +12,13 @@ import {
 import type { DataRow } from "../../domain/types";
 import type { PageProps } from "../pageTypes";
 
+interface AlgorithmDraft {
+  seed: number;
+  sampleRounds: number;
+  epsilon: number;
+  baselineEnabled: boolean;
+}
+
 export function ParametersPage({ route, snapshot, onAction }: PageProps) {
   const [drawer, setDrawer] = useState<"" | "algorithm" | "risk" | "version">("");
   const pageData = snapshot.pages[route.path];
@@ -24,6 +31,10 @@ export function ParametersPage({ route, snapshot, onAction }: PageProps) {
   const sampleRounds = parameterByCode.get("DEFAULT_MD_DSHAP_SAMPLE_ROUNDS");
   const epsilon = parameterByCode.get("DEFAULT_MD_DSHAP_EPSILON");
   const riskText = parameterByCode.get("RISK_DISCLAIMER_TEXT");
+  const [algorithmDraft, setAlgorithmDraft] = useState<AlgorithmDraft>(() =>
+    algorithmDraftFromParameters(parameterByCode),
+  );
+  const [riskDraft, setRiskDraft] = useState(() => readCell(riskText, "current_value", ""));
 
   return (
     <div className="pageWorkspace phase2Page parametersPage">
@@ -50,10 +61,36 @@ export function ParametersPage({ route, snapshot, onAction }: PageProps) {
         description="高风险参数修改需要二次确认；保存版本只影响新计算，不回改历史结果。"
         actions={
           <>
-            <button className="actionButton secondary" type="button" onClick={() => setDrawer("algorithm")}>MD-DShap 参数配置</button>
-            <button className="actionButton secondary" type="button" onClick={() => setDrawer("risk")}>风险提示文案配置</button>
-            <button className="actionButton secondary" type="button" onClick={() => onAction(actionRegistry["PARAM-001"])}>恢复默认</button>
-            <ActionButton action={actionRegistry["PARAM-002"]} onClick={(action) => onAction(action)} />
+            <button
+              className="actionButton secondary"
+              type="button"
+              onClick={() => {
+                setAlgorithmDraft(algorithmDraftFromParameters(parameterByCode));
+                setDrawer("algorithm");
+              }}
+            >
+              MD-DShap 参数配置
+            </button>
+            <button
+              className="actionButton secondary"
+              type="button"
+              onClick={() => {
+                setRiskDraft(readCell(riskText, "current_value", ""));
+                setDrawer("risk");
+              }}
+            >
+              风险提示文案配置
+            </button>
+            <ActionButton action={actionRegistry["PARAM-001"]} onClick={(action) => onAction(action)} />
+            <ActionButton
+              action={actionRegistry["PARAM-002"]}
+              onClick={(action) =>
+                onAction(action, {
+                  kind: "parameter-restore",
+                  parameterCode: "DEFAULT_MD_DSHAP_SAMPLE_ROUNDS",
+                })
+              }
+            />
           </>
         }
       >
@@ -88,16 +125,83 @@ export function ParametersPage({ route, snapshot, onAction }: PageProps) {
         variant="form"
         actions={[
           { label: "取消", onClick: () => setDrawer("") },
-          { label: "保存参数", type: "primary", onClick: () => { onAction(actionRegistry["PARAM-004"]); setDrawer(""); } },
+          {
+            label: "保存参数",
+            type: "primary",
+            onClick: () => {
+              onAction(actionRegistry["PARAM-004"], {
+                kind: "parameter-update",
+                values: [
+                  { parameterCode: "DEFAULT_MD_DSHAP_SEED", currentValue: algorithmDraft.seed },
+                  {
+                    parameterCode: "DEFAULT_MD_DSHAP_SAMPLE_ROUNDS",
+                    currentValue: algorithmDraft.sampleRounds,
+                  },
+                  { parameterCode: "DEFAULT_MD_DSHAP_EPSILON", currentValue: algorithmDraft.epsilon },
+                  {
+                    parameterCode: "DEFAULT_MD_DSHAP_BASELINE_ENABLED",
+                    currentValue: algorithmDraft.baselineEnabled,
+                  },
+                ],
+              });
+              setDrawer("");
+            },
+          },
         ]}
         onClose={() => setDrawer("")}
       >
         <DrawerSection title="算法默认值">
           <div className="formGrid">
-            <label>算法模式<input defaultValue="MD_DSHAP" /></label>
-            <label>采样轮次<input defaultValue={readCell(sampleRounds, "current_value", "")} /></label>
-            <label>收敛阈值<input defaultValue={readCell(epsilon, "current_value", "")} /></label>
-            <label>保存边际明细<select defaultValue="是"><option>是</option><option>否</option></select></label>
+            <label>算法模式<input readOnly value="MD_DSHAP" /></label>
+            <label>
+              随机种子
+              <input
+                type="number"
+                value={algorithmDraft.seed}
+                onChange={(event) =>
+                  setAlgorithmDraft((current) => ({ ...current, seed: Number(event.target.value) }))
+                }
+              />
+            </label>
+            <label>
+              采样轮次
+              <input
+                type="number"
+                value={algorithmDraft.sampleRounds}
+                onChange={(event) =>
+                  setAlgorithmDraft((current) => ({
+                    ...current,
+                    sampleRounds: Number(event.target.value),
+                  }))
+                }
+              />
+            </label>
+            <label>
+              收敛阈值
+              <input
+                step="0.000001"
+                type="number"
+                value={algorithmDraft.epsilon}
+                onChange={(event) =>
+                  setAlgorithmDraft((current) => ({ ...current, epsilon: Number(event.target.value) }))
+                }
+              />
+            </label>
+            <label>
+              baseline_check
+              <select
+                value={algorithmDraft.baselineEnabled ? "是" : "否"}
+                onChange={(event) =>
+                  setAlgorithmDraft((current) => ({
+                    ...current,
+                    baselineEnabled: event.target.value === "是",
+                  }))
+                }
+              >
+                <option>是</option>
+                <option>否</option>
+              </select>
+            </label>
           </div>
         </DrawerSection>
       </DetailDrawer>
@@ -112,12 +216,31 @@ export function ParametersPage({ route, snapshot, onAction }: PageProps) {
         variant="form"
         actions={[
           { label: "取消", onClick: () => setDrawer("") },
-          { label: "保存文案", type: "primary", onClick: () => { onAction(actionRegistry["PARAM-008"]); setDrawer(""); } },
+          {
+            label: "保存文案",
+            type: "primary",
+            onClick: () => {
+              onAction(actionRegistry["PARAM-008"], {
+                kind: "parameter-update",
+                values: [
+                  {
+                    parameterCode: "RISK_DISCLAIMER_TEXT",
+                    currentValue: riskDraft,
+                  },
+                ],
+              });
+              setDrawer("");
+            },
+          },
         ]}
         onClose={() => setDrawer("")}
       >
         <DrawerSection title="默认文案">
-          <textarea defaultValue={readCell(riskText, "current_value", "")} rows={5} />
+          <textarea
+            value={riskDraft}
+            rows={5}
+            onChange={(event) => setRiskDraft(event.target.value)}
+          />
         </DrawerSection>
       </DetailDrawer>
 
@@ -145,4 +268,18 @@ export function ParametersPage({ route, snapshot, onAction }: PageProps) {
 function readCell(row: DataRow | undefined, key: string, fallback: string) {
   const value = row?.[key];
   return value === undefined || value === null || value === "" ? fallback : String(value);
+}
+
+function algorithmDraftFromParameters(parameters: Map<string, DataRow>): AlgorithmDraft {
+  return {
+    seed: Number(readCell(parameters.get("DEFAULT_MD_DSHAP_SEED"), "current_value", "42")) || 42,
+    sampleRounds:
+      Number(readCell(parameters.get("DEFAULT_MD_DSHAP_SAMPLE_ROUNDS"), "current_value", "64")) || 64,
+    epsilon:
+      Number(readCell(parameters.get("DEFAULT_MD_DSHAP_EPSILON"), "current_value", "0.000001")) ||
+      0.000001,
+    baselineEnabled:
+      readCell(parameters.get("DEFAULT_MD_DSHAP_BASELINE_ENABLED"), "current_value", "true") !==
+      "false",
+  };
 }

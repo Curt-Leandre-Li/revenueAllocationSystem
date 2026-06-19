@@ -14,39 +14,39 @@ paths:
       summary: Get current P0 local project
       responses:
         "200":
-          description: Standard response envelope containing AllocationProject.
+          $ref: "#/components/responses/StandardSuccess"
   /navigation/menu-tree:
     get:
       summary: Get current navigation menu tree
       responses:
         "200":
-          description: Menu tree with system home as one first-level node.
+          $ref: "#/components/responses/StandardSuccess"
   /navigation/button-permissions:
     get:
       summary: Get button-to-menu permission mapping
       responses:
         "200":
-          description: Paged button permission records.
+          $ref: "#/components/responses/StandardSuccess"
   /dashboard:
     get:
       summary: Get project status aggregation and next step
       responses:
         "200":
-          description: Dashboard overview with metrics, risk notices, preconditions, and actions.
+          $ref: "#/components/responses/StandardSuccess"
   /dashboard/preconditions:
     get:
       summary: Get backend-owned button preconditions and action state
       responses:
         "200":
-          description: Preconditions plus available_actions and disabled_actions.
+          $ref: "#/components/responses/StandardSuccess"
   /dashboard/actions/quick-run:
     post:
       summary: Run the real P0 one-click calculation pipeline
       responses:
         "200":
-          description: Runs quality, shuyuan, contribution, utility, MD-DShap, and allocation simulation.
+          $ref: "#/components/responses/StandardSuccess"
         "409":
-          description: Structured precondition failure.
+          $ref: "#/components/responses/StandardError"
   /demo-cases/{demo_case_id}/initialize:
     post:
       summary: Initialize a built-in demo data case
@@ -58,9 +58,9 @@ paths:
             type: string
       responses:
         "200":
-          description: Created data package, input snapshot, resources, parties, and audit log.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: Demo case not found.
+          $ref: "#/components/responses/StandardError"
   /data-packages/upload:
     post:
       summary: Upload and validate JSON data package
@@ -72,15 +72,15 @@ paths:
               $ref: "#/components/schemas/DataPackageUploadRequest"
       responses:
         "200":
-          description: Created validated package, input snapshot, resources, and parties.
+          $ref: "#/components/responses/StandardSuccess"
         "422":
-          description: Validation failure with field_errors and failure detail.
+          $ref: "#/components/responses/StandardError"
   /data-packages:
     get:
       summary: List data packages
       responses:
         "200":
-          description: Paged package list.
+          $ref: "#/components/responses/StandardSuccess"
   /data-packages/{package_id}:
     get:
       summary: Get data package detail
@@ -92,7 +92,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Package, input snapshot, validation result, and resources.
+          $ref: "#/components/responses/StandardSuccess"
   /data-packages/{package_id}/validation-result:
     get:
       summary: Get upload validation result and failure details
@@ -104,13 +104,13 @@ paths:
             type: string
       responses:
         "200":
-          description: UploadValidationResult.
+          $ref: "#/components/responses/StandardSuccess"
   /data-resources:
     get:
       summary: List resources identified from current packages
       responses:
         "200":
-          description: Paged data resource list.
+          $ref: "#/components/responses/StandardSuccess"
   /data-resources/{resource_id}:
     get:
       summary: Get data resource detail
@@ -122,7 +122,7 @@ paths:
             type: string
       responses:
         "200":
-          description: DataResource.
+          $ref: "#/components/responses/StandardSuccess"
   /data-resources/{resource_id}/party-relations:
     put:
       summary: Bind data resource to source-party relations
@@ -140,17 +140,17 @@ paths:
               $ref: "#/components/schemas/ResourcePartyRelationRequest"
       responses:
         "200":
-          description: Updated DataResource with party_relations.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: Resource or party not found.
+          $ref: "#/components/responses/StandardError"
         "422":
-          description: Invalid split ratio or missing relation fields.
+          $ref: "#/components/responses/StandardError"
   /parties:
     get:
       summary: List parties available after ingestion
       responses:
         "200":
-          description: Paged party list.
+          $ref: "#/components/responses/StandardSuccess"
     post:
       summary: Create a participant
       requestBody:
@@ -161,9 +161,9 @@ paths:
               $ref: "#/components/schemas/PartyWriteRequest"
       responses:
         "200":
-          description: Created Party.
+          $ref: "#/components/responses/StandardSuccess"
         "422":
-          description: Missing or invalid party fields.
+          $ref: "#/components/responses/StandardError"
   /parties/{party_id}:
     put:
       summary: Update a participant
@@ -181,11 +181,11 @@ paths:
               $ref: "#/components/schemas/PartyWriteRequest"
       responses:
         "200":
-          description: Updated Party.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: Party not found.
+          $ref: "#/components/responses/StandardError"
         "422":
-          description: Duplicate or invalid party fields.
+          $ref: "#/components/responses/StandardError"
   /parties/{party_id}/status:
     patch:
       summary: Enable or disable a participant
@@ -203,9 +203,9 @@ paths:
               $ref: "#/components/schemas/PartyStatusRequest"
       responses:
         "200":
-          description: Updated Party status.
+          $ref: "#/components/responses/StandardSuccess"
         "409":
-          description: Cannot disable the only enabled data provider.
+          $ref: "#/components/responses/StandardError"
   /quality-assessments/run:
     post:
       summary: Run BE-04 quality assessment skeleton
@@ -217,17 +217,17 @@ paths:
               $ref: "#/components/schemas/QualityRunRequest"
       responses:
         "200":
-          description: Quality assessment, detail rows, result snapshot, and project status update.
+          $ref: "#/components/responses/StandardSuccess"
         "409":
-          description: Data ingestion precondition not satisfied.
+          $ref: "#/components/responses/StandardError"
   /quality-assessments/latest:
     get:
       summary: Get latest quality assessment
       responses:
         "200":
-          description: Latest QualityAssessment.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: No quality assessment exists.
+          $ref: "#/components/responses/StandardError"
   /quality-assessments/{assessment_id}/details:
     get:
       summary: Get quality assessment details
@@ -239,9 +239,9 @@ paths:
             type: string
       responses:
         "200":
-          description: QualityAssessment plus detail rows.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: Quality assessment not found.
+          $ref: "#/components/responses/StandardError"
   /shuyuan-meterings/run:
     post:
       summary: Run BE-05 shuyuan metering skeleton
@@ -253,17 +253,17 @@ paths:
               $ref: "#/components/schemas/ShuyuanMeteringRunRequest"
       responses:
         "200":
-          description: Shuyuan metering master row, detail rows, snapshots, and project status update.
+          $ref: "#/components/responses/StandardSuccess"
         "409":
-          description: Quality assessment precondition not satisfied.
+          $ref: "#/components/responses/StandardError"
   /shuyuan-meterings/latest:
     get:
       summary: Get latest shuyuan metering result
       responses:
         "200":
-          description: Latest ShuyuanMetering.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: No shuyuan metering exists.
+          $ref: "#/components/responses/StandardError"
   /shuyuan-meterings/{metering_id}/details:
     get:
       summary: Get shuyuan metering details
@@ -275,9 +275,9 @@ paths:
             type: string
       responses:
         "200":
-          description: ShuyuanMetering plus detail rows.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: Shuyuan metering not found.
+          $ref: "#/components/responses/StandardError"
   /contributions/run:
     post:
       summary: Run BE-05 contribution skeleton
@@ -289,9 +289,9 @@ paths:
               $ref: "#/components/schemas/ContributionRunRequest"
       responses:
         "200":
-          description: Contribution records and parameter/result snapshots.
+          $ref: "#/components/responses/StandardSuccess"
         "409":
-          description: Shuyuan metering precondition not satisfied.
+          $ref: "#/components/responses/StandardError"
   /utilities/run:
     post:
       summary: Run BE-05 utility skeleton
@@ -303,17 +303,17 @@ paths:
               $ref: "#/components/schemas/UtilityRunRequest"
       responses:
         "200":
-          description: Utility result, trace rows, snapshots, and project status update.
+          $ref: "#/components/responses/StandardSuccess"
         "409":
-          description: Contribution precondition not satisfied.
+          $ref: "#/components/responses/StandardError"
   /utilities/latest:
     get:
       summary: Get latest utility result
       responses:
         "200":
-          description: Latest UtilityRecord.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: No utility result exists.
+          $ref: "#/components/responses/StandardError"
   /utilities/{utility_id}/trace:
     get:
       summary: Get utility calculation trace
@@ -325,9 +325,9 @@ paths:
             type: string
       responses:
         "200":
-          description: UtilityRecord plus trace rows.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: Utility result not found.
+          $ref: "#/components/responses/StandardError"
   /md-dshap/tasks:
     post:
       summary: Run BE-06 P0 synchronous MD-DShap weight calculation
@@ -339,9 +339,9 @@ paths:
               $ref: "#/components/schemas/MdDshapTaskRunRequest"
       responses:
         "200":
-          description: MD-DShap task, result count, approximation note, weights, and project status.
+          $ref: "#/components/responses/StandardSuccess"
         "409":
-          description: Utility, participant, or positive-utility precondition not satisfied.
+          $ref: "#/components/responses/StandardError"
   /md-dshap/tasks/{task_id}:
     get:
       summary: Get MD-DShap task metadata
@@ -353,9 +353,9 @@ paths:
             type: string
       responses:
         "200":
-          description: Task metadata with participant_set, task_set, parameters, status, and snapshots.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: MD-DShap task not found.
+          $ref: "#/components/responses/StandardError"
   /md-dshap/tasks/{task_id}/results:
     get:
       summary: Get MD-DShap participant weight results
@@ -367,9 +367,9 @@ paths:
             type: string
       responses:
         "200":
-          description: Paged participant weights. Normalized weights sum to 1.000000.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: MD-DShap task not found.
+          $ref: "#/components/responses/StandardError"
   /md-dshap/tasks/{task_id}/marginal-traces:
     get:
       summary: Get MD-DShap marginal contribution trace rows
@@ -381,15 +381,15 @@ paths:
             type: string
       responses:
         "200":
-          description: Paged marginal trace rows for the task.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: MD-DShap task not found.
+          $ref: "#/components/responses/StandardError"
   /contract-constraints:
     get:
       summary: List P0 contract constraints
       responses:
         "200":
-          description: Paged contract constraint list.
+          $ref: "#/components/responses/StandardSuccess"
     post:
       summary: Create a P0 contract constraint
       requestBody:
@@ -400,11 +400,11 @@ paths:
               $ref: "#/components/schemas/ContractConstraintWriteRequest"
       responses:
         "200":
-          description: Created contract constraint.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: Party not found.
+          $ref: "#/components/responses/StandardError"
         "422":
-          description: Invalid amount, ratio, status, or constraint type.
+          $ref: "#/components/responses/StandardError"
   /contract-constraints/{constraint_id}:
     put:
       summary: Update a P0 contract constraint
@@ -422,11 +422,11 @@ paths:
               $ref: "#/components/schemas/ContractConstraintWriteRequest"
       responses:
         "200":
-          description: Updated contract constraint with incremented version_no.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: Constraint or party not found.
+          $ref: "#/components/responses/StandardError"
         "422":
-          description: Invalid amount, ratio, status, or constraint type.
+          $ref: "#/components/responses/StandardError"
   /contract-constraints/{constraint_id}/status:
     patch:
       summary: Enable or disable a P0 contract constraint
@@ -444,11 +444,11 @@ paths:
               $ref: "#/components/schemas/ContractConstraintStatusRequest"
       responses:
         "200":
-          description: Updated contract constraint status with incremented version_no.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: Constraint not found.
+          $ref: "#/components/responses/StandardError"
         "422":
-          description: Invalid status.
+          $ref: "#/components/responses/StandardError"
   /allocation-scenarios:
     post:
       summary: Create a P0 allocation simulation scenario
@@ -460,9 +460,9 @@ paths:
               $ref: "#/components/schemas/AllocationScenarioCreateRequest"
       responses:
         "200":
-          description: Created allocation scenario in DRAFT status.
+          $ref: "#/components/responses/StandardSuccess"
         "409":
-          description: Missing MD-DShap result or invalid revenue pool precondition.
+          $ref: "#/components/responses/StandardError"
   /allocation-scenarios/{allocation_id}/simulate:
     post:
       summary: Simulate allocation with active contract constraints
@@ -474,11 +474,11 @@ paths:
             type: string
       responses:
         "200":
-          description: Allocation scenario, result rows, constraint trace rows, and project status.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: Allocation scenario not found.
+          $ref: "#/components/responses/StandardError"
         "409":
-          description: Weight or constraint precondition not satisfied.
+          $ref: "#/components/responses/StandardError"
   /allocation-scenarios/{allocation_id}/lock:
     post:
       summary: Lock a simulated reference allocation result
@@ -490,11 +490,11 @@ paths:
             type: string
       responses:
         "200":
-          description: Confirmed simulation reference. Does not create legal settlement or payment instructions.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: Allocation scenario not found.
+          $ref: "#/components/responses/StandardError"
         "409":
-          description: Allocation scenario is not in ALLOCATED status.
+          $ref: "#/components/responses/StandardError"
   /allocation-scenarios/{allocation_id}/results:
     get:
       summary: Get allocation result history for a scenario
@@ -506,53 +506,61 @@ paths:
             type: string
       responses:
         "200":
-          description: Paged allocation result rows across simulation versions.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: Allocation scenario not found.
+          $ref: "#/components/responses/StandardError"
   /reports:
     get:
       summary: List generated P0 report and export records
       responses:
         "200":
-          description: Paged report records with file metadata and checksums.
+          $ref: "#/components/responses/StandardSuccess"
   /reports/markdown:
     post:
       summary: Generate a P0 Markdown simulation reference report
       responses:
         "200":
-          description: Report record plus Markdown export file metadata.
+          $ref: "#/components/responses/StandardSuccess"
         "409":
-          description: Allocation result precondition is not satisfied.
+          $ref: "#/components/responses/StandardError"
   /reports/csv:
     post:
       summary: Generate P0 CSV export files
       responses:
         "200":
-          description: Report record plus CSV export file metadata, including source_level_allocation.csv.
+          $ref: "#/components/responses/StandardSuccess"
         "409":
-          description: Allocation result precondition is not satisfied.
+          $ref: "#/components/responses/StandardError"
   /reports/json:
     post:
       summary: Generate a structured P0 JSON result export
       responses:
         "200":
-          description: Report record plus parseable JSON export file metadata.
+          $ref: "#/components/responses/StandardSuccess"
         "409":
-          description: Allocation result precondition is not satisfied.
+          $ref: "#/components/responses/StandardError"
   /reports/audit-log:
     post:
       summary: Generate P0 audit log JSONL export
       responses:
         "200":
-          description: Report record plus audit_log.jsonl export file metadata.
+          $ref: "#/components/responses/StandardSuccess"
         "409":
-          description: Audit log precondition is not satisfied.
+          $ref: "#/components/responses/StandardError"
+  /reports/md-dshap-audit:
+    post:
+      summary: Generate MD-DShap algorithm audit report
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "409":
+          $ref: "#/components/responses/StandardError"
   /system/parameters:
     get:
       summary: List P0 system parameters
       responses:
         "200":
-          description: Paged default and current parameter values.
+          $ref: "#/components/responses/StandardSuccess"
   /system/parameters/{parameter_code}:
     get:
       summary: Get a P0 system parameter
@@ -564,9 +572,9 @@ paths:
             type: string
       responses:
         "200":
-          description: Parameter code, values, scope, editability, and version metadata.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: Parameter not found.
+          $ref: "#/components/responses/StandardError"
     put:
       summary: Update an editable P0 system parameter
       parameters:
@@ -583,11 +591,11 @@ paths:
               $ref: "#/components/schemas/SystemParameterUpdateRequest"
       responses:
         "200":
-          description: Updated parameter plus new version metadata.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: Parameter not found.
+          $ref: "#/components/responses/StandardError"
         "422":
-          description: Parameter is not editable or value validation failed.
+          $ref: "#/components/responses/StandardError"
   /system/parameters/{parameter_code}/restore-default:
     post:
       summary: Restore an editable P0 system parameter to its default value
@@ -599,11 +607,11 @@ paths:
             type: string
       responses:
         "200":
-          description: Restored parameter plus new version metadata.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: Parameter not found.
+          $ref: "#/components/responses/StandardError"
         "422":
-          description: Parameter is not editable.
+          $ref: "#/components/responses/StandardError"
   /audit-logs:
     get:
       summary: Query P0 audit logs
@@ -634,7 +642,7 @@ paths:
             type: integer
       responses:
         "200":
-          description: Paged audit log records. Querying is read-only.
+          $ref: "#/components/responses/StandardSuccess"
   /audit-logs/{log_id}:
     get:
       summary: Get P0 audit log detail with related snapshots when available
@@ -646,21 +654,21 @@ paths:
             type: string
       responses:
         "200":
-          description: Audit log detail plus snapshot references and available snapshot content.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: Audit log not found.
+          $ref: "#/components/responses/StandardError"
   /navigation/menus:
     get:
       summary: Phase 2C navigation alias
       responses:
         "200":
-          description: Same menu tree as /navigation/menu-tree. NAV_SYS_HOME children is always [].
+          $ref: "#/components/responses/StandardSuccess"
   /projects/current/status:
     get:
       summary: Get current project status and flow preconditions
       responses:
         "200":
-          description: Standard response envelope with project_status and trace_id.
+          $ref: "#/components/responses/StandardSuccess"
   /projects/{project_id}/status:
     get:
       summary: Get project status by project id
@@ -672,9 +680,9 @@ paths:
             type: string
       responses:
         "200":
-          description: Standard response envelope with project_status and trace_id.
+          $ref: "#/components/responses/StandardSuccess"
         "404":
-          description: Project not found.
+          $ref: "#/components/responses/StandardError"
   /projects/{project_id}/flow:
     get:
       summary: Get project flow preconditions by project id
@@ -686,7 +694,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Preconditions, available_actions, disabled_actions, project_status, and trace_id.
+          $ref: "#/components/responses/StandardSuccess"
   /projects/{project_id}/pipeline/run:
     post:
       summary: Run real P0 complete calculation pipeline
@@ -698,9 +706,9 @@ paths:
             type: string
       responses:
         "200":
-          description: Pipeline steps and project_status=ALLOCATED after successful simulation.
+          $ref: "#/components/responses/StandardSuccess"
         "409":
-          description: Missing ingestion or resource-party precondition.
+          $ref: "#/components/responses/StandardError"
   /sys/home:
     get:
       summary: System home aggregate
@@ -711,7 +719,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Dashboard overview with SYS/NAV_SYS_HOME ownership.
+          $ref: "#/components/responses/StandardSuccess"
   /demo-cases/{demo_case_id}/select:
     post:
       summary: Select built-in demo data and advance DRAFT to INGESTED
@@ -723,21 +731,21 @@ paths:
             type: string
       responses:
         "200":
-          description: Created package, resources, parties, snapshots, project_status, and trace_id.
+          $ref: "#/components/responses/StandardSuccess"
   /data/packages:
     get:
       summary: Phase 2C data package list alias
       responses:
         "200":
-          description: Paged package list.
+          $ref: "#/components/responses/StandardSuccess"
   /data/packages/upload:
     post:
       summary: Phase 2C JSON upload endpoint
       responses:
         "200":
-          description: Created validated package and project_status=INGESTED.
+          $ref: "#/components/responses/StandardSuccess"
         "422":
-          description: Validation error envelope with error.message and trace_id.
+          $ref: "#/components/responses/StandardError"
   /data/packages/{package_id}/preview:
     get:
       summary: Preview data package content
@@ -749,24 +757,24 @@ paths:
             type: string
       responses:
         "200":
-          description: Package, input snapshot, validation result, and resources.
+          $ref: "#/components/responses/StandardSuccess"
   /data/resources:
     get:
       summary: Phase 2C data resources endpoint
       responses:
         "200":
-          description: Paged resource list from backend state.
+          $ref: "#/components/responses/StandardSuccess"
   /data/parties:
     get:
       summary: Phase 2C participant list endpoint
       responses:
         "200":
-          description: Paged participants with is_data_provider and include_in_md_dshap.
+          $ref: "#/components/responses/StandardSuccess"
     post:
       summary: Create participant
       responses:
         "200":
-          description: Created participant. Data providers default into MD-DShap pool.
+          $ref: "#/components/responses/StandardSuccess"
   /data/parties/{party_id}:
     patch:
       summary: Update participant
@@ -778,7 +786,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Updated participant.
+          $ref: "#/components/responses/StandardSuccess"
   /data/parties/{party_id}/status:
     patch:
       summary: Update participant status
@@ -790,89 +798,89 @@ paths:
             type: string
       responses:
         "200":
-          description: Updated participant status.
+          $ref: "#/components/responses/StandardSuccess"
   /metering/quality/weights:
     get:
       summary: Read P0 quality weights
       responses:
         "200":
-          description: Current quality weight rows.
+          $ref: "#/components/responses/StandardSuccess"
     put:
       summary: Save P0 quality weights
       responses:
         "200":
-          description: Echoes accepted P0 weight rows with project_status.
+          $ref: "#/components/responses/StandardSuccess"
   /metering/quality/evaluate:
     post:
       summary: Run quality assessment
       responses:
         "200":
-          description: Quality result and project_status=ASSESSED.
+          $ref: "#/components/responses/StandardSuccess"
   /metering/shuyuan/parameters:
     put:
       summary: Save shuyuan parameter draft
       responses:
         "200":
-          description: Accepted parameters with project_status.
+          $ref: "#/components/responses/StandardSuccess"
   /metering/shuyuan/call-counts:
     put:
       summary: Save shuyuan call counts
       responses:
         "200":
-          description: Accepted call counts with project_status.
+          $ref: "#/components/responses/StandardSuccess"
   /metering/shuyuan/calculate:
     post:
       summary: Run shuyuan metering
       responses:
         "200":
-          description: Metering result and project_status=METERED.
+          $ref: "#/components/responses/StandardSuccess"
   /metering/utility/contribution-factors:
     put:
       summary: Save contribution factor draft
       responses:
         "200":
-          description: Accepted factors with project_status.
+          $ref: "#/components/responses/StandardSuccess"
   /metering/utility/contribution/calculate:
     post:
       summary: Calculate contribution records
       responses:
         "200":
-          description: Contribution records with project_status.
+          $ref: "#/components/responses/StandardSuccess"
   /metering/utility/function:
     put:
       summary: Save utility function draft
       responses:
         "200":
-          description: Accepted function with project_status.
+          $ref: "#/components/responses/StandardSuccess"
   /metering/utility/calculate:
     post:
       summary: Calculate utility values
       responses:
         "200":
-          description: Utility trace and project_status=UTILITY_CALCULATED.
+          $ref: "#/components/responses/StandardSuccess"
   /allocation/md-dshap/config:
     get:
       summary: Read MD-DShap default config
       responses:
         "200":
-          description: Algorithm mode, seed, sample_rounds, epsilon, and project_status.
+          $ref: "#/components/responses/StandardSuccess"
     put:
       summary: Save MD-DShap config draft
       responses:
         "200":
-          description: Accepted config with project_status.
+          $ref: "#/components/responses/StandardSuccess"
   /allocation/md-dshap/participant-pool:
     get:
       summary: Read MD-DShap participant pool
       responses:
         "200":
-          description: Included data-provider parties plus excluded_items with reasons.
+          $ref: "#/components/responses/StandardSuccess"
   /allocation/md-dshap/tasks:
     post:
       summary: Run MD-DShap task
       responses:
         "200":
-          description: Task, weights, project_status=WEIGHT_CALCULATED, and trace_id.
+          $ref: "#/components/responses/StandardSuccess"
   /allocation/md-dshap/tasks/{task_id}:
     get:
       summary: Get MD-DShap task by id
@@ -884,7 +892,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Task metadata.
+          $ref: "#/components/responses/StandardSuccess"
   /allocation/md-dshap/tasks/{task_id}/results:
     get:
       summary: Get MD-DShap task weights
@@ -896,31 +904,45 @@ paths:
             type: string
       responses:
         "200":
-          description: Paged weight rows.
+          $ref: "#/components/responses/StandardSuccess"
+  /allocation/md-dshap/tasks/{task_id}/audit-export:
+    post:
+      summary: Export MD-DShap algorithm audit report for a task
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "404":
+          $ref: "#/components/responses/StandardError"
   /allocation/simulation/revenue-pool:
     put:
       summary: Save revenue pool draft
       responses:
         "200":
-          description: Accepted draft with project_status.
+          $ref: "#/components/responses/StandardSuccess"
   /allocation/simulation/priority-items:
     put:
       summary: Save priority allocation draft
       responses:
         "200":
-          description: Accepted draft with project_status.
+          $ref: "#/components/responses/StandardSuccess"
   /allocation/simulation/mode:
     put:
       summary: Save allocation mode draft
       responses:
         "200":
-          description: Accepted mode with project_status.
+          $ref: "#/components/responses/StandardSuccess"
   /allocation/simulation/run:
     post:
       summary: Create and run allocation simulation
       responses:
         "200":
-          description: Allocation result rows and project_status=ALLOCATED.
+          $ref: "#/components/responses/StandardSuccess"
   /allocation/simulation/{allocation_id}/lock:
     post:
       summary: Lock allocation simulation reference
@@ -932,7 +954,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Locked reference and project_status=CONFIRMED.
+          $ref: "#/components/responses/StandardSuccess"
   /allocation/simulation/{allocation_id}/export:
     post:
       summary: Export allocation result as P0 JSON
@@ -944,18 +966,18 @@ paths:
             type: string
       responses:
         "200":
-          description: JSON report/export metadata and project_status=EXPORTED.
+          $ref: "#/components/responses/StandardSuccess"
   /allocation/constraints:
     get:
       summary: List allocation constraints
       responses:
         "200":
-          description: Paged constraints.
+          $ref: "#/components/responses/StandardSuccess"
     post:
       summary: Create allocation constraint
       responses:
         "200":
-          description: Created constraint.
+          $ref: "#/components/responses/StandardSuccess"
   /allocation/constraints/{constraint_id}:
     patch:
       summary: Update allocation constraint
@@ -967,7 +989,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Updated constraint.
+          $ref: "#/components/responses/StandardSuccess"
   /allocation/constraints/{constraint_id}/status:
     patch:
       summary: Update allocation constraint status
@@ -979,19 +1001,19 @@ paths:
             type: string
       responses:
         "200":
-          description: Updated constraint status.
+          $ref: "#/components/responses/StandardSuccess"
   /reports/preview:
     get:
       summary: Preview report content
       responses:
         "200":
-          description: Markdown preview and readiness flags; does not export files.
+          $ref: "#/components/responses/StandardSuccess"
   /system/audit/logs:
     get:
       summary: Query audit logs through system management route
       responses:
         "200":
-          description: Paged audit log rows.
+          $ref: "#/components/responses/StandardSuccess"
   /system/audit/logs/{log_id}:
     get:
       summary: Get audit log detail through system management route
@@ -1003,8 +1025,21 @@ paths:
             type: string
       responses:
         "200":
-          description: Audit log detail with snapshot refs.
+          $ref: "#/components/responses/StandardSuccess"
 components:
+  responses:
+    StandardSuccess:
+      description: Standard DVAS success envelope.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/StandardResponse"
+    StandardError:
+      description: Standard DVAS error envelope.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
   schemas:
     StandardResponse:
       type: object
@@ -1025,7 +1060,7 @@ components:
           description: Present on responses that mutate or expose project state.
     ErrorResponse:
       type: object
-      required: [success, code, message, trace_id, field_errors]
+      required: [success, code, message, trace_id, field_errors, error]
       properties:
         success:
           const: false
@@ -1040,6 +1075,8 @@ components:
         message:
           type: string
         trace_id:
+          type: string
+        disabled_reason:
           type: string
         field_errors:
           type: array

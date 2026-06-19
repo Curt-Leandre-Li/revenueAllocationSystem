@@ -360,6 +360,20 @@ class SystemParameterService:
                     field_errors=[{"field": "current_value", "reason": f"{parameter_code} 不能为空"}],
                 )
             return raw_value
+        if parameter_type == "BOOLEAN":
+            if isinstance(raw_value, bool):
+                return raw_value
+            if isinstance(raw_value, str):
+                normalized = raw_value.strip().lower()
+                if normalized in {"true", "1", "yes", "y"}:
+                    return True
+                if normalized in {"false", "0", "no", "n"}:
+                    return False
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "系统参数值不合法",
+                field_errors=[{"field": "current_value", "reason": f"{parameter_code} 必须是布尔值"}],
+            )
         if parameter_type == "INTEGER":
             try:
                 value = int(raw_value)
@@ -2148,7 +2162,11 @@ class MdDshapService:
             "baseline_enabled": self._bool(
                 payload,
                 "baseline_enabled",
-                participant_count <= 8,
+                parameter_current_value(
+                    self.repository,
+                    "DEFAULT_MD_DSHAP_BASELINE_ENABLED",
+                    participant_count <= 8,
+                ),
             ),
             "save_marginal_detail": self._bool(payload, "save_marginal_detail", True),
         }
@@ -2932,6 +2950,40 @@ class ReportService:
             operation_type="EXPORT_AUDIT_LOG",
         )
 
+    def generate_md_dshap_audit(
+        self,
+        task_id=None,
+        audit_module_code="REP",
+        audit_menu_code="NAV_REPORT_EXPORT",
+    ):
+        context = self._optional_export_context()
+        task = self._resolve_md_dshap_task(context, task_id)
+        results = self.repository.list_md_dshap_results(task["task_id"])
+        traces = self.repository.list_md_dshap_marginal_traces(task["task_id"])
+        if not results:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "MD-DShap 任务尚无权重结果",
+                field_errors=[{"field": "task_id", "reason": "请先完成 MD-DShap 权重计算"}],
+            )
+        context["project"] = self.repository.update_project(project_status="EXPORTED")
+        payload = self._md_dshap_audit_payload(context, task, results, traces)
+        markdown = self._md_dshap_audit_markdown(payload)
+        json_content = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+        return self._persist_report(
+            report_type="MD_DSHAP_AUDIT_REPORT",
+            primary_file_name="md_dshap_audit_report.md",
+            file_format="MARKDOWN",
+            files=[
+                ("md_dshap_audit_report.md", markdown),
+                ("md_dshap_audit_report.json", json_content),
+            ],
+            context=context,
+            operation_type="EXPORT_MD_DSHAP_AUDIT",
+            audit_module_code=audit_module_code,
+            audit_menu_code=audit_menu_code,
+        )
+
     def _final_export_context(self):
         context = self._optional_export_context()
         project = context["project"]
@@ -3000,6 +3052,8 @@ class ReportService:
         files,
         context,
         operation_type,
+        audit_module_code="REP",
+        audit_menu_code="NAV_REPORT_EXPORT",
     ):
         now = utc_now()
         project = context["project"]
@@ -3060,8 +3114,8 @@ class ReportService:
         self.repository.put_export_files(export_files)
         write_audit(
             self.repository,
-            module_code="REPORT",
-            menu_code="NAV_REPORT_EXPORT",
+            module_code=audit_module_code,
+            menu_code=audit_menu_code,
             operation_type=operation_type,
             object_type="report_record",
             object_id=report_id,
@@ -3076,6 +3130,132 @@ class ReportService:
             "report": report,
             "export_files": export_files,
         }
+
+    def _resolve_md_dshap_task(self, context, task_id=None):
+        resolved_task_id = task_id or context["project"].get("current_algorithm_task_id")
+        if not resolved_task_id:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "请先完成 MD-DShap 权重计算",
+                field_errors=[{"field": "task_id", "reason": "缺少 current_algorithm_task_id"}],
+            )
+        task = self.repository.get_md_dshap_task(resolved_task_id)
+        if not task:
+            raise ApiError("DVAS_NOT_FOUND", "MD-DShap 任务不存在", status=404)
+        return task
+
+    def _md_dshap_audit_payload(self, context, task, results, traces):
+        return {
+            "report_type": "MD_DSHAP_AUDIT_REPORT",
+            "project": {
+                "project_id": context["project"]["project_id"],
+                "project_name": context["project"]["project_name"],
+                "project_status": context["project"]["project_status"],
+            },
+            "algorithm_mode": task["algorithm_mode"],
+            "algorithm_version": task["algorithm_version"],
+            "participant_set": task["participant_set"],
+            "task_set": task["task_set"],
+            "utility_function_source": {
+                "source": "utility_records + utility_traces",
+                "utility_id": (context["utility"] or {}).get("utility_id"),
+                "trace_count": len(context["utility_traces"]),
+                "description": "效用值来自质量、数元计量、贡献度和场景信号的 P0 确定性模拟链路。",
+            },
+            "parameters": {
+                "seed": task["seed"],
+                "sample_rounds": task["sample_rounds"],
+                "epsilon": task["epsilon"],
+                "baseline_enabled": task["baseline_enabled"],
+            },
+            "approximation_note": task["approximation_note"],
+            "participant_weight": [
+                {
+                    "party_id": result["party_id"],
+                    "party_name": result["party_name"],
+                    "participant_weight": self._weight_text(result["participant_weight"]),
+                    "normalized_weight": self._weight_text(result["normalized_weight"]),
+                    "baseline_weight": self._optional_weight_text(result.get("baseline_weight")),
+                    "weight_diff": self._optional_weight_text(result.get("weight_diff")),
+                }
+                for result in results
+            ],
+            "marginal_trace_summary": {
+                "trace_count": len(traces),
+                "sample_rows": traces[:10],
+            },
+            "snapshot_refs": {
+                "parameter_snapshot_id": task.get("parameter_snapshot_id"),
+                "result_snapshot_id": task.get("result_snapshot_id"),
+                "algorithm_audit_snapshot_id": task.get("algorithm_audit_snapshot_id"),
+            },
+            "checksum_note": "校验值由 export_files.checksum 记录，随 report_id 一起返回。",
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+        }
+
+    def _md_dshap_audit_markdown(self, payload):
+        lines = [
+            "# MD-DShap 算法审计说明",
+            "",
+            "## 模拟参考声明",
+            f"- {payload['simulation_disclaimer']}",
+            "",
+            "## 算法信息",
+            f"- algorithm_mode: {payload['algorithm_mode']}",
+            f"- algorithm_version: {payload['algorithm_version']}",
+            f"- task_set: {', '.join(payload['task_set'])}",
+            f"- approximation_note: {payload['approximation_note']}",
+            "",
+            "## 参数",
+        ]
+        for key, value in payload["parameters"].items():
+            lines.append(f"- {key}: {value}")
+        lines.extend(
+            [
+                "",
+                "## 效用函数来源",
+                f"- source: {payload['utility_function_source']['source']}",
+                f"- utility_id: {payload['utility_function_source']['utility_id']}",
+                f"- trace_count: {payload['utility_function_source']['trace_count']}",
+                f"- description: {payload['utility_function_source']['description']}",
+                "",
+                "## 参与方集合",
+            ]
+        )
+        for participant in payload["participant_set"]:
+            lines.append(
+                f"- {participant['party_id']} / {participant['party_name']} / {participant['party_type']}"
+            )
+        lines.append("")
+        lines.append("## 参与方权重")
+        for row in payload["participant_weight"]:
+            lines.append(
+                f"- {row['party_id']} / {row['party_name']}: "
+                f"participant_weight={row['participant_weight']}, "
+                f"normalized_weight={row['normalized_weight']}, "
+                f"baseline_weight={row['baseline_weight']}, "
+                f"weight_diff={row['weight_diff']}"
+            )
+        lines.extend(
+            [
+                "",
+                "## 边际贡献轨迹摘要",
+                f"- trace_count: {payload['marginal_trace_summary']['trace_count']}",
+                "",
+                "## 快照引用",
+            ]
+        )
+        for key, value in payload["snapshot_refs"].items():
+            lines.append(f"- {key}: {value}")
+        lines.extend(
+            [
+                "",
+                "## 报告与校验",
+                f"- {payload['checksum_note']}",
+                "",
+            ]
+        )
+        return "\n".join(lines)
 
     def _markdown_content(self, context):
         project = context["project"]

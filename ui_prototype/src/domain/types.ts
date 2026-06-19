@@ -40,7 +40,7 @@ export type CheckStatus = "PASS" | "BLOCKED" | "PENDING";
 
 export type RoutePath =
   | "/dashboard"
-  | "/data/packages"
+  | "/data/ingestion"
   | "/data/resources"
   | "/data/parties"
   | "/measure/quality"
@@ -148,6 +148,55 @@ export type ActionPayload =
       sampleRounds: number;
       epsilon: number;
       saveMarginalDetail: boolean;
+    }
+  | {
+      kind: "mds-audit-export";
+      taskId?: string;
+    }
+  | {
+      kind: "party-upsert";
+      partyId?: string;
+      partyName: string;
+      partyType: string;
+      includeInMdDshap: boolean;
+      creditCode?: string;
+      contactName?: string;
+      description?: string;
+    }
+  | {
+      kind: "party-status";
+      partyId: string;
+      status: "ENABLED" | "DISABLED";
+      reason?: string;
+    }
+  | {
+      kind: "constraint-upsert";
+      constraintId?: string;
+      partyId: string;
+      constraintName: string;
+      constraintType: string;
+      valueType: string;
+      constraintValue: number;
+      priority: number;
+      status?: "ACTIVE" | "DISABLED";
+      description?: string;
+    }
+  | {
+      kind: "constraint-status";
+      constraintId: string;
+      status: "ACTIVE" | "DISABLED";
+      description?: string;
+    }
+  | {
+      kind: "parameter-update";
+      values: Array<{
+        parameterCode: string;
+        currentValue: string | number | boolean;
+      }>;
+    }
+  | {
+      kind: "parameter-restore";
+      parameterCode: string;
     }
   | {
       kind: "none";

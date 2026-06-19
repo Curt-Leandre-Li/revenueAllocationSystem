@@ -7,6 +7,7 @@ import type {
   BackendDashboardSummaryDto,
   BackendDataPackageDto,
   BackendDataResourceDto,
+  BackendNavigationMenuDto,
   BackendPartyDto,
   BackendProjectDto,
   BackendReportRecordDto,
@@ -37,6 +38,8 @@ const demoUploadPayload = {
 
 export const dvasApi = {
   getProject: () => apiRequest<BackendProjectDto>(endpoints.projectCurrentStatus),
+  getNavigationMenus: () =>
+    apiRequest<{ items: BackendNavigationMenuDto[] }>(endpoints.navigationMenus),
   getDashboardOverview: () =>
     apiRequest<BackendDashboardSummaryDto>(endpoints.dashboardOverview),
   getDashboardPreconditions: () =>
@@ -96,6 +99,21 @@ export const dvasApi = {
     });
   },
   listParties: () => apiRequest<TablePage<BackendPartyDto>>(endpoints.parties),
+  createParty: (payload: Record<string, unknown>) =>
+    apiRequest<BackendPartyDto>(endpoints.parties, {
+      method: "POST",
+      bodyJson: payload,
+    }),
+  updateParty: (partyId: string, payload: Record<string, unknown>) =>
+    apiRequest<BackendPartyDto>(endpoints.party(partyId), {
+      method: "PATCH",
+      bodyJson: payload,
+    }),
+  updatePartyStatus: (partyId: string, status: string, reason?: string) =>
+    apiRequest<BackendPartyDto>(endpoints.partyStatus(partyId), {
+      method: "PATCH",
+      bodyJson: { status, reason },
+    }),
   runQualityAssessment: () =>
     apiRequest<unknown>(endpoints.qualityEvaluate, {
       method: "POST",
@@ -122,11 +140,25 @@ export const dvasApi = {
     apiRequest<Record<string, unknown>>(endpoints.mdDshapTask(taskId)),
   getMdDshapTaskResults: (taskId: string) =>
     apiRequest<TablePage<Record<string, unknown>>>(endpoints.mdDshapTaskResults(taskId)),
-  runMdDshap: () =>
+  runMdDshap: (payload: Record<string, unknown> = {}) =>
     apiRequest<unknown>(endpoints.mdDshapTasks, {
       method: "POST",
-      bodyJson: {},
+      bodyJson: payload,
     }),
+  exportMdDshapAudit: async (taskId?: string) => {
+    const resolvedTaskId =
+      taskId || String((await apiRequest<BackendProjectDto>(endpoints.projectCurrent)).current_algorithm_task_id ?? "");
+    if (!resolvedTaskId) {
+      return apiRequest<unknown>(endpoints.reportMdDshapAudit, {
+        method: "POST",
+        bodyJson: {},
+      });
+    }
+    return apiRequest<unknown>(endpoints.mdDshapTaskAuditExport(resolvedTaskId), {
+      method: "POST",
+      bodyJson: {},
+    });
+  },
   runAllocationSimulation: () =>
     apiRequest<unknown>(endpoints.allocationRun, {
       method: "POST",
@@ -136,6 +168,21 @@ export const dvasApi = {
     apiRequest<TablePage<Record<string, unknown>>>(endpoints.allocationResults(allocationId)),
   listAllocationConstraints: () =>
     apiRequest<TablePage<BackendConstraintDto>>(endpoints.allocationConstraints),
+  createAllocationConstraint: (payload: Record<string, unknown>) =>
+    apiRequest<BackendConstraintDto>(endpoints.allocationConstraints, {
+      method: "POST",
+      bodyJson: payload,
+    }),
+  updateAllocationConstraint: (constraintId: string, payload: Record<string, unknown>) =>
+    apiRequest<BackendConstraintDto>(endpoints.allocationConstraint(constraintId), {
+      method: "PATCH",
+      bodyJson: payload,
+    }),
+  updateAllocationConstraintStatus: (constraintId: string, status: string, description?: string) =>
+    apiRequest<BackendConstraintDto>(endpoints.allocationConstraintStatus(constraintId), {
+      method: "PATCH",
+      bodyJson: { status, description },
+    }),
   lockCurrentAllocation: async () => {
     const project = await apiRequest<BackendProjectDto>(endpoints.projectCurrent);
     const allocationId = String(project.current_allocation_id ?? "");
@@ -180,8 +227,26 @@ export const dvasApi = {
       method: "POST",
       bodyJson: {},
     }),
+  generateMdDshapAuditReport: () =>
+    apiRequest<unknown>(endpoints.reportMdDshapAudit, {
+      method: "POST",
+      bodyJson: {},
+    }),
   listSystemParameters: () =>
     apiRequest<TablePage<BackendSystemParameterDto>>(endpoints.systemParameters),
+  updateSystemParameter: (parameterCode: string, currentValue: string | number | boolean) =>
+    apiRequest<BackendSystemParameterDto>(endpoints.systemParameter(parameterCode), {
+      method: "PUT",
+      bodyJson: { current_value: currentValue },
+    }),
+  restoreSystemParameterDefault: (parameterCode: string) =>
+    apiRequest<BackendSystemParameterDto>(
+      endpoints.systemParameterRestoreDefault(parameterCode),
+      {
+        method: "POST",
+        bodyJson: {},
+      },
+    ),
   listAuditLogs: (limit = 50) =>
     apiRequest<TablePage<BackendAuditLogDto>>(`${endpoints.systemAuditLogs}?limit=${limit}`),
   getAuditLogDetail: (logId: string) =>

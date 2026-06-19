@@ -252,6 +252,12 @@ class DvasApplication:
             return self.md_dshap_service.results(segments[2])
         if method == "GET" and len(segments) == 5 and segments[:3] == ["allocation", "md-dshap", "tasks"] and segments[4] == "results":
             return self.md_dshap_service.results(segments[3])
+        if method == "POST" and len(segments) == 5 and segments[:3] == ["allocation", "md-dshap", "tasks"] and segments[4] == "audit-export":
+            return self.report_service.generate_md_dshap_audit(
+                segments[3],
+                audit_module_code="MDS",
+                audit_menu_code="NAV_ALLOC_MDS",
+            )
         if (
             method == "GET"
             and len(segments) == 4
@@ -327,6 +333,8 @@ class DvasApplication:
             return self.report_service.generate_json()
         if method == "POST" and segments == ["reports", "audit-log"]:
             return self.report_service.export_audit_log()
+        if method == "POST" and segments == ["reports", "md-dshap-audit"]:
+            return self.report_service.generate_md_dshap_audit()
         if method == "GET" and segments == ["system", "parameters"]:
             return self.system_parameter_service.list()
         if method == "GET" and len(segments) == 3 and segments[:2] == ["system", "parameters"]:

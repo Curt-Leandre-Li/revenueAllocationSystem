@@ -12,13 +12,32 @@ import {
 import type { DataRow } from "../../domain/types";
 import type { PageProps } from "../pageTypes";
 
+interface ConstraintDraft {
+  constraintId?: string;
+  partyId: string;
+  partyName: string;
+  constraintName: string;
+  constraintType: string;
+  valueType: string;
+  constraintValue: number;
+  priority: number;
+  status: "ACTIVE" | "DISABLED";
+  description: string;
+}
+
 export function ConstraintsPage({ route, snapshot, onAction }: PageProps) {
   const [drawer, setDrawer] = useState<"" | "form" | "trace">("");
   const pageData = snapshot.pages[route.path];
   const constraintRows = pageData.rows;
+  const partyOptions = (snapshot.pages["/data/parties"]?.rows ?? []).map((item, index) => ({
+    partyId: readCell(item, "party_id", `party_${index + 1}`),
+    partyName: readCell(item, "party_name", `参与方 ${index + 1}`),
+  }));
+  const [constraintDraft, setConstraintDraft] = useState<ConstraintDraft>(() =>
+    newConstraintDraft(partyOptions[0]),
+  );
   const metricValue = (label: string, fallback: string) =>
     pageData.metrics.find((item) => item.label === label)?.value ?? fallback;
-  const firstConstraint = constraintRows[0];
 
   return (
     <div className="pageWorkspace phase2Page constraintsPage">
@@ -47,7 +66,7 @@ export function ConstraintsPage({ route, snapshot, onAction }: PageProps) {
             <ActionButton
               action={actionRegistry["CONS-002"]}
               onClick={(action) => {
-                onAction(action);
+                setConstraintDraft(newConstraintDraft(partyOptions[0]));
                 setDrawer("form");
               }}
             />
@@ -69,7 +88,9 @@ export function ConstraintsPage({ route, snapshot, onAction }: PageProps) {
                 <tr>
                   <td colSpan={7}>暂无后端合同约束记录；新增/编辑动作未执行时不会写入前端示例数据。</td>
                 </tr>
-              ) : constraintRows.map((item) => (
+              ) : constraintRows.map((item) => {
+                const nextStatus = readCell(item, "status", "") === "停用" ? "ACTIVE" : "DISABLED";
+                return (
                 <tr key={readCell(item, "constraint_id", readCell(item, "constraint_name", "constraint"))}>
                   <td><strong>{readCell(item, "constraint_name", "未命名约束")}</strong></td>
                   <td>{readCell(item, "party_name", "未指定")}</td>
@@ -82,17 +103,30 @@ export function ConstraintsPage({ route, snapshot, onAction }: PageProps) {
                       <button
                         type="button"
                         onClick={() => {
-                          onAction(actionRegistry["CONS-003"]);
+                          setConstraintDraft(constraintDraftFromRow(item, partyOptions[0]));
                           setDrawer("form");
                         }}
                       >
                         编辑
                       </button>
-                      <button type="button" onClick={() => onAction(actionRegistry["CONS-004"])}>停用</button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onAction(actionRegistry["CONS-004"], {
+                            kind: "constraint-status",
+                            constraintId: readCell(item, "constraint_id", ""),
+                            status: nextStatus,
+                            description: "前端 Phase 2C 状态切换",
+                          })
+                        }
+                      >
+                        {nextStatus === "ACTIVE" ? "启用" : "停用"}
+                      </button>
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -124,18 +158,122 @@ export function ConstraintsPage({ route, snapshot, onAction }: PageProps) {
         variant="form"
         actions={[
           { label: "取消", onClick: () => setDrawer("") },
-          { label: "保存约束", type: "primary", onClick: () => { onAction(actionRegistry["CONS-003"]); setDrawer(""); } },
+          {
+            label: "保存约束",
+            type: "primary",
+            onClick: () => {
+              onAction(
+                actionRegistry[constraintDraft.constraintId ? "CONS-003" : "CONS-002"],
+                {
+                  kind: "constraint-upsert",
+                  constraintId: constraintDraft.constraintId,
+                  partyId: constraintDraft.partyId,
+                  constraintName: constraintDraft.constraintName,
+                  constraintType: constraintDraft.constraintType,
+                  valueType: constraintDraft.valueType,
+                  constraintValue: constraintDraft.constraintValue,
+                  priority: constraintDraft.priority,
+                  status: constraintDraft.status,
+                  description: constraintDraft.description,
+                },
+              );
+              setDrawer("");
+            },
+          },
         ]}
         onClose={() => setDrawer("")}
       >
         <DrawerSection title="约束配置">
           <div className="formGrid">
-            <label>约束名称<input defaultValue={readCell(firstConstraint, "constraint_name", "")} /></label>
-            <label>约束对象<input defaultValue={readCell(firstConstraint, "party_name", "")} /></label>
-            <label>约束类型<select defaultValue={readCell(firstConstraint, "constraint_type", "MIN_AMOUNT")}><option value="MIN_AMOUNT">最小金额</option><option value="MAX_AMOUNT">最大金额</option><option value="CAP_AMOUNT">封顶金额</option><option value="FLOOR_AMOUNT">保底金额</option><option value="FIXED_RATIO">固定比例</option><option value="PRIORITY_ALLOCATION">优先分配</option></select></label>
-            <label>约束值<input defaultValue={readCell(firstConstraint, "constraint_value", "")} /></label>
-            <label>优先级<input defaultValue={readCell(firstConstraint, "priority", "")} /></label>
-            <label>生效状态<select defaultValue={readCell(firstConstraint, "status", "启用")}><option>启用</option><option>停用</option></select></label>
+            <label>
+              约束名称
+              <input
+                value={constraintDraft.constraintName}
+                onChange={(event) =>
+                  setConstraintDraft((current) => ({ ...current, constraintName: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              约束对象
+              <select
+                value={constraintDraft.partyId}
+                onChange={(event) => {
+                  const party = partyOptions.find((item) => item.partyId === event.target.value);
+                  setConstraintDraft((current) => ({
+                    ...current,
+                    partyId: event.target.value,
+                    partyName: party?.partyName ?? current.partyName,
+                  }));
+                }}
+              >
+                {partyOptions.length ? (
+                  partyOptions.map((party) => (
+                    <option key={party.partyId} value={party.partyId}>{party.partyName}</option>
+                  ))
+                ) : (
+                  <option value="">暂无参与方</option>
+                )}
+              </select>
+            </label>
+            <label>
+              约束类型
+              <select
+                value={constraintDraft.constraintType}
+                onChange={(event) =>
+                  setConstraintDraft((current) => ({
+                    ...current,
+                    constraintType: event.target.value,
+                    valueType: event.target.value === "FIXED_RATIO" ? "RATIO" : "AMOUNT",
+                  }))
+                }
+              >
+                <option value="MIN_AMOUNT">最小金额</option>
+                <option value="MAX_AMOUNT">最大金额</option>
+                <option value="CAP_AMOUNT">封顶金额</option>
+                <option value="FLOOR_AMOUNT">保底金额</option>
+                <option value="FIXED_RATIO">固定比例</option>
+                <option value="PRIORITY_ALLOCATION">优先分配</option>
+              </select>
+            </label>
+            <label>
+              约束值
+              <input
+                type="number"
+                value={constraintDraft.constraintValue}
+                onChange={(event) =>
+                  setConstraintDraft((current) => ({
+                    ...current,
+                    constraintValue: Number(event.target.value),
+                  }))
+                }
+              />
+            </label>
+            <label>
+              优先级
+              <input
+                type="number"
+                value={constraintDraft.priority}
+                onChange={(event) =>
+                  setConstraintDraft((current) => ({ ...current, priority: Number(event.target.value) }))
+                }
+              />
+            </label>
+            <label>
+              生效状态
+              <select
+                value={constraintDraft.status}
+                onChange={(event) =>
+                  setConstraintDraft((current) => ({
+                    ...current,
+                    status: event.target.value === "ACTIVE" ? "ACTIVE" : "DISABLED",
+                  }))
+                }
+              >
+                <option value="ACTIVE">启用</option>
+                <option value="DISABLED">停用</option>
+              </select>
+            </label>
           </div>
         </DrawerSection>
       </DetailDrawer>
@@ -169,4 +307,40 @@ export function ConstraintsPage({ route, snapshot, onAction }: PageProps) {
 function readCell(row: DataRow | undefined, key: string, fallback: string) {
   const value = row?.[key];
   return value === undefined || value === null || value === "" ? fallback : String(value);
+}
+
+function newConstraintDraft(
+  party?: { partyId: string; partyName: string },
+): ConstraintDraft {
+  return {
+    partyId: party?.partyId ?? "",
+    partyName: party?.partyName ?? "",
+    constraintName: `前端联调约束-${Date.now().toString().slice(-6)}`,
+    constraintType: "MIN_AMOUNT",
+    valueType: "AMOUNT",
+    constraintValue: 10,
+    priority: 100,
+    status: "ACTIVE",
+    description: "Phase 2C 前端真实后端写入校验",
+  };
+}
+
+function constraintDraftFromRow(
+  row: DataRow,
+  fallbackParty?: { partyId: string; partyName: string },
+): ConstraintDraft {
+  const constraintType = readCell(row, "constraint_type", "MIN_AMOUNT");
+  const status = readCell(row, "status", "启用") === "停用" ? "DISABLED" : "ACTIVE";
+  return {
+    constraintId: readCell(row, "constraint_id", ""),
+    partyId: readCell(row, "party_id", fallbackParty?.partyId ?? ""),
+    partyName: readCell(row, "party_name", fallbackParty?.partyName ?? ""),
+    constraintName: readCell(row, "constraint_name", "未命名约束"),
+    constraintType,
+    valueType: readCell(row, "value_type", constraintType === "FIXED_RATIO" ? "RATIO" : "AMOUNT"),
+    constraintValue: Number(readCell(row, "constraint_value", "0")) || 0,
+    priority: Number(readCell(row, "priority", "100")) || 100,
+    status,
+    description: "Phase 2C 前端真实后端写入校验",
+  };
 }

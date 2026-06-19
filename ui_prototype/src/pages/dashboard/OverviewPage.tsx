@@ -231,7 +231,7 @@ export function OverviewPage({
               <button
                 className="actionButton secondary"
                 type="button"
-                onClick={() => onNavigate("/data/packages")}
+                onClick={() => onNavigate("/data/ingestion")}
               >
                 进入数据接入
               </button>

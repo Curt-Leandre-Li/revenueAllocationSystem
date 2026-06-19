@@ -38,7 +38,7 @@ export function MDDShapPage({ route, snapshot, onAction }: PageProps) {
     {
       name: "数据包",
       status: "PASS" as const,
-      targetPath: "/data/packages" as const,
+      targetPath: "/data/ingestion" as const,
       message: "已生成有效输入快照。",
     },
     {
@@ -298,7 +298,7 @@ export function MDDShapPage({ route, snapshot, onAction }: PageProps) {
               <ActionButton
                 action={actionRegistry["MDS-018"]}
                 onClick={(action) => {
-                  onAction(action);
+                  onAction(action, { kind: "mds-audit-export" });
                   setDrawer("audit");
                 }}
               />

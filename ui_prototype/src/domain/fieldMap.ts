@@ -313,7 +313,7 @@ export const routeFieldMappings: RouteFieldMapping[] = [
     ]),
   },
   {
-    routePath: "/data/packages",
+    routePath: "/data/ingestion",
     menuCode: "NAV_DATA_PACKAGE",
     moduleCode: "DATA",
     pageName: "数据接入管理",

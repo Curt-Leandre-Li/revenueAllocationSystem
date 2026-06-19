@@ -53,7 +53,7 @@ const preconditionLabels: Record<
   string,
   { name: string; targetPath?: RoutePath }
 > = {
-  HAS_VALID_DATA_PACKAGE: { name: "输入快照", targetPath: "/data/packages" },
+  HAS_VALID_DATA_PACKAGE: { name: "输入快照", targetPath: "/data/ingestion" },
   HAS_RESOURCE_PARTY_RELATION: {
     name: "资源主体关系",
     targetPath: "/data/resources",
@@ -271,7 +271,7 @@ function buildSnapshotFromBackend(
   const pages = {
     ...currentSnapshot.pages,
     "/dashboard": buildOverviewPage(data),
-    "/data/packages": buildPackagesPage(data),
+    "/data/ingestion": buildPackagesPage(data),
     "/data/resources": buildResourcesPage(data),
     "/data/parties": buildPartiesPage(data),
     "/allocation/md-dshap": buildMDDShapPage(data),
@@ -490,7 +490,7 @@ function buildPackagesPage(data: BackendWorkspaceData): PageWorkspaceData {
     summary: "数据包列表来自后端；演示数据初始化和 JSON 上传均调用真实接口。",
     primaryTask: data.packages.length ? "检查最新数据包校验结果。" : "选择演示数据或上传 JSON。",
     metrics: [
-      metric("数据包", data.packages.length, "来自 /data-packages", "neutral"),
+      metric("数据包", data.packages.length, "来自数据接入接口", "neutral"),
       metric("有效数据包", data.packages.filter((item) => item.status === "VALIDATED").length, "可进入后续处理", "success"),
       metric("校验失败", invalidCount, "需要修复", invalidCount ? "warning" : "success"),
     ],
@@ -550,7 +550,9 @@ function buildPartiesPage(data: BackendWorkspaceData): PageWorkspaceData {
     ],
     preconditions: toPreconditions(data.overview.preconditions),
     rows: data.parties.map((item) => ({
+      party_id: item.partyId,
       party_name: item.partyName,
+      party_type_code: item.partyType,
       party_type: item.partyTypeLabel,
       is_data_provider: item.partyType === "DATA_PROVIDER" ? "是" : "否",
       include_in_md_dshap: item.includeInMdDshap ? "是" : "否",
@@ -669,10 +671,12 @@ function buildConstraintsPage(data: BackendWorkspaceData): PageWorkspaceData {
     preconditions: toPreconditions(data.overview.preconditions),
     rows: data.constraints.map((item) => ({
       constraint_id: item.constraintId,
+      party_id: item.partyId,
       constraint_name: item.constraintName,
       party_name: item.partyName,
       constraint_type: item.constraintType,
       constraint_type_label: item.constraintTypeLabel,
+      value_type: item.valueType,
       constraint_value: item.constraintValue,
       priority: item.priority,
       status: item.statusLabel,

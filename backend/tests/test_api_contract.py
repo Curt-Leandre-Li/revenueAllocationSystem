@@ -1099,6 +1099,49 @@ class DvasApiContractTests(unittest.TestCase):
         self.assertTrue(any(record.get("module_code") == "ALLOC" for record in records))
         self.assertTrue(all("status" in record for record in records if record.get("record_type") == "audit_log"))
 
+    def test_md_dshap_audit_report_export_is_not_audit_log_jsonl(self):
+        weights = self.run_demo_to_weights()
+        task_id = weights["task"]["task_id"]
+
+        data = self.assert_ok(
+            self.request(
+                "POST",
+                f"/api/v1/allocation/md-dshap/tasks/{task_id}/audit-export",
+                {},
+            )
+        )
+
+        self.assertEqual("MD_DSHAP_AUDIT_REPORT", data["report"]["report_type"])
+        self.assertEqual("md_dshap_audit_report.md", data["report"]["file_name"])
+        self.assertEqual("MARKDOWN", data["report"]["file_format"])
+        self.assertNotEqual("audit_log.jsonl", data["report"]["file_name"])
+        self.assertEqual(64, len(data["report"]["checksum"]))
+        export_files = {item["file_name"]: item for item in data["export_files"]}
+        self.assertIn("md_dshap_audit_report.md", export_files)
+        self.assertIn("md_dshap_audit_report.json", export_files)
+
+        markdown = Path(data["report"]["file_path"]).read_text(encoding="utf-8")
+        self.assertIn("algorithm_mode: MD_DSHAP", markdown)
+        self.assertIn("algorithm_version", markdown)
+        self.assertIn("participant_weight", markdown)
+        self.assertIn("非法律结算", markdown)
+
+        audit_json = json.loads(
+            Path(export_files["md_dshap_audit_report.json"]["file_path"]).read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual("MD_DSHAP_AUDIT_REPORT", audit_json["report_type"])
+        self.assertEqual("MD_DSHAP", audit_json["algorithm_mode"])
+        self.assertIn("participant_set", audit_json)
+        self.assertIn("utility_function_source", audit_json)
+        self.assertIn("parameters", audit_json)
+        self.assertIn("marginal_trace_summary", audit_json)
+        self.assertEqual(2, len(audit_json["participant_weight"]))
+
+        report_route = self.assert_ok(self.request("POST", "/api/v1/reports/md-dshap-audit", {}))
+        self.assertEqual("MD_DSHAP_AUDIT_REPORT", report_route["report"]["report_type"])
+
     def test_report_reexport_creates_new_report_without_overwriting_history(self):
         self.run_demo_to_allocated()
 
@@ -1148,6 +1191,7 @@ class DvasApiContractTests(unittest.TestCase):
         self.assertIn("RISK_DISCLAIMER_TEXT", codes)
         self.assertIn("DEFAULT_SHUYUAN_BASE_PRICE", codes)
         self.assertIn("DEFAULT_MD_DSHAP_SAMPLE_ROUNDS", codes)
+        self.assertIn("DEFAULT_MD_DSHAP_BASELINE_ENABLED", codes)
         self.assertIn("AMOUNT_DISPLAY_PRECISION", codes)
         parameter = next(
             item for item in data["items"] if item["parameter_code"] == "DEFAULT_SHUYUAN_BASE_PRICE"
@@ -1160,6 +1204,15 @@ class DvasApiContractTests(unittest.TestCase):
         self.assertTrue(parameter["editable"])
         self.assertEqual(1, parameter["version_no"])
         self.assertIn("updated_at", parameter)
+
+        baseline = next(
+            item
+            for item in data["items"]
+            if item["parameter_code"] == "DEFAULT_MD_DSHAP_BASELINE_ENABLED"
+        )
+        self.assertEqual("BOOLEAN", baseline["parameter_type"])
+        self.assertTrue(baseline["default_value"])
+        self.assertTrue(baseline["current_value"])
 
         detail = self.assert_ok(
             self.request("GET", "/api/v1/system/parameters/DEFAULT_SHUYUAN_BASE_PRICE")
@@ -1276,7 +1329,7 @@ class DvasApiContractTests(unittest.TestCase):
 
         self.assertGreater(logs["total"], 0)
         self.assertTrue(any(item["module_code"] == "ALLOC" for item in logs["items"]))
-        self.assertTrue(any(item["module_code"] == "REPORT" for item in logs["items"]))
+        self.assertTrue(any(item["module_code"] == "REP" for item in logs["items"]))
         result_log = next(item for item in logs["items"] if item.get("result_snapshot_id"))
         detail = self.assert_ok(self.request("GET", f"/api/v1/audit-logs/{result_log['log_id']}"))
 
@@ -1342,6 +1395,46 @@ class DvasApiContractTests(unittest.TestCase):
         ]:
             with self.subTest(forbidden=forbidden):
                 self.assertFalse(any(forbidden in path for path in path_lines))
+
+    def test_openapi_path_responses_reference_standard_envelopes(self):
+        openapi_text = Path("backend/openapi.yaml").read_text(encoding="utf-8")
+
+        for expected in [
+            "/navigation/menus:",
+            "/projects/current/status:",
+            "/dashboard:",
+            "/demo-cases/{demo_case_id}/select:",
+            "/projects/{project_id}/pipeline/run:",
+            "/data/packages:",
+            "/data/resources:",
+            "/data/parties:",
+            "/metering/quality/evaluate:",
+            "/metering/shuyuan/calculate:",
+            "/metering/utility/calculate:",
+            "/allocation/md-dshap/tasks:",
+            "/allocation/md-dshap/tasks/{task_id}/results:",
+            "/allocation/md-dshap/tasks/{task_id}/audit-export:",
+            "/allocation/simulation/run:",
+            "/allocation/constraints:",
+            "/system/parameters:",
+            "/reports/markdown:",
+            "/reports/csv:",
+            "/reports/json:",
+            "/reports/audit-log:",
+            "/reports/md-dshap-audit:",
+            "/system/audit/logs:",
+        ]:
+            with self.subTest(path=expected):
+                self.assertIn(expected, openapi_text)
+
+        self.assertIn('StandardSuccess:', openapi_text)
+        self.assertIn('StandardError:', openapi_text)
+        self.assertGreaterEqual(openapi_text.count('#/components/responses/StandardSuccess'), 20)
+        self.assertGreaterEqual(openapi_text.count('#/components/responses/StandardError'), 10)
+        self.assertIn('error:', openapi_text)
+        self.assertIn('field:', openapi_text)
+        self.assertIn('message:', openapi_text)
+        self.assertIn('detail:', openapi_text)
 
     def test_p0_backend_complete_chain_reaches_exported_with_all_exports(self):
         start = self.assert_ok(self.request("GET", "/api/v1/projects/current"))

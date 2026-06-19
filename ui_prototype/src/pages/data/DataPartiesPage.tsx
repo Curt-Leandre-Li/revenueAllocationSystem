@@ -15,8 +15,10 @@ import type { PageProps } from "../pageTypes";
 
 const roleTabs = ["全部", "数据源主体", "运营方 / 技术服务方 / 中试基地", "专家方", "合同主体", "停用主体"];
 interface PartyListItem {
+  partyId: string;
   name: string;
   type: string;
+  typeCode: string;
   dataProvider: string;
   mds: string;
   resources: number;
@@ -24,12 +26,20 @@ interface PartyListItem {
   summary: string;
 }
 
+interface PartyDraft {
+  partyId?: string;
+  partyName: string;
+  partyType: string;
+  includeInMdDshap: boolean;
+  description: string;
+}
+
 const fallbackParties: PartyListItem[] = [
-  { name: "数据源主体甲", type: "数据提供方", dataProvider: "是", mds: "是", resources: 3, status: "有效" },
-  { name: "数据源主体乙", type: "数据提供方", dataProvider: "是", mds: "是", resources: 2, status: "有效" },
-  { name: "运营服务方", type: "运营方", dataProvider: "否", mds: "否", resources: 0, status: "合同优先" },
-  { name: "技术服务方", type: "技术服务方", dataProvider: "否", mds: "否", resources: 0, status: "合同优先" },
-  { name: "外部专家组", type: "专家方", dataProvider: "否", mds: "否", resources: 0, status: "有效" },
+  { partyId: "fallback_party_a", name: "数据源主体甲", type: "数据提供方", typeCode: "DATA_PROVIDER", dataProvider: "是", mds: "是", resources: 3, status: "有效" },
+  { partyId: "fallback_party_b", name: "数据源主体乙", type: "数据提供方", typeCode: "DATA_PROVIDER", dataProvider: "是", mds: "是", resources: 2, status: "有效" },
+  { partyId: "fallback_party_operator", name: "运营服务方", type: "运营方", typeCode: "OPERATOR", dataProvider: "否", mds: "否", resources: 0, status: "合同优先" },
+  { partyId: "fallback_party_service", name: "技术服务方", type: "技术服务方", typeCode: "SERVICE_PROVIDER", dataProvider: "否", mds: "否", resources: 0, status: "合同优先" },
+  { partyId: "fallback_party_expert", name: "外部专家组", type: "专家方", typeCode: "EXPERT", dataProvider: "否", mds: "否", resources: 0, status: "有效" },
 ].map((party) => ({
   ...party,
   summary: party.mds === "是" ? "数据贡献主体，进入权重层候选" : "非数据贡献主体，合同优先或约束处理",
@@ -43,9 +53,12 @@ function readCell(row: DataRow, key: string, fallback = "") {
 function partyFromRow(row: DataRow, index: number): PartyListItem {
   const dataProvider = readCell(row, "is_data_provider", "否");
   const mds = readCell(row, "include_in_md_dshap", dataProvider === "是" ? "是" : "否");
+  const typeCode = readCell(row, "party_type_code", dataProvider === "是" ? "DATA_PROVIDER" : "SERVICE_PROVIDER");
   return {
+    partyId: readCell(row, "party_id", `party_${index + 1}`),
     name: readCell(row, "party_name", `参与方 ${index + 1}`),
     type: readCell(row, "party_type", "未分类"),
+    typeCode,
     dataProvider,
     mds,
     resources: Number(readCell(row, "linked_resource_count", "0")) || 0,
@@ -65,6 +78,7 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
     pageData.rows.length > 0 ? pageData.rows.map(partyFromRow) : fallbackParties;
   const [activeTab, setActiveTab] = useState("全部");
   const [drawer, setDrawer] = useState<"" | "form" | "contribution" | "link">("");
+  const [partyDraft, setPartyDraft] = useState<PartyDraft>(() => newPartyDraft());
   const filteredParties =
     activeTab === "全部"
       ? parties
@@ -105,7 +119,7 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
           <ActionButton
             action={actionRegistry["PARTY-002"]}
             onClick={(action) => {
-              onAction(action);
+              setPartyDraft(newPartyDraft());
               setDrawer("form");
             }}
           />
@@ -144,8 +158,11 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
                 </tr>
               </thead>
               <tbody>
-                {filteredParties.map((party) => (
-                  <tr key={party.name}>
+                {filteredParties.map((party) => {
+                  const nextStatus = party.status === "停用" ? "ENABLED" : "DISABLED";
+                  const statusLabel = nextStatus === "ENABLED" ? "启用" : "停用";
+                  return (
+                  <tr key={party.partyId}>
                     <td><strong>{party.name}</strong></td>
                     <td>{party.type}</td>
                     <td>{party.dataProvider}</td>
@@ -157,7 +174,7 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
                         <button
                           type="button"
                           onClick={() => {
-                            onAction(actionRegistry["PARTY-003"]);
+                            setPartyDraft(partyDraftFromItem(party));
                             setDrawer("form");
                           }}
                         >
@@ -167,9 +184,16 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
                           disabled={dataProviderCount <= 1 && party.dataProvider === "是"}
                           title={dataProviderCount <= 1 && party.dataProvider === "是" ? "最后一个数据源主体不能停用" : actionRegistry["PARTY-005"].sideEffect}
                           type="button"
-                          onClick={() => onAction(actionRegistry["PARTY-005"])}
+                          onClick={() =>
+                            onAction(actionRegistry["PARTY-005"], {
+                              kind: "party-status",
+                              partyId: party.partyId,
+                              status: nextStatus,
+                              reason: "前端 Phase 2C 状态切换",
+                            })
+                          }
                         >
-                          停用
+                          {statusLabel}
                         </button>
                         <button
                           type="button"
@@ -192,7 +216,8 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -239,7 +264,17 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
             label: "保存参与方",
             type: "primary",
             onClick: () => {
-              onAction(actionRegistry["PARTY-002"]);
+              onAction(
+                actionRegistry[partyDraft.partyId ? "PARTY-003" : "PARTY-002"],
+                {
+                  kind: "party-upsert",
+                  partyId: partyDraft.partyId,
+                  partyName: partyDraft.partyName,
+                  partyType: partyDraft.partyType,
+                  includeInMdDshap: partyDraft.includeInMdDshap,
+                  description: partyDraft.description,
+                },
+              );
               setDrawer("");
             },
           },
@@ -265,10 +300,58 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
         </div>
         <DrawerSection title="主体信息">
           <div className="formGrid">
-            <label>主体名称<input defaultValue="数据源主体丁" /></label>
-            <label>主体类型<select defaultValue="DATA_PROVIDER"><option value="DATA_PROVIDER">数据提供方</option><option value="SERVICE_PROVIDER">技术服务方</option><option value="OPERATOR">运营方</option></select></label>
-            <label>是否数据源主体<select defaultValue="是"><option>是</option><option>否</option></select></label>
-            <label>是否进入算法权重池<select defaultValue="是"><option>是</option><option>否</option></select></label>
+            <label>
+              主体名称
+              <input
+                value={partyDraft.partyName}
+                onChange={(event) => setPartyDraft((current) => ({ ...current, partyName: event.target.value }))}
+              />
+            </label>
+            <label>
+              主体类型
+              <select
+                value={partyDraft.partyType}
+                onChange={(event) =>
+                  setPartyDraft((current) => ({
+                    ...current,
+                    partyType: event.target.value,
+                    includeInMdDshap:
+                      event.target.value === "DATA_PROVIDER" ? current.includeInMdDshap : false,
+                  }))
+                }
+              >
+                <option value="DATA_PROVIDER">数据提供方</option>
+                <option value="SERVICE_PROVIDER">技术服务方</option>
+                <option value="OPERATOR">运营方</option>
+                <option value="EXPERT">专家方</option>
+              </select>
+            </label>
+            <label>
+              是否数据源主体
+              <input readOnly value={partyDraft.partyType === "DATA_PROVIDER" ? "是" : "否"} />
+            </label>
+            <label>
+              是否进入算法权重池
+              <select
+                value={partyDraft.includeInMdDshap ? "是" : "否"}
+                onChange={(event) =>
+                  setPartyDraft((current) => ({
+                    ...current,
+                    includeInMdDshap: event.target.value === "是",
+                  }))
+                }
+              >
+                <option>是</option>
+                <option>否</option>
+              </select>
+            </label>
+            <label className="fullSpan">
+              说明
+              <input
+                value={partyDraft.description}
+                onChange={(event) => setPartyDraft((current) => ({ ...current, description: event.target.value }))}
+              />
+            </label>
           </div>
         </DrawerSection>
       </DetailDrawer>
@@ -327,4 +410,23 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
       </DetailDrawer>
     </div>
   );
+}
+
+function newPartyDraft(): PartyDraft {
+  return {
+    partyName: `前端联调参与方-${Date.now().toString().slice(-6)}`,
+    partyType: "DATA_PROVIDER",
+    includeInMdDshap: true,
+    description: "Phase 2C 前端真实后端写入校验",
+  };
+}
+
+function partyDraftFromItem(party: PartyListItem): PartyDraft {
+  return {
+    partyId: party.partyId,
+    partyName: party.name,
+    partyType: party.typeCode,
+    includeInMdDshap: party.mds === "是",
+    description: party.summary,
+  };
 }

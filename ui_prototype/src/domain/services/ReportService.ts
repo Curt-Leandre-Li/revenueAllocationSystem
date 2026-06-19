@@ -49,9 +49,9 @@ export const ReportService: MockDomainService = {
     if (action.id === "REP-006") {
       return mutateBackendAndRefresh(
         store,
-        () => dvasApi.exportAuditLog(),
-        "审计日志 JSONL 已由后端导出，项目状态和报告记录已刷新。",
-        "report audit-log",
+        () => dvasApi.generateMdDshapAuditReport(),
+        "MD-DShap 算法审计说明已由后端导出，项目状态和报告记录已刷新。",
+        "report md-dshap-audit",
       );
     }
 
