@@ -9,17 +9,21 @@ import {
   RiskNotice,
   WorkbenchCard,
 } from "../../ui";
+import type { DataRow } from "../../domain/types";
 import type { PageProps } from "../pageTypes";
-
-const parameterGroups = [
-  { name: "质量权重", value: "完整性 0.30 / 准确性 0.25", status: "已生效" },
-  { name: "算法默认参数", value: "MD_DSHAP / 512 轮 / epsilon 0.0001", status: "已生效" },
-  { name: "风险提示文案", value: "模拟参考，非法律结算", status: "已生效" },
-  { name: "精度规则", value: "金额 2 位，权重 6 位", status: "已生效" },
-];
 
 export function ParametersPage({ route, snapshot, onAction }: PageProps) {
   const [drawer, setDrawer] = useState<"" | "algorithm" | "risk" | "version">("");
+  const pageData = snapshot.pages[route.path];
+  const parameterRows = pageData.rows;
+  const metricValue = (label: string, fallback: string) =>
+    pageData.metrics.find((item) => item.label === label)?.value ?? fallback;
+  const parameterByCode = new Map(
+    parameterRows.map((item) => [readCell(item, "parameter_code", ""), item]),
+  );
+  const sampleRounds = parameterByCode.get("DEFAULT_MD_DSHAP_SAMPLE_ROUNDS");
+  const epsilon = parameterByCode.get("DEFAULT_MD_DSHAP_EPSILON");
+  const riskText = parameterByCode.get("RISK_DISCLAIMER_TEXT");
 
   return (
     <div className="pageWorkspace phase2Page parametersPage">
@@ -33,10 +37,10 @@ export function ParametersPage({ route, snapshot, onAction }: PageProps) {
       />
 
       <div className="metricGrid four">
-        <MetricCard item={{ label: "参数版本", value: "v5", hint: "只影响新计算", tone: "neutral" }} />
-        <MetricCard item={{ label: "算法模式", value: "MD_DSHAP", hint: "默认模式", tone: "success" }} />
-        <MetricCard item={{ label: "采样轮次", value: "512", hint: "必须 > 0", tone: "neutral" }} />
-        <MetricCard item={{ label: "收敛阈值", value: "0.0001", hint: "必须 > 0", tone: "neutral" }} />
+        <MetricCard item={{ label: "参数版本", value: metricValue("参数版本", "暂不可用"), hint: "来自后端", tone: "neutral" }} />
+        <MetricCard item={{ label: "算法模式", value: metricValue("算法模式", "MD_DSHAP"), hint: "默认模式", tone: "success" }} />
+        <MetricCard item={{ label: "采样轮次", value: metricValue("采样轮次", "暂不可用"), hint: "必须 > 0", tone: sampleRounds ? "neutral" : "warning" }} />
+        <MetricCard item={{ label: "收敛阈值", value: metricValue("收敛阈值", "暂不可用"), hint: "必须 > 0", tone: epsilon ? "neutral" : "warning" }} />
       </div>
 
       <RiskNotice compact />
@@ -57,11 +61,15 @@ export function ParametersPage({ route, snapshot, onAction }: PageProps) {
           <table className="dataTable phase2Table">
             <thead><tr><th>参数组</th><th>当前值</th><th>生效状态</th><th>操作</th></tr></thead>
             <tbody>
-              {parameterGroups.map((item) => (
-                <tr key={item.name}>
-                  <td><strong>{item.name}</strong></td>
-                  <td>{item.value}</td>
-                  <td><span className="tag success">{item.status}</span></td>
+              {parameterRows.length === 0 ? (
+                <tr>
+                  <td colSpan={4}>参数接口暂不可用；页面不会显示前端示例参数作为成功状态。</td>
+                </tr>
+              ) : parameterRows.map((item) => (
+                <tr key={readCell(item, "parameter_code", readCell(item, "parameter_name", "parameter"))}>
+                  <td><strong>{readCell(item, "parameter_name", "未命名参数")}</strong></td>
+                  <td>{readCell(item, "current_value", "-")}</td>
+                  <td><span className={readCell(item, "status", "") === "可编辑" ? "tag success" : "tag"}>{readCell(item, "status", "-")}</span></td>
                   <td><button type="button" onClick={() => setDrawer("version")}>查看版本</button></td>
                 </tr>
               ))}
@@ -87,8 +95,8 @@ export function ParametersPage({ route, snapshot, onAction }: PageProps) {
         <DrawerSection title="算法默认值">
           <div className="formGrid">
             <label>算法模式<input defaultValue="MD_DSHAP" /></label>
-            <label>采样轮次<input defaultValue="512" /></label>
-            <label>收敛阈值<input defaultValue="0.0001" /></label>
+            <label>采样轮次<input defaultValue={readCell(sampleRounds, "current_value", "")} /></label>
+            <label>收敛阈值<input defaultValue={readCell(epsilon, "current_value", "")} /></label>
             <label>保存边际明细<select defaultValue="是"><option>是</option><option>否</option></select></label>
           </div>
         </DrawerSection>
@@ -109,7 +117,7 @@ export function ParametersPage({ route, snapshot, onAction }: PageProps) {
         onClose={() => setDrawer("")}
       >
         <DrawerSection title="默认文案">
-          <textarea defaultValue="本系统输出仅作数据收益分配模拟与审计说明参考，不作为法律结算、法定结算、付款指令或合同履约依据。" rows={5} />
+          <textarea defaultValue={readCell(riskText, "current_value", "")} rows={5} />
         </DrawerSection>
       </DetailDrawer>
 
@@ -124,12 +132,17 @@ export function ParametersPage({ route, snapshot, onAction }: PageProps) {
       >
         <DrawerSection title="版本说明">
           <dl className="businessDetail compact">
-            <div><dt>版本</dt><dd>v5</dd></div>
+            <div><dt>版本</dt><dd>{metricValue("参数版本", "暂不可用")}</dd></div>
             <div><dt>生效范围</dt><dd>仅影响新计算</dd></div>
-            <div><dt>变更摘要</dt><dd>调整 MD-DShap 采样轮次和风险提示文案</dd></div>
+            <div><dt>变更摘要</dt><dd>当前后端参数列表共 {parameterRows.length} 项</dd></div>
           </dl>
         </DrawerSection>
       </DetailDrawer>
     </div>
   );
+}
+
+function readCell(row: DataRow | undefined, key: string, fallback: string) {
+  const value = row?.[key];
+  return value === undefined || value === null || value === "" ? fallback : String(value);
 }

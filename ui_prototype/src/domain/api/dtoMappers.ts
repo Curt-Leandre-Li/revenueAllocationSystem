@@ -127,6 +127,32 @@ export interface BackendReportRecordDto extends BackendRecord {
   simulation_disclaimer?: string;
 }
 
+export interface BackendConstraintDto extends BackendRecord {
+  constraint_id: string;
+  party_id: string;
+  party_name: string;
+  constraint_name: string;
+  constraint_type: string;
+  value_type: string;
+  constraint_value: number;
+  priority: number;
+  status: string;
+  version_no: number;
+  updated_at: string;
+}
+
+export interface BackendSystemParameterDto extends BackendRecord {
+  parameter_code: string;
+  parameter_name: string;
+  parameter_type: string;
+  default_value: unknown;
+  current_value: unknown;
+  scope: string;
+  editable: boolean;
+  version_no: number;
+  updated_at: string;
+}
+
 export interface BackendExportFileDto extends BackendRecord {
   export_file_id: string;
   report_id: string;
@@ -269,6 +295,34 @@ export interface AuditLogModel extends AuditLogRecord {
   menuCode: string;
   objectId: string;
   failureReason: string;
+}
+
+export interface ConstraintModel {
+  constraintId: string;
+  partyId: string;
+  partyName: string;
+  constraintName: string;
+  constraintType: string;
+  constraintTypeLabel: string;
+  valueType: string;
+  constraintValue: string;
+  priority: number;
+  status: string;
+  statusLabel: string;
+  versionNo: number;
+  updatedAt: string;
+}
+
+export interface SystemParameterModel {
+  parameterCode: string;
+  parameterName: string;
+  parameterType: string;
+  currentValue: string;
+  defaultValue: string;
+  scope: string;
+  editable: boolean;
+  versionNo: number;
+  updatedAt: string;
 }
 
 const statusCodes: StatusCode[] = [
@@ -499,6 +553,38 @@ export function mapAuditLogDto(dto: BackendAuditLogDto): AuditLogModel {
   };
 }
 
+export function mapConstraintDto(dto: BackendConstraintDto): ConstraintModel {
+  return {
+    constraintId: stringValue(dto.constraint_id),
+    partyId: stringValue(dto.party_id),
+    partyName: stringValue(dto.party_name, "未命名参与方"),
+    constraintName: stringValue(dto.constraint_name, "未命名约束"),
+    constraintType: stringValue(dto.constraint_type),
+    constraintTypeLabel: constraintTypeLabel(dto.constraint_type),
+    valueType: stringValue(dto.value_type),
+    constraintValue: formatParameterValue(dto.constraint_value),
+    priority: numberValue(dto.priority),
+    status: stringValue(dto.status),
+    statusLabel: constraintStatusLabel(dto.status),
+    versionNo: numberValue(dto.version_no, 1),
+    updatedAt: formatDateTime(dto.updated_at),
+  };
+}
+
+export function mapSystemParameterDto(dto: BackendSystemParameterDto): SystemParameterModel {
+  return {
+    parameterCode: stringValue(dto.parameter_code),
+    parameterName: stringValue(dto.parameter_name, "未命名参数"),
+    parameterType: stringValue(dto.parameter_type),
+    currentValue: formatParameterValue(dto.current_value),
+    defaultValue: formatParameterValue(dto.default_value),
+    scope: stringValue(dto.scope),
+    editable: Boolean(dto.editable),
+    versionNo: numberValue(dto.version_no, 1),
+    updatedAt: formatDateTime(dto.updated_at),
+  };
+}
+
 export function mapPartyToProviderOption(party: PartyModel, linkedResourceCount: number): DataProviderOption {
   return {
     name: party.partyName,
@@ -681,6 +767,26 @@ function partyStatusLabel(value: unknown) {
   return labels[stringValue(value)] ?? stringValue(value, "待确认");
 }
 
+function constraintTypeLabel(value: unknown) {
+  const labels: Record<string, string> = {
+    MIN_AMOUNT: "最小金额",
+    MAX_AMOUNT: "最大金额",
+    CAP_AMOUNT: "封顶金额",
+    FLOOR_AMOUNT: "保底金额",
+    FIXED_RATIO: "固定比例",
+    PRIORITY_ALLOCATION: "优先分配",
+  };
+  return labels[stringValue(value)] ?? stringValue(value, "未知约束");
+}
+
+function constraintStatusLabel(value: unknown) {
+  const labels: Record<string, string> = {
+    ACTIVE: "启用",
+    DISABLED: "停用",
+  };
+  return labels[stringValue(value)] ?? stringValue(value, "待确认");
+}
+
 function reportTypeLabel(value: unknown) {
   const labels: Record<string, string> = {
     P0_MARKDOWN_REPORT: "P0 模拟参考报告",
@@ -774,6 +880,19 @@ function objectTypeLabel(value: unknown) {
   };
   const key = stringValue(value);
   return labels[key] ?? "业务对象";
+}
+
+function formatParameterValue(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(6)));
+  }
+  if (typeof value === "string" || typeof value === "boolean") {
+    return String(value);
+  }
+  return JSON.stringify(value);
 }
 
 function snakeToCamel(value: string) {

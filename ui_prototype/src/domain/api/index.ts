@@ -3,12 +3,14 @@ import { apiRequest, type TablePage } from "./httpClient";
 import type {
   BackendAuditLogDetailDto,
   BackendAuditLogDto,
+  BackendConstraintDto,
   BackendDashboardSummaryDto,
   BackendDataPackageDto,
   BackendDataResourceDto,
   BackendPartyDto,
   BackendProjectDto,
   BackendReportRecordDto,
+  BackendSystemParameterDto,
   BackendUploadValidationResultDto,
 } from "./dtoMappers";
 
@@ -132,6 +134,8 @@ export const dvasApi = {
     }),
   getAllocationResults: (allocationId: string) =>
     apiRequest<TablePage<Record<string, unknown>>>(endpoints.allocationResults(allocationId)),
+  listAllocationConstraints: () =>
+    apiRequest<TablePage<BackendConstraintDto>>(endpoints.allocationConstraints),
   lockCurrentAllocation: async () => {
     const project = await apiRequest<BackendProjectDto>(endpoints.projectCurrent);
     const allocationId = String(project.current_allocation_id ?? "");
@@ -176,6 +180,8 @@ export const dvasApi = {
       method: "POST",
       bodyJson: {},
     }),
+  listSystemParameters: () =>
+    apiRequest<TablePage<BackendSystemParameterDto>>(endpoints.systemParameters),
   listAuditLogs: (limit = 50) =>
     apiRequest<TablePage<BackendAuditLogDto>>(`${endpoints.systemAuditLogs}?limit=${limit}`),
   getAuditLogDetail: (logId: string) =>

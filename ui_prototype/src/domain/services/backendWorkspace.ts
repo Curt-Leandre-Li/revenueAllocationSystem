@@ -4,6 +4,7 @@ import {
   getDvasApiBaseUrl,
   isDvasBackendEnabled,
   mapAuditLogDto,
+  mapConstraintDto,
   mapDashboardSummaryDto,
   mapDataPackageDto,
   mapDataResourceDto,
@@ -12,6 +13,7 @@ import {
   mapPartyToProviderOption,
   mapProjectStatus,
   mapReportRecordDto,
+  mapSystemParameterDto,
   normalizeApiError,
   projectStatusLabel,
   type BackendPreconditionDto,
@@ -37,6 +39,8 @@ interface BackendWorkspaceData {
   parties: ReturnType<typeof mapPartyDto>[];
   reports: ReturnType<typeof mapReportRecordDto>[];
   auditLogs: ReturnType<typeof mapAuditLogDto>[];
+  constraints: ReturnType<typeof mapConstraintDto>[];
+  parameters: ReturnType<typeof mapSystemParameterDto>[];
   participantPool: Record<string, unknown>;
   mdTask: Record<string, unknown> | null;
   mdResults: Record<string, unknown>[];
@@ -92,6 +96,8 @@ export async function loadBackendWorkspaceSnapshot(
       partiesPage,
       reportsPage,
       auditPage,
+      constraintsPage,
+      parametersPage,
     ] =
       await Promise.all([
         dvasApi.getProject(),
@@ -102,6 +108,8 @@ export async function loadBackendWorkspaceSnapshot(
         dvasApi.listParties(),
         dvasApi.listReports(),
         dvasApi.listAuditLogs(),
+        dvasApi.listAllocationConstraints(),
+        dvasApi.listSystemParameters(),
       ]);
     const currentAlgorithmTaskId = String(projectDto.current_algorithm_task_id ?? "");
     const currentAllocationId = String(projectDto.current_allocation_id ?? "");
@@ -141,6 +149,8 @@ export async function loadBackendWorkspaceSnapshot(
       parties: partiesPage.items.map(mapPartyDto),
       reports: reportsPage.items.map(mapReportRecordDto),
       auditLogs: auditPage.items.map(mapAuditLogDto),
+      constraints: constraintsPage.items.map(mapConstraintDto),
+      parameters: parametersPage.items.map(mapSystemParameterDto),
       participantPool: participantPool as Record<string, unknown>,
       mdTask,
       mdResults: mdResultsPage.items,
@@ -266,7 +276,9 @@ function buildSnapshotFromBackend(
     "/data/parties": buildPartiesPage(data),
     "/allocation/md-dshap": buildMDDShapPage(data),
     "/allocation/simulation": buildSimulationPage(data),
+    "/allocation/constraints": buildConstraintsPage(data),
     "/reports": buildReportsPage(data),
+    "/system/parameters": buildParametersPage(data),
     "/system/audit": buildAuditPage(data, mock),
   };
 
@@ -641,6 +653,40 @@ function buildSimulationPage(data: BackendWorkspaceData): PageWorkspaceData {
   };
 }
 
+function buildConstraintsPage(data: BackendWorkspaceData): PageWorkspaceData {
+  const activeCount = data.constraints.filter((item) => item.status === "ACTIVE").length;
+  const targetCount = new Set(data.constraints.map((item) => item.partyId).filter(Boolean)).size;
+  return {
+    summary: "合同约束列表来自后端 allocation constraints；没有约束时不显示示例约束。",
+    primaryTask: data.constraints.length ? "查看或刷新合同约束。" : "暂无后端合同约束记录。",
+    metrics: [
+      metric("约束总数", data.constraints.length, "来自 /allocation/constraints", "neutral"),
+      metric("启用约束", activeCount, "ACTIVE 状态", activeCount ? "success" : "neutral"),
+      metric("约束对象", targetCount, "主体级约束", "neutral"),
+      metric("检查结果", data.constraints.length ? "后端已返回" : "暂无约束", "不使用前端示例", "neutral"),
+      metric("被引用约束", "后端追溯", "分配后查看轨迹", "neutral"),
+    ],
+    preconditions: toPreconditions(data.overview.preconditions),
+    rows: data.constraints.map((item) => ({
+      constraint_id: item.constraintId,
+      constraint_name: item.constraintName,
+      party_name: item.partyName,
+      constraint_type: item.constraintType,
+      constraint_type_label: item.constraintTypeLabel,
+      constraint_value: item.constraintValue,
+      priority: item.priority,
+      status: item.statusLabel,
+      version_no: item.versionNo,
+      updated_at: item.updatedAt,
+    })),
+    technicalDetails: {
+      project_id: data.overview.projectId,
+      menu_code: "NAV_ALLOC_CONSTRAINT",
+      module_code: "CONS",
+    },
+  };
+}
+
 function buildReportsPage(data: BackendWorkspaceData): PageWorkspaceData {
   return {
     summary: "报告记录读取已接入；Markdown、CSV、JSON、JSONL 导出调用真实后端。",
@@ -662,6 +708,42 @@ function buildReportsPage(data: BackendWorkspaceData): PageWorkspaceData {
       project_id: data.overview.projectId,
       menu_code: "NAV_REPORT_EXPORT",
       module_code: "REP",
+    },
+  };
+}
+
+function buildParametersPage(data: BackendWorkspaceData): PageWorkspaceData {
+  const byCode = new Map(data.parameters.map((item) => [item.parameterCode, item]));
+  const algorithmMode = "MD_DSHAP";
+  const rounds = byCode.get("DEFAULT_MD_DSHAP_SAMPLE_ROUNDS")?.currentValue ?? "暂不可用";
+  const epsilon = byCode.get("DEFAULT_MD_DSHAP_EPSILON")?.currentValue ?? "暂不可用";
+  const latestVersion = Math.max(0, ...data.parameters.map((item) => item.versionNo));
+  return {
+    summary: "系统参数列表来自后端 system parameters；保存类动作未接入时明确提示暂不可用。",
+    primaryTask: data.parameters.length ? "查看当前后端参数版本。" : "参数接口暂不可用。",
+    metrics: [
+      metric("参数版本", latestVersion ? `v${latestVersion}` : "暂不可用", "后端 version_no", "neutral"),
+      metric("算法模式", algorithmMode, "默认模式", "success"),
+      metric("采样轮次", rounds, "必须 > 0", rounds === "暂不可用" ? "warning" : "neutral"),
+      metric("收敛阈值", epsilon, "必须 > 0", epsilon === "暂不可用" ? "warning" : "neutral"),
+    ],
+    preconditions: toPreconditions(data.overview.preconditions),
+    rows: data.parameters.map((item) => ({
+      parameter_code: item.parameterCode,
+      parameter_name: item.parameterName,
+      parameter_type: item.parameterType,
+      current_value: item.currentValue,
+      default_value: item.defaultValue,
+      scope: item.scope,
+      editable: item.editable ? "是" : "否",
+      version_no: item.versionNo,
+      status: item.editable ? "可编辑" : "只读",
+      updated_at: item.updatedAt,
+    })),
+    technicalDetails: {
+      project_id: data.overview.projectId,
+      menu_code: "NAV_SYSTEM_PARAMETER",
+      module_code: "PARAM",
     },
   };
 }
