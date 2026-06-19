@@ -1,11 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { actionRegistry } from "../../domain/actionRegistry";
 import { projectStatusLabels } from "../../domain/status";
 import type { AuditLogRecord, ReportRecord, SnapshotRecord } from "../../domain/types";
 import {
   ActionButton,
-  DetailDrawer,
-  DrawerSection,
   MetricCard,
   PageHeader,
   RiskNotice,
@@ -105,7 +103,6 @@ export function OverviewPage({
   onAction,
   onNavigate,
 }: PageProps) {
-  const [riskOpen, setRiskOpen] = useState(false);
   const mock = getMockWorkspace(snapshot);
   const pageData = snapshot.pages[route.path];
   const pageMetrics = new Map(pageData.metrics.map((item) => [item.label, item]));
@@ -301,13 +298,10 @@ export function OverviewPage({
           <h2>模拟参考边界</h2>
         </div>
         <div className="dashboardGrid">
-        <SectionCard title="风险提示" description="点击查看完整边界说明。">
-          <RiskNotice compact />
-          <button className="wideButton" type="button" onClick={() => setRiskOpen(true)}>
-            打开风险说明抽屉
-          </button>
-        </SectionCard>
-      </div>
+          <SectionCard title="风险提示" description="模拟参考边界在系统首页内直接展示。">
+            <RiskNotice />
+          </SectionCard>
+        </div>
       </section>
 
       <section className="homeSection" id="one-click">
@@ -363,33 +357,6 @@ export function OverviewPage({
           <SnapshotTimeline snapshots={mock.snapshots} />
         </SectionCard>
       </div>
-
-      <DetailDrawer
-        actions={[
-          {
-            label: "关闭",
-            onClick: () => setRiskOpen(false),
-          },
-        ]}
-        footerNote="风险说明用于限定模拟参考边界，不构成法律结算或付款依据。"
-        objectType="风险说明"
-        open={riskOpen}
-        size="sm"
-        statusTag="模拟参考"
-        subtitle="适用于系统首页、报告导出和算法结果说明。"
-        title="风险与合规边界"
-        variant="risk"
-        onClose={() => setRiskOpen(false)}
-      >
-        <RiskNotice />
-        <DrawerSection title="本阶段不可作为">
-          <ul className="plainList">
-            <li>法律结算、法定结算或付款指令</li>
-            <li>合同履约证明、税务、银行或电子签章依据</li>
-            <li>生产级 RBAC、登录、PDF、异步队列能力证明</li>
-          </ul>
-        </DrawerSection>
-      </DetailDrawer>
     </div>
   );
 }
