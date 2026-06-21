@@ -2,6 +2,7 @@ import json
 from urllib.parse import parse_qs, urlparse
 
 from .contracts import API_PREFIX, ApiError, error_response, ok_response
+from .postgres_read_model import PostgresReadService
 from .repository import JsonFileRepository
 from .services import (
     AllocationService,
@@ -26,6 +27,7 @@ from .services import (
 class DvasApplication:
     def __init__(self, repository=None):
         self.repository = repository or JsonFileRepository()
+        self.postgres_read_service = PostgresReadService()
         self.project_service = ProjectService(self.repository)
         self.navigation_service = NavigationService()
         self.dashboard_service = DashboardService(self.repository)
@@ -74,7 +76,30 @@ class DvasApplication:
         return status, self._json_headers(), self._encode(response)
 
     def _dispatch(self, method, path, body):
-        segments = [segment for segment in path.removeprefix(API_PREFIX).split("/") if segment]
+        if method == "GET" and path == "/health/db":
+            return self.postgres_read_service.health()
+
+        plain_api = path.startswith("/api/") and not path.startswith(API_PREFIX)
+        if path.startswith(API_PREFIX):
+            segments = [segment for segment in path.removeprefix(API_PREFIX).split("/") if segment]
+        else:
+            segments = [segment for segment in path.removeprefix("/api").split("/") if segment]
+
+        if plain_api and method == "GET" and segments == ["projects"]:
+            return self.postgres_read_service.projects()
+        if (
+            plain_api
+            and method == "GET"
+            and len(segments) == 3
+            and segments[0] == "projects"
+            and segments[2] == "status"
+        ):
+            return self.postgres_read_service.project_status(segments[1])
+        if plain_api and method == "GET" and segments == ["audit", "logs"]:
+            return self.postgres_read_service.audit_logs(body.get("project_id"))
+        if plain_api and method == "GET" and segments == ["reports"]:
+            return self.postgres_read_service.reports(body.get("project_id"))
+
         if method == "GET" and segments == ["projects", "current"]:
             return self.project_service.current_project()
         if method == "GET" and segments == ["projects", "current", "status"]:
@@ -361,7 +386,9 @@ class DvasApplication:
     def _normalize_path(self, path):
         parsed = urlparse(path)
         normalized = parsed.path.rstrip("/") or "/"
-        if not normalized.startswith(API_PREFIX):
+        if normalized == "/health/db":
+            return normalized
+        if not (normalized.startswith(API_PREFIX) or normalized.startswith("/api/")):
             raise ApiError("DVAS_NOT_FOUND", "接口不存在", status=404)
         return normalized
 
@@ -392,4 +419,6 @@ class DvasApplication:
             return 409
         if code == "DVAS_FACTOR_INVALID":
             return 422
+        if code.startswith("DVAS_DB_"):
+            return 503
         return 400

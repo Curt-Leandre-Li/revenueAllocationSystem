@@ -24,8 +24,20 @@ Latest detailed source inputs:
 - `数据收益分配系统_系统详细功能设计_V1.1_导航结构更新版.md`
 - `数据收益分配系统_数据库设计与ER关系图_V1.0_导航结构更新版.md`
 
-## Current Round
+## Previous Documentation Alignment Round
 
-The current repository update is documentation alignment only. It does not
-change product code, frontend code, backend code, tests, dependencies, scripts,
-or database migrations.
+The previous repository update was documentation alignment only. That round did
+not change product code, frontend code, backend code, tests, dependencies,
+scripts, or database migrations.
+
+## P0 Database Acceptance
+
+PostgreSQL P0 database assets are under `db/`. The local acceptance path is:
+
+```bash
+make db-acceptance
+```
+
+The command starts PostgreSQL, creates `dvas_p0`, loads the `dvas` schema,
+inserts seed and demo data, runs validation SQL, and executes the smoke test
+against `DATABASE_URL=postgresql://dvas_app:password@localhost:5432/dvas_p0`.
