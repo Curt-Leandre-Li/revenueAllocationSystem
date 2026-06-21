@@ -1,6 +1,6 @@
 # Software Copyright Screenshot Manifest
 
-本清单用于软著验收截图包说明。截图由 `scripts/capture_ui_acceptance_screenshots.py` 生成，默认通过真实 PostgreSQL API 完成操作链路，CI artifact 名称为 `phase-2d-screenshots`。
+本清单用于软著验收截图包说明。截图由 `scripts/capture_ui_acceptance_screenshots.py` 生成，默认通过真实 PostgreSQL API 完成操作链路，CI artifact 名称为 `phase-2d-screenshots`，artifact id 为 `7773025213`。
 
 ## 边界说明
 
