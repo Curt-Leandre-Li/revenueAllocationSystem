@@ -48,16 +48,19 @@ Workflow 名称：`P0 Database Acceptance`
 
 Job 名称：`p0-database-acceptance`
 
-CI 使用 PostgreSQL 16 service container，设置：
+CI 使用 PostgreSQL 16 service container，先以 PostgreSQL bootstrap 用户启动
+service，再执行 `00_create_database` 创建 `dvas_p0`、`dvas_app` 与
+`dvas_readonly`：
 
 ```text
-POSTGRES_DB=dvas_p0
-POSTGRES_USER=dvas_app
-POSTGRES_PASSWORD=password
+POSTGRES_DB=postgres
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
 DATABASE_URL=postgresql://dvas_app:password@localhost:5432/dvas_p0
 ```
 
-CI 顺序执行数据库包 checksum 校验、5 个 SQL 文件和 `python3 scripts/db_smoke_test.py`。`db/dvas_p0_04_validation.sql` 或 smoke test 任一失败时 workflow 必须失败，日志中会输出 `PASS` / `FAIL` 摘要。
+CI 顺序执行 5 个 SQL 文件和 `python3 scripts/db_smoke_test.py`。
+`db/dvas_p0_04_validation.sql` 或 smoke test 任一失败时 workflow 必须失败。
 
 ## SQL 执行顺序
 
@@ -167,23 +170,36 @@ GET /api/reports?project_id=PRJ_DEMO_001
 
 ## 真实执行结果区域
 
-当前状态：待在 Docker 或 CI 环境执行；不得记录为已通过。
+当前状态：已通过 GitHub Actions CI 真实 PostgreSQL 验收。
 
 | 项目 | 真实结果 |
 |---|---|
-| validation 执行时间 | 待执行 |
-| PostgreSQL 版本 | 待执行 |
-| 核心表数量 | 待执行 |
-| `PRJ_DEMO_001` 状态 | 待执行 |
-| `MD_DSHAP` 校验 | 待执行 |
-| 权重合计校验 | 待执行 |
-| 收益金额合计校验 | 待执行 |
-| checksum 校验 | 待执行 |
-| smoke test 结果 | 待执行 |
+| 验收方式 | GitHub Actions |
+| Workflow | `P0 Database Acceptance` |
+| Run ID | `27894194835` |
+| 分支 | `p0-postgres-acceptance` |
+| 验收 commit | `7db4a38` |
+| PostgreSQL 版本 | PostgreSQL 16 service container |
+| SQL 执行顺序 | `db/dvas_p0_00_create_database.sql` -> `db/dvas_p0_01_schema.sql` -> `db/dvas_p0_02_seed.sql` -> `db/dvas_p0_03_demo_data.sql` -> `db/dvas_p0_04_validation.sql` |
+| validation 结果 | PASS |
+| smoke test 结果 | PASS |
+| 验收结论 | P0 PostgreSQL database acceptance passed in CI. |
+
+| 项目 | 真实结果 |
+|---|---|
+| validation 执行时间 | 2026-06-21 05:03:40-05:03:41 UTC（GitHub Actions run `27894194835`） |
+| PostgreSQL 版本 | PostgreSQL 16 service container |
+| 核心表数量 | PASS |
+| `PRJ_DEMO_001` 状态 | PASS |
+| `MD_DSHAP` 校验 | PASS |
+| 权重合计校验 | PASS |
+| 收益金额合计校验 | PASS |
+| export checksum 记录校验 | PASS |
+| smoke test 结果 | PASS |
 
 ## 本次 Codex 环境状态
 
-本次工作环境已完成仓库内落地、脚本编写、checksum 更新、Python 单元测试和静态校验。真实 PostgreSQL 执行未在本机完成，原因是当前环境缺少 Docker 与 PostgreSQL 客户端/服务端：
+本次工作环境已完成仓库内落地、脚本编写、checksum 更新、Python 单元测试和静态校验。真实 PostgreSQL 执行已在 GitHub Actions run `27894194835` 通过。本机仍未执行本地 validation，原因是当前环境缺少 Docker 与 PostgreSQL 客户端/服务端：
 
 ```text
 docker --version -> command not found
@@ -194,11 +210,11 @@ command -v initdb -> empty
 
 此外，本机 `/usr/bin/make` 在 `make --version` 和临时两行 Makefile dry-run 下均未及时返回；本次对 `Makefile` 使用目标存在性与 recipe 制表符静态检查。具备正常 `make` 与 Docker 的验收环境应直接执行 `make db-acceptance`。
 
-在具备 Docker 的干净环境中，使用 `make db-acceptance` 执行完整数据库验收。
+在具备 Docker 的干净环境中，仍可使用 `make db-acceptance` 复现本地完整数据库验收；当前数据库 gate 以 GitHub Actions 真实 PostgreSQL 验收通过为准。
 
 ## 已知限制
 
 - 本轮只落地 PostgreSQL 标准数据库、验收脚本和最小只读查询接口。
 - 不实现登录、生产级 RBAC、PDF 导出、CSV/XLSX 批量导入、异步队列、多租户、银行、税务、电子签章或真实付款。
 - PostgreSQL 验收接口只读，不实现完整计算服务写库。
-- 需要 Docker 或可用 PostgreSQL/`psql` 环境才能实际执行 SQL 与截图验收。
+- 本地复现需要 Docker 或可用 PostgreSQL/`psql` 环境才能执行 SQL 与截图验收；CI 真实 PostgreSQL 验收已通过。
