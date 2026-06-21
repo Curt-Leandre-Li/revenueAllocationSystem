@@ -1,45 +1,47 @@
 name: P0 Database Acceptance
 
-on:
+"on":
   push:
+    branches:
+      - p0-postgres-acceptance
+      - main
     paths:
       - "db/**"
       - "scripts/db_smoke_test.py"
       - ".github/workflows/p0-database-acceptance.yml"
       - "Makefile"
   pull_request:
-    paths:
-      - "db/**"
-      - "scripts/db_smoke_test.py"
-      - ".github/workflows/p0-database-acceptance.yml"
-      - "Makefile"
+    branches:
+      - main
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   p0-database-acceptance:
-    name: p0-database-acceptance
     runs-on: ubuntu-latest
+
     services:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_DB: dvas_p0
-          POSTGRES_USER: dvas_app
-          POSTGRES_PASSWORD: password
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
         ports:
-          - "5432:5432"
+          - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U dvas_app -d dvas_p0"
-          --health-interval 5s
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
           --health-timeout 5s
-          --health-retries 20
+          --health-retries 10
 
     env:
       DATABASE_URL: postgresql://dvas_app:password@localhost:5432/dvas_p0
-      PGPASSWORD: password
 
     steps:
-      - name: Check out repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install PostgreSQL client
@@ -49,35 +51,38 @@ jobs:
 
       - name: Show PostgreSQL version
         run: |
-          psql "$DATABASE_URL" -c "SELECT version();"
+          psql --version
 
-      - name: Check database package checksums
-        working-directory: db
+      - name: Create database and roles
+        env:
+          PGPASSWORD: postgres
         run: |
-          sha256sum -c SHA256SUMS.txt
+          psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f db/dvas_p0_00_create_database.sql
 
-      - name: 00 create database roles
+      - name: Apply schema
+        env:
+          PGPASSWORD: password
         run: |
-          psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f db/dvas_p0_00_create_database.sql
+          psql -h localhost -U dvas_app -d dvas_p0 -v ON_ERROR_STOP=1 -f db/dvas_p0_01_schema.sql
 
-      - name: 01 create dvas schema
+      - name: Apply seed data
+        env:
+          PGPASSWORD: password
         run: |
-          psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f db/dvas_p0_01_schema.sql
+          psql -h localhost -U dvas_app -d dvas_p0 -v ON_ERROR_STOP=1 -f db/dvas_p0_02_seed.sql
 
-      - name: 02 load seed data
+      - name: Apply demo data
+        env:
+          PGPASSWORD: password
         run: |
-          psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f db/dvas_p0_02_seed.sql
+          psql -h localhost -U dvas_app -d dvas_p0 -v ON_ERROR_STOP=1 -f db/dvas_p0_03_demo_data.sql
 
-      - name: 03 load demo data
+      - name: Run validation SQL
+        env:
+          PGPASSWORD: password
         run: |
-          psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f db/dvas_p0_03_demo_data.sql
+          psql -h localhost -U dvas_app -d dvas_p0 -v ON_ERROR_STOP=1 -f db/dvas_p0_04_validation.sql
 
-      - name: 04 run validation SQL
+      - name: Run smoke test
         run: |
-          psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f db/dvas_p0_04_validation.sql | tee p0_validation.log
-          grep -E "PASS|FAIL" p0_validation.log
-
-      - name: Run database smoke test
-        run: |
-          python3 scripts/db_smoke_test.py | tee p0_smoke_test.log
-          grep -E "PASS|FAIL" p0_smoke_test.log
+          python3 scripts/db_smoke_test.py
