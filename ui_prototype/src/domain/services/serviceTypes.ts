@@ -10,7 +10,7 @@ import type {
   SnapshotRecord,
   WorkbenchSnapshot,
 } from "../types";
-import type { ApiError } from "../api";
+import type { ApiError } from "../../lib/errors";
 import type { WorkbenchStore } from "../store";
 
 export type ServiceResult<T> = {

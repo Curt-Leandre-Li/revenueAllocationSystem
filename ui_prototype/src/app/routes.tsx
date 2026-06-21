@@ -1,20 +1,11 @@
 import type { AppRoute, RoutePath } from "../domain/types";
-import { MDDShapPage } from "../pages/allocation/MDDShapPage";
-import { SimulationPage } from "../pages/allocation/SimulationPage";
-import { ConstraintsPage } from "../pages/allocation/ConstraintsPage";
-import { DataPackagesPage } from "../pages/data/DataPackagesPage";
-import { DataPartiesPage } from "../pages/data/DataPartiesPage";
-import { DataResourcesPage } from "../pages/data/DataResourcesPage";
 import { OverviewPage } from "../pages/dashboard/OverviewPage";
-import { QualityPage } from "../pages/measure/QualityPage";
-import { ShuyuanPage } from "../pages/measure/ShuyuanPage";
-import { UtilityPage } from "../pages/measure/UtilityPage";
 import type { PageProps } from "../pages/pageTypes";
 import { ReportsPage } from "../pages/reports/ReportsPage";
 import { AuditPage } from "../pages/system/AuditPage";
-import { ParametersPage } from "../pages/system/ParametersPage";
 import { UsersP1Page } from "../pages/system/UsersP1Page";
 import type { ComponentType } from "react";
+import { WorkbenchPage } from "../pages/WorkbenchPage";
 
 export const appRoutes: AppRoute[] = [
   {
@@ -24,7 +15,7 @@ export const appRoutes: AppRoute[] = [
     moduleCode: "SYS",
     phase: "P0",
     responsibility: "展示当前项目、流程入口、风险提示、一键计算和最近报告摘要。",
-    actionIds: ["SYS-002", "DATA-003", "SYS-004", "SYS-005", "REP-001"],
+    actionIds: ["SYS-002", "DATA-003", "SYS-004", "ALLOC-015", "REP-002", "AUD-002"],
   },
   {
     path: "/data/ingestion",
@@ -33,7 +24,7 @@ export const appRoutes: AppRoute[] = [
     moduleCode: "DATA",
     phase: "P0",
     responsibility: "选择演示数据、上传 UTF-8 JSON、校验字段并生成输入快照。",
-    actionIds: ["DATA-002", "DATA-003", "DATA-007", "DATA-008", "DATA-009"],
+    actionIds: ["DATA-002", "DATA-003", "DATA-007", "DATA-008"],
   },
   {
     path: "/data/resources",
@@ -42,7 +33,7 @@ export const appRoutes: AppRoute[] = [
     moduleCode: "RES",
     phase: "P0",
     responsibility: "展示资源、字段、模态、统计、敏感标记、主体绑定和计算纳入状态。",
-    actionIds: ["RES-002", "RES-005", "RES-007"],
+    actionIds: ["RES-002"],
   },
   {
     path: "/data/parties",
@@ -51,7 +42,7 @@ export const appRoutes: AppRoute[] = [
     moduleCode: "PARTY",
     phase: "P0",
     responsibility: "维护数据源主体与非数据贡献主体，控制 MD-DShap 权重池边界。",
-    actionIds: ["PARTY-002", "PARTY-003", "PARTY-005", "PARTY-006", "PARTY-008"],
+    actionIds: ["PARTY-008"],
   },
   {
     path: "/measure/quality",
@@ -60,7 +51,7 @@ export const appRoutes: AppRoute[] = [
     moduleCode: "QUAL",
     phase: "P0",
     responsibility: "配置质量权重、运行评估、展示总分、证据、预警和版本。",
-    actionIds: ["QUAL-002", "QUAL-003", "QUAL-006", "QUAL-009"],
+    actionIds: ["SYS-004", "QUAL-006"],
   },
   {
     path: "/measure/shuyuan",
@@ -69,7 +60,7 @@ export const appRoutes: AppRoute[] = [
     moduleCode: "DU",
     phase: "P0",
     responsibility: "配置基础单价、调用次数和系数，执行数元计量并展示明细。",
-    actionIds: ["DU-002", "DU-003", "DU-009", "DU-010"],
+    actionIds: ["SYS-004", "DU-010"],
   },
   {
     path: "/measure/utility",
@@ -78,7 +69,7 @@ export const appRoutes: AppRoute[] = [
     moduleCode: "UTIL",
     phase: "P0",
     responsibility: "计算贡献度、归一化贡献和效用值，并开放轨迹查看。",
-    actionIds: ["UTIL-001", "UTIL-006", "UTIL-007", "UTIL-008", "UTIL-009"],
+    actionIds: ["SYS-004", "UTIL-009"],
   },
   {
     path: "/allocation/md-dshap",
@@ -88,15 +79,10 @@ export const appRoutes: AppRoute[] = [
     phase: "P0",
     responsibility: "默认使用 MD-DShap，展示参与者、任务、参数、权重和边际轨迹。",
     actionIds: [
-      "PARAM-004",
-      "MDS-011",
       "MDS-012",
-      "MDS-013",
       "MDS-014",
-      "MDS-015",
-      "MDS-016",
-      "MDS-017",
       "MDS-018",
+      "SYS-004",
     ],
   },
   {
@@ -107,14 +93,10 @@ export const appRoutes: AppRoute[] = [
     phase: "P0",
     responsibility: "配置总收益、优先分配、收益池和约束，生成模拟分配结果。",
     actionIds: [
-      "ALLOC-003",
-      "ALLOC-005",
-      "ALLOC-007",
-      "ALLOC-011",
       "ALLOC-013",
-      "ALLOC-014",
       "ALLOC-015",
-      "ALLOC-016",
+      "REP-002",
+      "SYS-004",
     ],
   },
   {
@@ -124,7 +106,7 @@ export const appRoutes: AppRoute[] = [
     moduleCode: "CONS",
     phase: "P0",
     responsibility: "维护合同约束、优先级、状态和约束应用结果。",
-    actionIds: ["CONS-002", "CONS-003", "CONS-004", "CONS-011"],
+    actionIds: ["CONS-011"],
   },
   {
     path: "/reports",
@@ -142,7 +124,7 @@ export const appRoutes: AppRoute[] = [
     moduleCode: "PARAM",
     phase: "P0",
     responsibility: "维护场景系数、质量权重、算法默认值、风险文案和参数版本。",
-    actionIds: ["PARAM-001", "PARAM-002", "PARAM-004", "PARAM-008"],
+    actionIds: ["PARAM-001"],
   },
   {
     path: "/system/users",
@@ -188,17 +170,17 @@ export const compatibilityRouteMap: Record<string, RoutePath> = {
 
 export const routeComponents: Record<RoutePath, ComponentType<PageProps>> = {
   "/dashboard": OverviewPage,
-  "/data/ingestion": DataPackagesPage,
-  "/data/resources": DataResourcesPage,
-  "/data/parties": DataPartiesPage,
-  "/measure/quality": QualityPage,
-  "/measure/shuyuan": ShuyuanPage,
-  "/measure/utility": UtilityPage,
-  "/allocation/md-dshap": MDDShapPage,
-  "/allocation/simulation": SimulationPage,
-  "/allocation/constraints": ConstraintsPage,
+  "/data/ingestion": WorkbenchPage,
+  "/data/resources": WorkbenchPage,
+  "/data/parties": WorkbenchPage,
+  "/measure/quality": WorkbenchPage,
+  "/measure/shuyuan": WorkbenchPage,
+  "/measure/utility": WorkbenchPage,
+  "/allocation/md-dshap": WorkbenchPage,
+  "/allocation/simulation": WorkbenchPage,
+  "/allocation/constraints": WorkbenchPage,
   "/reports": ReportsPage,
-  "/system/parameters": ParametersPage,
+  "/system/parameters": WorkbenchPage,
   "/system/users": UsersP1Page,
   "/system/audit": AuditPage,
 };

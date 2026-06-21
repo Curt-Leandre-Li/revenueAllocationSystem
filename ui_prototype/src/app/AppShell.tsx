@@ -8,7 +8,7 @@ import {
 } from "./routes";
 import { getSideNavNodes, type MenuNode } from "./menu";
 import { fieldLabels } from "../domain/fieldMap";
-import { dvasApi, formatApiError, type BackendNavigationMenuDto } from "../domain/api";
+import { formatApiError } from "../lib/errors";
 import { dispatchWorkbenchAction } from "../domain/services";
 import { projectStatusLabels } from "../domain/status";
 import {
@@ -240,64 +240,7 @@ async function loadBackendSideNavNodes(): Promise<{
   nodes: MenuNode[];
   fallbackMessage?: string;
 }> {
-  try {
-    const response = await dvasApi.getNavigationMenus();
-    return { nodes: mapBackendMenuNodes(response.items) };
-  } catch (error) {
-    return {
-      nodes: getSideNavNodes(),
-      fallbackMessage: `导航菜单使用本地 fallback：${formatApiError(error)}`,
-    };
-  }
-}
-
-function mapBackendMenuNodes(items: BackendNavigationMenuDto[]): MenuNode[] {
-  return items
-    .map(mapBackendMenuNode)
-    .filter((node) => node.visibleInSideNav !== false)
-    .sort((left, right) => left.sortNo - right.sortNo);
-}
-
-function mapBackendMenuNode(item: BackendNavigationMenuDto): MenuNode {
-  const children = (item.children ?? [])
-    .map(mapBackendMenuNode)
-    .filter((node) => node.visibleInSideNav !== false)
-    .sort((left, right) => left.sortNo - right.sortNo);
-  const menuCode = String(item.menu_code);
-  return {
-    menuCode,
-    moduleCode: String(item.module_code) as MenuNode["moduleCode"],
-    label: String(item.menu_name),
-    routePath: resolveRoute(String(item.route_path || "/dashboard")),
-    icon: iconForMenuCode(menuCode),
-    p1Only: Boolean(item.p1_only),
-    phase: item.p1_only ? "P1" : "P0",
-    sortNo: Number(item.sort_no) || 0,
-    visibleInSideNav: item.status !== "DISABLED",
-    children,
-  };
-}
-
-function iconForMenuCode(menuCode: string): MenuNode["icon"] {
-  if (menuCode.includes("SYS_HOME")) {
-    return "home";
-  }
-  if (menuCode.includes("DATA")) {
-    return "data";
-  }
-  if (menuCode.includes("MEASURE")) {
-    return "measure";
-  }
-  if (menuCode.includes("ALLOC")) {
-    return "allocation";
-  }
-  if (menuCode.includes("REPORT")) {
-    return "report";
-  }
-  if (menuCode.includes("SYSTEM")) {
-    return "system";
-  }
-  return undefined;
+  return { nodes: getSideNavNodes() };
 }
 
 function isAsyncActionResult(

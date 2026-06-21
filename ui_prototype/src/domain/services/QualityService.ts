@@ -1,10 +1,11 @@
 import type { MockDomainService } from "./serviceTypes";
 import { readPageFromStore } from "./serviceTypes";
-import { dvasApi } from "../api";
+import { p0Api } from "../../lib/api";
 import {
   backendUnavailableStore,
   mutateBackendAndRefresh,
   refreshStoreFromBackend,
+  requireCurrentProjectId,
 } from "./backendWorkspace";
 
 export const QualityService: MockDomainService = {
@@ -13,8 +14,8 @@ export const QualityService: MockDomainService = {
     if (action.id === "QUAL-003" || action.id === "QUAL-009") {
       return mutateBackendAndRefresh(
         store,
-        () => dvasApi.runQualityAssessment(),
-        "质量评估已由后端完成，项目状态已刷新。",
+        () => p0Api.runPipeline(requireCurrentProjectId(store)),
+        "完整计算链路已由后端执行，质量评估摘要已刷新。",
         "quality evaluate",
       );
     }

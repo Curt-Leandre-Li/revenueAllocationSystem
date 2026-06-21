@@ -1,10 +1,11 @@
 import type { MockDomainService } from "./serviceTypes";
 import { readPageFromStore } from "./serviceTypes";
-import { dvasApi } from "../api";
+import { p0Api } from "../../lib/api";
 import {
   backendUnavailableStore,
   mutateBackendAndRefresh,
   refreshStoreFromBackend,
+  requireCurrentProjectId,
 } from "./backendWorkspace";
 
 export const AllocationService: MockDomainService = {
@@ -13,8 +14,8 @@ export const AllocationService: MockDomainService = {
     if (action.id === "ALLOC-011") {
       return mutateBackendAndRefresh(
         store,
-        () => dvasApi.runAllocationSimulation(),
-        "收益分配模拟已由后端完成，项目状态已刷新。",
+        () => p0Api.runPipeline(requireCurrentProjectId(store)),
+        "完整计算链路已由后端完成，收益分配模拟结果已刷新。",
         "allocation simulation run",
       );
     }
@@ -22,7 +23,7 @@ export const AllocationService: MockDomainService = {
     if (action.id === "ALLOC-015") {
       return mutateBackendAndRefresh(
         store,
-        () => dvasApi.lockCurrentAllocation(),
+        () => p0Api.confirmAllocation(requireCurrentProjectId(store)),
         "分配方案已由后端锁定，项目状态已刷新。",
         "allocation lock",
       );
@@ -31,7 +32,7 @@ export const AllocationService: MockDomainService = {
     if (action.id === "ALLOC-016") {
       return mutateBackendAndRefresh(
         store,
-        () => dvasApi.exportCurrentAllocationJson(),
+        () => p0Api.generateReport(requireCurrentProjectId(store)),
         "分配结果已由后端导出，项目状态和报告记录已刷新。",
         "allocation export",
       );

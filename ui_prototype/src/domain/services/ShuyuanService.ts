@@ -1,10 +1,11 @@
 import type { MockDomainService } from "./serviceTypes";
 import { readPageFromStore } from "./serviceTypes";
-import { dvasApi } from "../api";
+import { p0Api } from "../../lib/api";
 import {
   backendUnavailableStore,
   mutateBackendAndRefresh,
   refreshStoreFromBackend,
+  requireCurrentProjectId,
 } from "./backendWorkspace";
 
 export const ShuyuanService: MockDomainService = {
@@ -13,8 +14,8 @@ export const ShuyuanService: MockDomainService = {
     if (action.id === "DU-009") {
       return mutateBackendAndRefresh(
         store,
-        () => dvasApi.runShuyuanMetering(),
-        "数元计量已由后端完成，项目状态已刷新。",
+        () => p0Api.runPipeline(requireCurrentProjectId(store)),
+        "完整计算链路已由后端执行，数元计量摘要已刷新。",
         "shuyuan calculate",
       );
     }

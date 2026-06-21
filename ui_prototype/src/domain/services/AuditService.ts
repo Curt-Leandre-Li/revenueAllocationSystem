@@ -1,10 +1,11 @@
 import type { MockDomainService } from "./serviceTypes";
 import { readPageFromStore } from "./serviceTypes";
-import { dvasApi } from "../api";
+import { p0Api } from "../../lib/api";
 import {
   backendUnavailableStore,
   mutateBackendAndRefresh,
   refreshStoreFromBackend,
+  requireCurrentProjectId,
 } from "./backendWorkspace";
 
 export const AuditService: MockDomainService = {
@@ -17,8 +18,8 @@ export const AuditService: MockDomainService = {
     if (action.id === "AUD-007") {
       return mutateBackendAndRefresh(
         store,
-        () => dvasApi.exportAuditLog(),
-        "审计日志 JSONL 已由后端导出，项目状态和报告记录已刷新。",
+        () => p0Api.generateReport(requireCurrentProjectId(store)),
+        "审计相关 JSONL 已由后端报告生成接口导出，项目状态和报告记录已刷新。",
         "audit log export",
       );
     }

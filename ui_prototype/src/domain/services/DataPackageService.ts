@@ -1,6 +1,6 @@
 import type { MockDomainService } from "./serviceTypes";
 import { readPageFromStore } from "./serviceTypes";
-import { dvasApi } from "../api";
+import { p0Api } from "../../lib/api";
 import {
   backendUnavailableStore,
   mutateBackendAndRefresh,
@@ -13,7 +13,7 @@ export const DataPackageService: MockDomainService = {
     if (action.id === "DATA-002") {
       return mutateBackendAndRefresh(
         store,
-        () => dvasApi.initializeDemoCase(),
+        () => p0Api.loadDemoCase(),
         "演示数据已由后端初始化，数据包列表和前置条件已刷新。",
         "data package demo select",
       );
@@ -22,7 +22,7 @@ export const DataPackageService: MockDomainService = {
     if (action.id === "DATA-003") {
       return mutateBackendAndRefresh(
         store,
-        () => dvasApi.uploadJson(),
+        () => p0Api.uploadJson(),
         "JSON 数据包已由后端校验接入，项目状态已刷新。",
         "data package JSON upload",
       );

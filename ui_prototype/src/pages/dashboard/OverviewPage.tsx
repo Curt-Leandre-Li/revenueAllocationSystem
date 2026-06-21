@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { actionRegistry } from "../../domain/actionRegistry";
+import { getActionDisabledReason } from "../../domain/permissions";
 import { projectStatusLabels } from "../../domain/status";
+import type { ActionDefinition } from "../../domain/types";
 import type { AuditLogRecord, ReportRecord, SnapshotRecord } from "../../domain/types";
 import {
   ActionButton,
@@ -110,6 +112,8 @@ export function OverviewPage({
   const blockedResources = resources.filter(isResourceBlocked).length;
   const poolCount = mock.dataProviders.filter((party) => party.includeInMDDShap).length;
   const reportReady = mock.reports.length > 0 ? "已有报告" : "待生成";
+  const disabledReason = (action: ActionDefinition) =>
+    getActionDisabledReason(action, snapshot.status, snapshot.backend?.disabledActions);
   useEffect(() => {
     function scrollToHash() {
       const sectionId = window.location.hash.replace("#", "");
@@ -226,6 +230,12 @@ export function OverviewPage({
             <>
               <ActionButton
                 action={actionRegistry["SYS-002"]}
+                disabledReason={disabledReason(actionRegistry["SYS-002"])}
+                onClick={(action) => onAction(action)}
+              />
+              <ActionButton
+                action={actionRegistry["DATA-003"]}
+                disabledReason={disabledReason(actionRegistry["DATA-003"])}
                 onClick={(action) => onAction(action)}
               />
               <button
@@ -237,6 +247,17 @@ export function OverviewPage({
               </button>
               <ActionButton
                 action={actionRegistry["SYS-004"]}
+                disabledReason={disabledReason(actionRegistry["SYS-004"])}
+                onClick={(action) => onAction(action)}
+              />
+              <ActionButton
+                action={actionRegistry["ALLOC-015"]}
+                disabledReason={disabledReason(actionRegistry["ALLOC-015"])}
+                onClick={(action) => onAction(action)}
+              />
+              <ActionButton
+                action={actionRegistry["REP-002"]}
+                disabledReason={disabledReason(actionRegistry["REP-002"])}
                 onClick={(action) => onAction(action)}
               />
               <button
@@ -315,6 +336,7 @@ export function OverviewPage({
           actions={
             <ActionButton
               action={actionRegistry["SYS-004"]}
+              disabledReason={disabledReason(actionRegistry["SYS-004"])}
               onClick={(action) => onAction(action)}
             />
           }

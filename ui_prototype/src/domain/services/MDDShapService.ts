@@ -1,29 +1,19 @@
 import type { MockDomainService } from "./serviceTypes";
 import { readPageFromStore } from "./serviceTypes";
-import { dvasApi } from "../api";
-import {
-  backendUnavailableStore,
-  mutateBackendAndRefresh,
-  refreshStoreFromBackend,
-} from "./backendWorkspace";
+import { p0Api } from "../../lib/api";
+import { backendUnavailableStore, mutateBackendAndRefresh, refreshStoreFromBackend, requireCurrentProjectId } from "./backendWorkspace";
 
 export const MDDShapService: MockDomainService = {
   readPage: readPageFromStore,
   handleAction(store, action, payload) {
     if (action.id === "MDS-011" || action.id === "MDS-016") {
-      const parameters =
-        payload?.kind === "mds-parameters"
-          ? {
-              seed: payload.seed,
-              sample_rounds: payload.sampleRounds,
-              epsilon: payload.epsilon,
-              save_marginal_detail: payload.saveMarginalDetail,
-            }
-          : {};
       return mutateBackendAndRefresh(
         store,
-        () => dvasApi.runMdDshap(parameters),
-        "MD-DShap 权重已由后端计算，项目状态已刷新。",
+        () => {
+          void payload;
+          return p0Api.runPipeline(requireCurrentProjectId(store));
+        },
+        "完整计算链路已由后端执行，MD-DShap 权重已刷新。",
         "md-dshap run",
       );
     }
@@ -33,11 +23,13 @@ export const MDDShapService: MockDomainService = {
     }
 
     if (action.id === "MDS-018") {
-      const taskId = payload?.kind === "mds-audit-export" ? payload.taskId : undefined;
       return mutateBackendAndRefresh(
         store,
-        () => dvasApi.exportMdDshapAudit(taskId),
-        "MD-DShap 算法审计说明已由后端生成，报告记录已刷新。",
+        () => {
+          void payload;
+          return p0Api.generateReport(requireCurrentProjectId(store));
+        },
+        "MD-DShap 算法审计说明已由后端报告生成接口刷新。",
         "md-dshap audit export",
       );
     }

@@ -1,10 +1,11 @@
 import type { MockDomainService } from "./serviceTypes";
 import { readPageFromStore } from "./serviceTypes";
-import { dvasApi } from "../api";
+import { p0Api } from "../../lib/api";
 import {
   backendUnavailableStore,
   mutateBackendAndRefresh,
   refreshStoreFromBackend,
+  requireCurrentProjectId,
 } from "./backendWorkspace";
 
 export const UtilityService: MockDomainService = {
@@ -13,8 +14,8 @@ export const UtilityService: MockDomainService = {
     if (action.id === "UTIL-006") {
       return mutateBackendAndRefresh(
         store,
-        () => dvasApi.runContribution(),
-        "贡献度计算已由后端完成，项目状态已刷新。",
+        () => p0Api.runPipeline(requireCurrentProjectId(store)),
+        "完整计算链路已由后端执行，贡献度摘要已刷新。",
         "contribution calculate",
       );
     }
@@ -22,8 +23,8 @@ export const UtilityService: MockDomainService = {
     if (action.id === "UTIL-008") {
       return mutateBackendAndRefresh(
         store,
-        () => dvasApi.runUtility(),
-        "效用值已由后端完成，项目状态已刷新。",
+        () => p0Api.runPipeline(requireCurrentProjectId(store)),
+        "完整计算链路已由后端执行，效用摘要已刷新。",
         "utility calculate",
       );
     }

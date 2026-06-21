@@ -1,8 +1,5 @@
-import {
-  getDvasApiBaseUrl,
-  isDvasBackendEnabled,
-  type ApiError,
-} from "./api";
+import { getApiBaseUrl } from "../lib/api";
+import type { ApiError } from "../lib/errors";
 import { workbenchSnapshot } from "./mockData";
 import {
   loadBackendWorkspaceSnapshot,
@@ -14,7 +11,7 @@ const initialWorkbenchSnapshot: WorkbenchSnapshot = {
   ...workbenchSnapshot,
   status: "UTILITY_CALCULATED",
   backend: {
-    apiBaseUrl: getDvasApiBaseUrl(),
+    apiBaseUrl: getApiBaseUrl(),
     availableActions: [
       "SYS-002",
       "SYS-004",
@@ -67,7 +64,7 @@ export function createWorkbenchStore(): WorkbenchStore {
 
 export function shouldAttemptBackendSync(search = "") {
   const params = new URLSearchParams(search);
-  return isDvasBackendEnabled() || params.get("backend") === "1";
+  return params.get("backend") !== "0";
 }
 
 export async function loadBackendWorkbenchStore(

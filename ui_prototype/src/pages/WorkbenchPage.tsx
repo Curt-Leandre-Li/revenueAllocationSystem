@@ -6,9 +6,9 @@ export function WorkbenchPage(props: PageProps) {
     <ModulePageScaffold
       {...props}
       title={props.route.label}
-      subtitle="基础兜底页面，仅在路由组件未绑定时使用。"
-      bodyTitle="基础工作区模板"
-      bodyPlaceholder="该页面用于兜底渲染，不作为任何主业务页面的长期实现。"
+      subtitle={props.route.responsibility}
+      bodyTitle="真实 API 摘要"
+      bodyPlaceholder="默认读取 Phase 2A/2B PostgreSQL API；缺少明细接口时只展示项目级摘要和接口缺口。"
     />
   );
 }
