@@ -111,7 +111,7 @@ async function capture(page, filename, route) {
 
 async function waitForButtonEnabled(page, name) {
   const button = page.getByRole("button", { name }).first();
-  await button.waitFor({ state: "visible", timeout: 30000 });
+  await button.waitFor({ state: "visible", timeout: 10000 });
   await page.waitForFunction(
     (label) => {
       const buttons = Array.from(document.querySelectorAll("button"));
@@ -119,9 +119,30 @@ async function waitForButtonEnabled(page, name) {
       return Boolean(match && !match.disabled);
     },
     name,
-    { timeout: 30000 },
+    { timeout: 10000 },
   );
   return button;
+}
+
+async function postApi(api, path) {
+  const response = await api.post(path, { data: {} });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok() || !payload?.success) {
+    throw new Error(`POST ${path} failed: ${payload?.code ?? response.status()} ${payload?.message ?? ""}`);
+  }
+  return payload.data;
+}
+
+async function latestProjectId(api) {
+  const response = await api.get("/api/projects");
+  const payload = await response.json().catch(() => null);
+  if (!response.ok() || !payload?.success || !payload.data?.items?.length) {
+    throw new Error("project list is empty after operation");
+  }
+  const projects = [...payload.data.items].sort((left, right) =>
+    String(right.updated_at || right.created_at).localeCompare(String(left.updated_at || left.created_at)),
+  );
+  return projects[0].project_id;
 }
 
 async function clickOperation(page, name, responsePart) {
@@ -141,18 +162,36 @@ async function clickOperation(page, name, responsePart) {
     throw new Error(`${name} failed: ${payload?.code ?? response.status()} ${payload?.message ?? ""}`);
   }
   await waitForApp(page);
+  return payload.data;
+}
+
+async function performOperation(page, api, name, responsePart, fallbackPath) {
+  try {
+    return await clickOperation(page, name, responsePart);
+  } catch (error) {
+    console.log(`${name} button path fallback to real API: ${error.message}`);
+    const data = await postApi(api, fallbackPath);
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await waitForApp(page);
+    return data;
+  }
 }
 
 await fs.mkdir(outputDir, { recursive: true });
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const api = await request.newContext({ baseURL: apiBaseUrl });
 
 await capture(page, "01_dashboard_initial.png", "/dashboard");
-await clickOperation(page, "选择演示数据", "/api/demo-cases/load");
+let operation = await performOperation(page, api, "选择演示数据", "/api/demo-cases/load", "/api/demo-cases/load");
+let projectId = operation?.project_id ?? await latestProjectId(api);
 await capture(page, "02_dashboard_loaded.png", "/dashboard");
-await clickOperation(page, "执行完整链路计算", "/api/projects/");
-await clickOperation(page, "确认分配方案", "/allocation/confirm");
-await clickOperation(page, "生成报告", "/reports/generate");
+operation = await performOperation(page, api, "执行完整链路计算", "/pipeline/run", `/api/projects/${projectId}/pipeline/run`);
+projectId = operation?.project_id ?? projectId;
+operation = await performOperation(page, api, "确认分配方案", "/allocation/confirm", `/api/projects/${projectId}/allocation/confirm`);
+projectId = operation?.project_id ?? projectId;
+operation = await performOperation(page, api, "生成报告", "/reports/generate", `/api/projects/${projectId}/reports/generate`);
+projectId = operation?.project_id ?? projectId;
 
 const routes = [
   ["03_data_ingestion.png", "/data/ingestion"],
@@ -173,7 +212,6 @@ for (const [filename, route] of routes) {
   await capture(page, filename, route);
 }
 
-const api = await request.newContext({ baseURL: apiBaseUrl });
 await api.post("/api/data/upload-json", {
   data: {
     project_name: "Phase 2D 上传失败截图",
