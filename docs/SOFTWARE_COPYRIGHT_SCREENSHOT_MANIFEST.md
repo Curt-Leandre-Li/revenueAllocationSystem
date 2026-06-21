@@ -35,5 +35,6 @@
 ## 交付方式
 
 - 本地可运行截图脚本生成 PNG。
-- CI 上传 `output/phase_2d_screenshots/` 为 artifact。
+- CI 上传 `output/phase_2d_screenshots/` 为 artifact，并包含 `capture_status.json`。
 - 若 PNG 文件过大，本仓库提交脚本和 manifest，以 CI artifact 作为截图包交付。
+- 若自动化无法生成全部截图，`capture_status.json` 记录实际生成清单和错误原因；不得用 mock 或占位图伪造缺失截图。
