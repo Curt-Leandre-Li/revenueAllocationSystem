@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 import os
 import sys
+from pathlib import Path
 
-from backend.dvas.app import DvasApplication
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
+
+from backend.dvas.app import DvasApplication  # noqa: E402
 
 
 PROJECT_ID = "PRJ_DEMO_001"
