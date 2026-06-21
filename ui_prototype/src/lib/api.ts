@@ -6,12 +6,19 @@ import {
 import type {
   AllocationSummary,
   AuditLogItem,
+  ConstraintsSummary,
   DbHealth,
+  ExportFileItem,
   MdDshapSummary,
+  PartyItem,
   ProjectListItem,
   ProjectStatusSummary,
+  QualitySummary,
   ReportItem,
+  ResourceItem,
+  ShuyuanSummary,
   TablePage,
+  UtilitySummary,
   WriteResult,
 } from "./types";
 
@@ -87,6 +94,26 @@ export const p0Api = {
   listProjects: () => apiRequest<TablePage<ProjectListItem>>("/api/projects"),
   getProjectStatus: (projectId: string) =>
     apiRequest<ProjectStatusSummary>(`/api/projects/${encodeURIComponent(projectId)}/status`),
+  listProjectResources: (projectId: string) =>
+    apiRequest<TablePage<ResourceItem>>(
+      `/api/projects/${encodeURIComponent(projectId)}/resources`,
+    ),
+  listProjectParties: (projectId: string) =>
+    apiRequest<TablePage<PartyItem>>(`/api/projects/${encodeURIComponent(projectId)}/parties`),
+  getQualitySummary: (projectId: string) =>
+    apiRequest<QualitySummary>(`/api/projects/${encodeURIComponent(projectId)}/quality-summary`),
+  getShuyuanSummary: (projectId: string) =>
+    apiRequest<ShuyuanSummary>(`/api/projects/${encodeURIComponent(projectId)}/shuyuan-summary`),
+  getUtilitySummary: (projectId: string) =>
+    apiRequest<UtilitySummary>(`/api/projects/${encodeURIComponent(projectId)}/utility-summary`),
+  getConstraintsSummary: (projectId: string) =>
+    apiRequest<ConstraintsSummary>(
+      `/api/projects/${encodeURIComponent(projectId)}/constraints-summary`,
+    ),
+  listExportFiles: (projectId: string) =>
+    apiRequest<TablePage<ExportFileItem>>(
+      `/api/projects/${encodeURIComponent(projectId)}/export-files`,
+    ),
   listAuditLogs: (projectId: string, limit = 50) =>
     apiRequest<TablePage<AuditLogItem>>(
       `/api/audit/logs?project_id=${encodeURIComponent(projectId)}&limit=${limit}`,

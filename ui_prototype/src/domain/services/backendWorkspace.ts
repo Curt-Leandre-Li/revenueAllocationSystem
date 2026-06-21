@@ -17,10 +17,17 @@ import { normalizeApiError, type ApiError } from "../../lib/errors";
 import type {
   AllocationSummary,
   AuditLogItem,
+  ConstraintsSummary,
+  ExportFileItem,
   MdDshapSummary,
+  PartyItem,
   ProjectListItem,
   ProjectStatusSummary,
+  QualitySummary,
   ReportItem,
+  ResourceItem,
+  ShuyuanSummary,
+  UtilitySummary,
   WriteResult,
 } from "../../lib/types";
 import type { WorkbenchStore } from "../store";
@@ -31,6 +38,13 @@ interface P0WorkspaceData {
   status: ProjectStatusSummary | null;
   reports: ReportItem[];
   auditLogs: AuditLogItem[];
+  resources: ResourceItem[];
+  parties: PartyItem[];
+  quality: QualitySummary | null;
+  shuyuan: ShuyuanSummary | null;
+  utility: UtilitySummary | null;
+  constraints: ConstraintsSummary | null;
+  exportFiles: ExportFileItem[];
   allocation: AllocationSummary | null;
   mdDshap: MdDshapSummary | null;
 }
@@ -70,11 +84,30 @@ export async function loadBackendWorkspaceSnapshot(
     }
 
     const status = await p0Api.getProjectStatus(project.project_id);
-    const [reportsPage, auditPage, allocation, mdDshap] = await Promise.all([
+    const [
+      reportsPage,
+      auditPage,
+      allocation,
+      mdDshap,
+      resourcesPage,
+      partiesPage,
+      quality,
+      shuyuan,
+      utility,
+      constraints,
+      exportFilesPage,
+    ] = await Promise.all([
       p0Api.listReports(project.project_id),
       p0Api.listAuditLogs(project.project_id, 50),
       optionalBackendCall(() => p0Api.getAllocationSummary(project.project_id), null),
       optionalBackendCall(() => p0Api.getMdDshapSummary(project.project_id), null),
+      optionalBackendCall(() => p0Api.listProjectResources(project.project_id), emptyPage<ResourceItem>()),
+      optionalBackendCall(() => p0Api.listProjectParties(project.project_id), emptyPage<PartyItem>()),
+      optionalBackendCall(() => p0Api.getQualitySummary(project.project_id), null),
+      optionalBackendCall(() => p0Api.getShuyuanSummary(project.project_id), null),
+      optionalBackendCall(() => p0Api.getUtilitySummary(project.project_id), null),
+      optionalBackendCall(() => p0Api.getConstraintsSummary(project.project_id), null),
+      optionalBackendCall(() => p0Api.listExportFiles(project.project_id), emptyPage<ExportFileItem>()),
     ]);
 
     return {
@@ -85,6 +118,13 @@ export async function loadBackendWorkspaceSnapshot(
         status,
         reports: reportsPage.items,
         auditLogs: auditPage.items,
+        resources: resourcesPage.items,
+        parties: partiesPage.items,
+        quality,
+        shuyuan,
+        utility,
+        constraints,
+        exportFiles: exportFilesPage.items,
         allocation,
         mdDshap,
       }),
@@ -104,6 +144,15 @@ async function optionalBackendCall<T>(call: () => Promise<T>, fallback: T): Prom
   } catch {
     return fallback;
   }
+}
+
+function emptyPage<T>() {
+  return {
+    items: [] as T[],
+    total: 0,
+    page: 1,
+    page_size: 0,
+  };
 }
 
 export async function refreshStoreFromBackend(
@@ -310,15 +359,16 @@ function buildDerivedWorkspaceState(
     createdAt: item.created_at,
     fieldScope: `checksum=${item.checksum}`,
   }));
-  const exports = data.reports.flatMap((report) =>
-    report.export_files.map((file) => ({
+  const exportSource = data.exportFiles.length
+    ? data.exportFiles
+    : data.reports.flatMap((report) => report.export_files);
+  const exports = exportSource.map((file) => ({
       fileName: file.file_name || file.file_path,
       fileType: file.file_format || file.file_type,
       status: "已生成",
       createdAt: file.created_at,
       fieldScope: `checksum=${file.checksum}`,
-    })),
-  );
+    }));
   const auditLogs = data.auditLogs.map((item) => ({
     operation: item.operation_type,
     objectType: item.object_id,
@@ -373,7 +423,7 @@ function buildDerivedWorkspaceState(
 
   return {
     ...base,
-    resources: [],
+    resources: resourceRecords(data),
     dataProviders: partiesFromSummaries(data),
     mdsParticipants: mdParticipants,
     mdsWeights,
@@ -440,6 +490,7 @@ function buildOverviewPage(data: P0WorkspaceData): PageWorkspaceData {
 function buildPackagesPage(data: P0WorkspaceData): PageWorkspaceData {
   const status = requireStatus(data);
   const dataPackage = status.data_package;
+  const validation = status.upload_validation_latest;
   const rows: DataRow[] = dataPackage
     ? [
         {
@@ -451,8 +502,13 @@ function buildPackagesPage(data: P0WorkspaceData): PageWorkspaceData {
           resource_count: status.counts.data_resource,
           party_count: status.counts.party,
           created_at: dataPackage.created_at,
-          error_field: "详见 upload_validation_result",
-          repair_suggestion: "成功后刷新真实项目状态；失败字段由后端错误返回。",
+          error_field: validation?.is_valid === false ? validation.error_field ?? "body" : "无",
+          repair_suggestion:
+            validation?.is_valid === false
+              ? validation.error_message ?? "按字段级错误修正 JSON 后重新上传。"
+              : "成功后刷新真实项目状态；失败字段由后端错误返回。",
+          validation_result_id: validation?.validation_result_id ?? "",
+          detail_json: validation?.detail_json ? JSON.stringify(validation.detail_json) : "",
         },
       ]
     : [];
@@ -461,8 +517,8 @@ function buildPackagesPage(data: P0WorkspaceData): PageWorkspaceData {
     primaryTask: rows.length ? "检查最新数据包校验结果。" : "选择演示数据或上传合法 JSON。",
     metrics: [
       metric("数据包", status.counts.data_package, "真实 data_package 计数", "neutral"),
-      metric("校验通过", status.project.status === "DRAFT" ? 0 : status.counts.data_package, "可生成输入快照", "success"),
-      metric("校验失败", 0, "失败时后端返回字段级错误", "neutral"),
+      metric("校验通过", validation?.is_valid === false ? 0 : status.counts.data_package, "可生成输入快照", validation?.is_valid === false ? "warning" : "success"),
+      metric("校验失败", validation?.is_valid === false ? 1 : 0, "失败时后端返回字段级错误", validation?.is_valid === false ? "warning" : "neutral"),
       metric("输入快照", status.counts.input_snapshot, "dvas.input_snapshot", "success"),
     ],
     preconditions: buildPreconditions(data),
@@ -473,29 +529,37 @@ function buildPackagesPage(data: P0WorkspaceData): PageWorkspaceData {
 
 function buildResourcesPage(data: P0WorkspaceData): PageWorkspaceData {
   const status = requireStatus(data);
+  const rows = data.resources.map((resource) => {
+    const primaryProvider = resource.provider_parties.find((item) => item.is_primary_provider) ?? resource.provider_parties[0];
+    return {
+      resource_id: resource.resource_id,
+      package_id: resource.package_id,
+      resource_name: resource.resource_name,
+      modality: resource.modality,
+      field_count: resource.field_count,
+      sample_count: resource.sample_count,
+      missing_rate: formatWeight(resource.missing_rate),
+      sensitive_field_count: resource.sensitive_field_count,
+      provider_party: primaryProvider?.party_name ?? "未关联",
+      party_id: primaryProvider?.party_id ?? "",
+      split_ratio: primaryProvider ? formatWeight(primaryProvider.split_ratio) : "0.000000",
+      include_in_calculation: resource.include_in_calculation ? "是" : "否",
+      status: resource.status,
+      field_summary: resource.fields.map((field) => field.field_name).join(", "),
+      actual_field_count: resource.actual_field_count,
+    };
+  });
   return {
-    summary: "当前后端未暴露资源列表详情，已显示项目级真实摘要；不使用 mock 伪造资源明细。",
-    primaryTask: "如需字段级资源表，后续新增只读 resources list API。",
+    summary: "资源页调用 /api/projects/:projectId/resources，展示真实资源、字段、模态、样本和主体关联摘要。",
+    primaryTask: rows.length ? "检查资源字段、主体关联和计算纳入状态。" : "先完成数据接入。",
     metrics: [
       metric("资源总数", status.counts.data_resource, "真实计数", "neutral"),
       metric("当前数据包", status.current_package_id ?? "未接入", "project.current_package_id", "neutral"),
-      metric("明细接口", "暂缺", "已记录 Phase 2C 缺口", "warning"),
+      metric("字段总数", data.resources.reduce((sum, item) => sum + Number(item.actual_field_count || item.field_count || 0), 0), "data_resource_field", "neutral"),
+      metric("敏感字段", data.resources.reduce((sum, item) => sum + Number(item.sensitive_field_count || 0), 0), "不展示敏感原文", "warning"),
     ],
     preconditions: buildPreconditions(data),
-    rows: [
-      {
-        resource_name: "当前后端未暴露资源列表详情",
-        modality: "项目级摘要",
-        field_count: "未返回",
-        sample_count: "未返回",
-        missing_rate: "未返回",
-        sensitive_field_count: "不展示敏感原文",
-        provider_party: "见参与方/分配摘要",
-        split_ratio: "未返回",
-        include_in_calculation: status.counts.data_resource > 0 ? "项目已有资源" : "暂无资源",
-        status: "真实计数来自 PostgreSQL",
-      },
-    ],
+    rows,
     technicalDetails: baseTechnical(status, "NAV_DATA_RESOURCE", "RES"),
   };
 }
@@ -503,68 +567,76 @@ function buildResourcesPage(data: P0WorkspaceData): PageWorkspaceData {
 function buildPartiesPage(data: P0WorkspaceData): PageWorkspaceData {
   const status = requireStatus(data);
   const parties = partiesFromSummaries(data);
+  const rows = data.parties.length
+    ? data.parties.map((party) => ({
+        party_id: party.party_id,
+        party_name: party.party_name,
+        party_type: party.party_type,
+        is_data_provider: party.party_type === "DATA_PROVIDER" ? "是" : "否",
+        include_in_md_dshap: party.include_in_md_dshap ? "是" : "否",
+        linked_resource_count: party.linked_resource_count,
+        status: party.status,
+        contribution_summary: party.md_dshap_weight
+          ? `weight=${formatWeight(party.md_dshap_weight.normalized_weight)}`
+          : party.allocation_result
+            ? `amount=${formatAmount(party.allocation_result.post_constraint_amount)}`
+            : "待 pipeline",
+        raw_weight: party.allocation_result ? formatWeight(party.allocation_result.raw_weight) : "0.000000",
+        post_constraint_amount: party.allocation_result ? formatAmount(party.allocation_result.post_constraint_amount) : "0.00",
+      }))
+    : parties.map((party) => ({
+        party_id: party.name,
+        party_name: party.name,
+        party_type: party.partyType,
+        is_data_provider: party.partyType === "DATA_PROVIDER" ? "是" : "否",
+        include_in_md_dshap: party.includeInMDDShap ? "是" : "否",
+        linked_resource_count: party.linkedResourceCount,
+        status: "真实摘要",
+        contribution_summary: party.includeInMDDShap ? "来自 MD-DShap/分配摘要" : "非权重池主体或未返回",
+      }));
   return {
-    summary: "参与方页优先展示 allocation/md-dshap summary 中可追溯的真实 party；完整参与方列表接口暂缺。",
+    summary: "参与方页调用 /api/projects/:projectId/parties，展示真实参与方、权重池边界、资源关联和分配摘要。",
     primaryTask: parties.length ? "查看可追溯参与方摘要。" : "等待 pipeline 生成权重或分配摘要。",
     metrics: [
       metric("参与方", status.counts.party, "真实 party 计数", "neutral"),
-      metric("摘要参与方", parties.length, "来自 allocation/md-dshap", parties.length ? "success" : "warning"),
-      metric("完整列表接口", "暂缺", "不伪造 CRUD", "warning"),
+      metric("数据源主体", data.parties.filter((item) => item.party_type === "DATA_PROVIDER").length, "进入 MD-DShap 候选", "success"),
+      metric("权重池主体", data.parties.filter((item) => item.include_in_md_dshap).length, "include_in_md_dshap", "success"),
+      metric("资源关联", data.parties.reduce((sum, item) => sum + Number(item.linked_resource_count || 0), 0), "真实 relation 计数", "neutral"),
     ],
     preconditions: buildPreconditions(data),
-    rows: parties.length
-      ? parties.map((party) => ({
-          party_id: party.name,
-          party_name: party.name,
-          party_type: party.partyType,
-          is_data_provider: party.partyType === "DATA_PROVIDER" ? "是" : "否",
-          include_in_md_dshap: party.includeInMDDShap ? "是" : "否",
-          linked_resource_count: party.linkedResourceCount,
-          status: "真实摘要",
-          contribution_summary: party.includeInMDDShap
-            ? "来自 MD-DShap/分配摘要"
-            : "非权重池主体或未返回",
-        }))
-      : [
-          {
-            party_name: "当前后端未暴露完整参与方列表",
-            party_type: "项目级摘要",
-            is_data_provider: "未返回",
-            include_in_md_dshap: "未返回",
-            linked_resource_count: 0,
-            status: "真实计数来自 PostgreSQL",
-            contribution_summary: "运行完整链路后可从权重/分配摘要追溯数据源主体。",
-          },
-        ],
+    rows,
     technicalDetails: baseTechnical(status, "NAV_DATA_PARTY", "PARTY"),
   };
 }
 
 function buildQualityPage(data: P0WorkspaceData): PageWorkspaceData {
   const status = requireStatus(data);
-  const quality = status.quality_assessment_latest;
+  const quality = data.quality?.assessment ?? status.quality_assessment_latest;
+  const qualityEvidenceSummary = data.quality?.assessment?.evidence_summary ?? "真实质量明细";
+  const details = data.quality?.details ?? [];
   return {
-    summary: "质量评估摘要来自 /api/projects/:projectId/status；质量明细接口暂缺。",
+    summary: "质量评估页调用 /api/projects/:projectId/quality-summary，展示真实质量总分、等级、维度分和证据摘要。",
     primaryTask: quality ? "查看最新质量评估摘要。" : "先执行完整计算链路。",
     metrics: [
       metric("质量总分", quality?.quality_score ?? "待评估", "PostgreSQL quality_assessment", quality ? "success" : "warning"),
       metric("质量等级", quality?.quality_level ?? "待评估", "latest", quality ? "success" : "warning"),
       metric("质量因子", quality?.quality_factor ?? "待评估", "用于数元计量", quality ? "neutral" : "warning"),
-      metric("评估记录", status.counts.quality_assessment, "真实计数", "neutral"),
+      metric("维度明细", details.length, "quality_score_detail", details.length ? "success" : "warning"),
     ],
     preconditions: buildPreconditions(data),
-    rows: [
-      {
-        metric_name: "质量评估摘要",
-        metric_weight: "明细接口暂缺",
-        score: quality?.quality_score ?? "待评估",
-        total_score: quality?.quality_score ?? "待评估",
-        quality_level: quality?.quality_level ?? "待评估",
-        quality_factor: quality?.quality_factor ?? "待评估",
-        evidence_summary: quality ? "最新版本来自 PostgreSQL" : "未完成 pipeline",
-        low_quality_warning: "完整明细需后续只读接口",
-      },
-    ],
+    rows: details.map((item) => ({
+      detail_id: item.detail_id,
+      metric_name: item.metric_name,
+      metric_weight: formatWeight(item.weight),
+      score: item.score,
+      total_score: quality?.quality_score ?? "待评估",
+      quality_level: quality?.quality_level ?? "待评估",
+      quality_factor: quality?.quality_factor ?? "待评估",
+      evidence_summary: item.evidence_json ? JSON.stringify(item.evidence_json) : qualityEvidenceSummary,
+      low_quality_warning: numberValue(item.score) < 80 ? "需关注" : "通过",
+      assessment_id: quality?.assessment_id ?? "",
+      metric_version: quality ? `v${quality.assessment_version_no}` : "",
+    })),
     technicalDetails: {
       ...baseTechnical(status, "NAV_MEASURE_QUALITY", "QUAL"),
       assessment_id: quality?.assessment_id ?? "",
@@ -574,29 +646,34 @@ function buildQualityPage(data: P0WorkspaceData): PageWorkspaceData {
 
 function buildShuyuanPage(data: P0WorkspaceData): PageWorkspaceData {
   const status = requireStatus(data);
-  const metering = status.shuyuan_metering_latest;
+  const fullMetering = data.shuyuan?.metering ?? null;
+  const metering = fullMetering ?? status.shuyuan_metering_latest;
+  const details = data.shuyuan?.details ?? [];
   return {
-    summary: "数元计量摘要来自 /api/projects/:projectId/status；资源级计量明细接口暂缺。",
+    summary: "数元计量页调用 /api/projects/:projectId/shuyuan-summary，展示真实基准价、系数、调用量、资源级计量金额。",
     primaryTask: metering ? "查看最新数元计量摘要。" : "先执行完整计算链路。",
     metrics: [
       metric("项目总计量金额", metering ? formatAmount(metering.total_amount) : "待计量", "保留 2 位", metering ? "success" : "warning"),
       metric("调用量", metering?.call_count_total ?? 0, "call_count_total", "neutral"),
       metric("计量版本", metering ? `v${metering.metering_version_no}` : "待计量", "latest", "neutral"),
-      metric("计量记录", status.counts.shuyuan_metering, "真实计数", "neutral"),
+      metric("计量明细", details.length, "shuyuan_metering_detail", details.length ? "success" : "warning"),
     ],
     preconditions: buildPreconditions(data),
-    rows: [
-      {
-        base_shuyuan_price: "完整参数接口暂缺",
-        scenario_coefficient: "完整参数接口暂缺",
-        quality_coefficient: status.quality_assessment_latest?.quality_factor ?? "待评估",
-        technology_coefficient: "完整参数接口暂缺",
-        expert_coefficient: "完整参数接口暂缺",
-        development_coefficient: "完整参数接口暂缺",
-        call_count: metering?.call_count_total ?? 0,
-        metering_amount: metering ? formatAmount(metering.total_amount) : "待计量",
-      },
-    ],
+    rows: details.map((item) => ({
+      detail_id: item.detail_id,
+      resource_id: item.resource_id,
+      party_id: item.party_id,
+      resource_name: item.resource_name,
+      party_name: item.party_name,
+      base_shuyuan_price: fullMetering ? formatAmount(fullMetering.base_shuyuan_price) : "待计量",
+      scenario_coefficient: fullMetering ? formatWeight(fullMetering.scenario_coefficient) : "待计量",
+      quality_coefficient: fullMetering ? formatWeight(fullMetering.quality_coefficient) : "待计量",
+      technology_coefficient: fullMetering ? formatWeight(fullMetering.technology_coefficient) : "待计量",
+      expert_coefficient: fullMetering ? formatWeight(fullMetering.expert_coefficient) : "待计量",
+      development_coefficient: fullMetering ? formatWeight(fullMetering.development_coefficient) : "待计量",
+      call_count: item.call_count,
+      metering_amount: formatAmount(item.metering_amount),
+    })),
     technicalDetails: {
       ...baseTechnical(status, "NAV_MEASURE_SHUYUAN", "DU"),
       metering_id: metering?.metering_id ?? "",
@@ -607,41 +684,34 @@ function buildShuyuanPage(data: P0WorkspaceData): PageWorkspaceData {
 
 function buildUtilityPage(data: P0WorkspaceData): PageWorkspaceData {
   const status = requireStatus(data);
-  const mdRows = data.mdDshap?.participant_weight ?? [];
+  const records = data.utility?.records ?? [];
   return {
-    summary: "贡献度/效用页展示真实记录计数和可追溯权重摘要；utility trace 明细接口暂缺。",
+    summary: "贡献度/效用页调用 /api/projects/:projectId/utility-summary，展示真实贡献度、归一化贡献、效用值和 trace 摘要。",
     primaryTask: status.counts.utility_record ? "查看贡献度与效用摘要。" : "先执行完整计算链路。",
     metrics: [
       metric("贡献记录", status.counts.contribution_record, "dvas.contribution_record", "neutral"),
       metric("效用记录", status.counts.utility_record, "dvas.utility_record", status.counts.utility_record ? "success" : "warning"),
-      metric("权重参与方", mdRows.length, "来自 md-dshap summary", mdRows.length ? "success" : "warning"),
-      metric("trace 接口", "暂缺", "已记录缺口", "warning"),
+      metric("trace 记录", data.utility?.traces.length ?? 0, "utility_trace", data.utility?.traces.length ? "success" : "warning"),
+      metric("效用函数", data.utility?.utility_function?.utility_source ?? "待生成", "utility_function_snapshot", data.utility?.utility_function ? "success" : "warning"),
     ],
     preconditions: buildPreconditions(data),
-    rows: mdRows.length
-      ? mdRows.map((item) => ({
-          party_name: item.party_name,
-          valid_units: "utility 明细接口暂缺",
-          usage_weight: "暂缺",
-          coverage_weight: "暂缺",
-          scarcity_weight: "暂缺",
-          contribution_score: formatWeight(item.participant_weight),
-          normalized_contribution: formatWeight(item.normalized_weight),
-          quality_factor: status.quality_assessment_latest?.quality_factor ?? "暂缺",
-          usage_factor: "暂缺",
-          scenario_factor: "暂缺",
-          utility_value: formatWeight(item.normalized_weight),
-        }))
-      : [
-          {
-            party_name: "尚无效用明细",
-            valid_units: "待 pipeline",
-            contribution_score: "待计算",
-            normalized_contribution: "待计算",
-            quality_factor: status.quality_assessment_latest?.quality_factor ?? "待评估",
-            utility_value: "待计算",
-          },
-        ],
+    rows: records.map((item) => ({
+      party_id: item.party_id,
+      contribution_id: item.contribution_id ?? "",
+      utility_id: item.utility_id ?? "",
+      party_name: item.party_name,
+      valid_units: item.valid_units,
+      usage_weight: formatWeight(item.usage_weight),
+      coverage_weight: formatWeight(item.coverage_weight),
+      scarcity_weight: formatWeight(item.scarcity_weight),
+      contribution_score: formatWeight(item.contribution_score),
+      normalized_contribution: formatWeight(item.normalized_contribution),
+      quality_factor: formatWeight(item.quality_factor),
+      usage_factor: formatWeight(item.usage_factor),
+      scenario_factor: formatWeight(item.scenario_factor),
+      utility_value: formatWeight(item.utility_value),
+      trace_id: `${item.trace_count} trace`,
+    })),
     technicalDetails: baseTechnical(status, "NAV_MEASURE_UTILITY", "UTIL"),
   };
 }
@@ -718,28 +788,34 @@ function buildSimulationPage(data: P0WorkspaceData): PageWorkspaceData {
 
 function buildConstraintsPage(data: P0WorkspaceData): PageWorkspaceData {
   const status = requireStatus(data);
-  const allocation = data.allocation;
+  const constraints = data.constraints;
+  const allocation = constraints?.allocation ?? data.allocation;
+  const traceRows = constraints?.traces ?? [];
   return {
-    summary: "当前后端未暴露完整合同约束列表，页面展示真实分配约束执行摘要；不使用 mock 约束。",
+    summary: "合同约束页调用 /api/projects/:projectId/constraints-summary，展示真实优先分配、合同约束和约束执行 trace。",
     primaryTask: allocation ? "查看约束前后金额摘要。" : "先执行完整计算链路。",
     metrics: [
-      metric("约束总数", "暂缺", "contract_constraint list API 暂缺", "warning"),
-      metric("约束对象", allocation?.allocations.length ?? 0, "来自 allocation-summary", allocation ? "neutral" : "warning"),
+      metric("优先分配项", constraints?.priority_items.length ?? 0, "allocation_priority_item", constraints?.priority_items.length ? "success" : "warning"),
+      metric("合同约束", constraints?.constraints.length ?? 0, "contract_constraint", constraints?.constraints.length ? "success" : "warning"),
+      metric("执行 trace", traceRows.length, "constraint_apply_trace", traceRows.length ? "success" : "warning"),
       metric("检查结果", allocation ? "已应用" : "待计算", "约束前/后金额已保存", allocation ? "success" : "warning"),
     ],
     preconditions: buildPreconditions(data),
-    rows: allocation?.allocations.map((item) => ({
-      constraint_name: "约束应用结果摘要",
+    rows: traceRows.map((item) => ({
+      trace_id: item.trace_id,
+      constraint_id: item.constraint_id ?? "",
+      constraint_name: item.constraint_type ?? "约束执行",
+      party_id: item.party_id,
       party_name: item.party_name,
-      constraint_type: "后端完整列表暂缺",
+      constraint_type: item.constraint_type ?? "PRIORITY_AMOUNT",
       value_type: "AMOUNT",
-      constraint_value: "见金额差异",
-      priority: "后端执行顺序",
-      status: allocation.status,
-      before_amount: formatAmount(item.pre_constraint_amount),
-      after_amount: formatAmount(item.post_constraint_amount),
-      reason: "真实 allocation_result 约束前/后金额",
-    })) ?? [],
+      constraint_value: formatAmount(item.adjustment_amount),
+      priority: item.step_no,
+      status: allocation?.status ?? "待计算",
+      before_amount: formatAmount(item.before_amount),
+      after_amount: formatAmount(item.after_amount),
+      reason: item.reason,
+    })),
     technicalDetails: {
       ...baseTechnical(status, "NAV_ALLOC_CONSTRAINT", "CONS"),
       allocation_id: allocation?.allocation_id ?? "",
@@ -749,7 +825,40 @@ function buildConstraintsPage(data: P0WorkspaceData): PageWorkspaceData {
 
 function buildReportsPage(data: P0WorkspaceData): PageWorkspaceData {
   const status = requireStatus(data);
-  const exportCount = data.reports.reduce((sum, report) => sum + report.export_files.length, 0);
+  const exportRows = data.exportFiles.length
+    ? data.exportFiles.map((file) => ({
+        report_id: file.report_id,
+        file_id: file.file_id,
+        report_type: "P0_EXPORT",
+        report_status: "已生成",
+        file_name: file.file_name,
+        file_type: file.file_format || file.file_type,
+        field_scope: file.file_type,
+        generated_at: file.created_at,
+        created_by: "local_operator",
+        download_status: `checksum=${file.checksum}`,
+        p1_pdf_boundary: "PDF 为 P1，不生成假 PDF",
+        file_path: file.file_path,
+        checksum: file.checksum,
+      }))
+    : data.reports.flatMap((report) =>
+        (report.export_files.length ? report.export_files : [null]).map((file) => ({
+          report_type: report.report_type,
+          report_status: "已生成",
+          file_name: file?.file_name ?? report.file_path,
+          file_type: file?.file_format ?? file?.file_type ?? "REPORT",
+          field_scope: `report_checksum=${report.checksum}`,
+          generated_at: file?.created_at ?? report.created_at,
+          created_by: "local_operator",
+          download_status: file?.checksum ? `checksum=${file.checksum}` : `checksum=${report.checksum}`,
+          p1_pdf_boundary: "PDF 为 P1，不生成假 PDF",
+          report_id: report.report_id,
+          file_id: file?.file_id ?? "",
+          file_path: file?.file_path ?? report.file_path,
+          checksum: file?.checksum ?? report.checksum,
+        })),
+      );
+  const exportCount = exportRows.length;
   return {
     summary: "报告页调用 /api/reports?project_id=...，展示 report/export checksum；PDF 仍为 P1。",
     primaryTask: data.reports.length ? "查看真实报告与导出文件。" : "生成 P0 报告。",
@@ -760,23 +869,7 @@ function buildReportsPage(data: P0WorkspaceData): PageWorkspaceData {
       metric("PDF", "P1 禁用", "不生成假 PDF", "warning"),
     ],
     preconditions: buildPreconditions(data),
-    rows: data.reports.flatMap((report) =>
-      (report.export_files.length ? report.export_files : [null]).map((file) => ({
-        report_type: report.report_type,
-        report_status: "已生成",
-        file_name: file?.file_name ?? report.file_path,
-        file_type: file?.file_format ?? file?.file_type ?? "REPORT",
-        field_scope: `report_checksum=${report.checksum}`,
-        generated_at: file?.created_at ?? report.created_at,
-        created_by: "local_operator",
-        download_status: file?.checksum ? `checksum=${file.checksum}` : `checksum=${report.checksum}`,
-        p1_pdf_boundary: "PDF 为 P1，不生成假 PDF",
-        report_id: report.report_id,
-        file_id: file?.file_id ?? "",
-        file_path: file?.file_path ?? report.file_path,
-        checksum: file?.checksum ?? report.checksum,
-      })),
-    ),
+    rows: exportRows,
     technicalDetails: baseTechnical(status, "NAV_REPORT_EXPORT", "REP"),
   };
 }
@@ -822,16 +915,19 @@ function buildAuditPage(data: P0WorkspaceData): PageWorkspaceData {
     preconditions: buildPreconditions(data),
     rows: data.auditLogs.map((item) => ({
       operation_type: item.operation_type,
-      object_type: item.object_id,
-      operator_id: "local_operator",
+      object_type: item.object_type ?? item.object_id,
+      operator_id: item.operator_id ?? "local_operator",
       module_code_display: item.module_code,
       menu_code_display: item.menu_code,
       status: item.status,
-      failure_reason: item.status === "SUCCESS" ? "无" : "见后端日志",
+      failure_reason: item.failure_reason ?? (item.status === "SUCCESS" ? "无" : "见后端日志"),
       created_at: item.created_at,
-      report_type: item.object_id,
+      report_type: item.checksum ? `checksum=${item.checksum}` : item.object_id,
       log_id: item.log_id,
       object_id: item.object_id,
+      input_snapshot_id: item.input_snapshot_id ?? "",
+      parameter_snapshot_id: item.parameter_snapshot_id ?? "",
+      output_snapshot_id: item.result_snapshot_id ?? "",
     })),
     technicalDetails: baseTechnical(status, "NAV_SYSTEM_AUDIT", "AUD"),
   };
@@ -874,6 +970,15 @@ function partiesFromSummaries(data: P0WorkspaceData) {
       linkedResourceCount: number;
     }
   >();
+  for (const item of data.parties) {
+    byName.set(item.party_name, {
+      name: item.party_name,
+      partyType:
+        item.party_type === "OPERATOR" ? "OPERATOR" : item.party_type === "DATA_PROVIDER" ? "DATA_PROVIDER" : "SERVICE_PROVIDER",
+      includeInMDDShap: item.include_in_md_dshap,
+      linkedResourceCount: item.linked_resource_count,
+    });
+  }
   for (const item of data.mdDshap?.participant_weight ?? []) {
     byName.set(item.party_name, {
       name: item.party_name,
@@ -894,6 +999,40 @@ function partiesFromSummaries(data: P0WorkspaceData) {
     }
   }
   return Array.from(byName.values());
+}
+
+function resourceRecords(data: P0WorkspaceData) {
+  return data.resources.map((resource) => {
+    const provider = resource.provider_parties.find((item) => item.is_primary_provider) ?? resource.provider_parties[0];
+    return {
+      resourceKey: resource.resource_id,
+      name: resource.resource_name,
+      modality: resource.modality,
+      fieldCount: Number(resource.field_count) || 0,
+      sampleCount: Number(resource.sample_count) || 0,
+      missingRate: numberValue(resource.missing_rate),
+      sensitiveFieldCount: Number(resource.sensitive_field_count) || 0,
+      includeInCalculation: resource.include_in_calculation,
+      providerName: provider?.party_name ?? "未关联",
+      splitRatio: numberValue(provider?.split_ratio, 0),
+      status: resource.status,
+      fieldStats: resource.fields.slice(0, 4).map((field) => ({
+        label: field.field_name,
+        value: `${field.field_type ?? "UNKNOWN"} / 缺失率 ${formatWeight(field.missing_rate)}`,
+      })),
+      previewRows: [],
+      technicalDetails: {
+        resource_id: resource.resource_id,
+        package_id: resource.package_id,
+        provider_party: provider?.party_name ?? "",
+        include_in_calculation: resource.include_in_calculation ? "是" : "否",
+        field_count: resource.field_count,
+        actual_field_count: resource.actual_field_count,
+        sample_count: resource.sample_count,
+        sensitive_field_count: resource.sensitive_field_count,
+      },
+    };
+  });
 }
 
 function snapshotRecords(data: P0WorkspaceData) {

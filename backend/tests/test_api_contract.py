@@ -11,6 +11,47 @@ from backend.dvas.postgres_read_model import PostgresReadService
 from backend.dvas.repository import InMemoryRepository
 
 
+class FakePostgresReadService:
+    def __init__(self):
+        self.calls = []
+
+    def resources(self, project_id):
+        self.calls.append(("resources", project_id))
+        return {"items": [], "total": 0, "page": 1, "page_size": 0}
+
+    def parties(self, project_id):
+        self.calls.append(("parties", project_id))
+        return {"items": [], "total": 0, "page": 1, "page_size": 0}
+
+    def quality_summary(self, project_id):
+        self.calls.append(("quality_summary", project_id))
+        return {"project_id": project_id, "status": "NOT_READY", "assessment": None, "details": []}
+
+    def shuyuan_summary(self, project_id):
+        self.calls.append(("shuyuan_summary", project_id))
+        return {"project_id": project_id, "status": "NOT_READY", "metering": None, "details": []}
+
+    def utility_summary(self, project_id):
+        self.calls.append(("utility_summary", project_id))
+        return {"project_id": project_id, "status": "NOT_READY", "records": [], "traces": []}
+
+    def constraints_summary(self, project_id):
+        self.calls.append(("constraints_summary", project_id))
+        return {
+            "project_id": project_id,
+            "status": "NOT_READY",
+            "allocation": None,
+            "priority_items": [],
+            "constraints": [],
+            "traces": [],
+            "allocation_results": [],
+        }
+
+    def export_files(self, project_id):
+        self.calls.append(("export_files", project_id))
+        return {"items": [], "total": 0, "page": 1, "page_size": 0}
+
+
 class DvasApiContractTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -375,6 +416,65 @@ class DvasApiContractTests(unittest.TestCase):
         self.assertIn("/audit-logs/{log_id}", path_lines)
         self.assertNotIn("/reports/pdf", path_lines)
         self.assertNotIn("/reports/{report_id}/pdf", path_lines)
+
+    def test_phase_2d_plain_read_routes_dispatch_to_postgres_read_service(self):
+        fake_service = FakePostgresReadService()
+        self.app.postgres_read_service = fake_service
+
+        for path in [
+            "/api/projects/PRJ_TEST/resources",
+            "/api/projects/PRJ_TEST/parties",
+            "/api/projects/PRJ_TEST/quality-summary",
+            "/api/projects/PRJ_TEST/shuyuan-summary",
+            "/api/projects/PRJ_TEST/utility-summary",
+            "/api/projects/PRJ_TEST/constraints-summary",
+            "/api/projects/PRJ_TEST/export-files",
+        ]:
+            with self.subTest(path=path):
+                self.assert_ok(self.request("GET", path))
+
+        self.assertEqual(
+            [
+                ("resources", "PRJ_TEST"),
+                ("parties", "PRJ_TEST"),
+                ("quality_summary", "PRJ_TEST"),
+                ("shuyuan_summary", "PRJ_TEST"),
+                ("utility_summary", "PRJ_TEST"),
+                ("constraints_summary", "PRJ_TEST"),
+                ("export_files", "PRJ_TEST"),
+            ],
+            fake_service.calls,
+        )
+
+    def test_phase_2d_read_model_uses_real_postgres_tables(self):
+        import inspect
+        import backend.dvas.postgres_read_model as postgres_read_model
+
+        source = inspect.getsource(postgres_read_model)
+        required_tables = [
+            "dvas.data_resource",
+            "dvas.data_resource_field",
+            "dvas.data_resource_party_relation",
+            "dvas.party",
+            "dvas.upload_validation_result",
+            "dvas.quality_assessment",
+            "dvas.quality_score_detail",
+            "dvas.shuyuan_metering",
+            "dvas.shuyuan_metering_detail",
+            "dvas.contribution_record",
+            "dvas.utility_function_snapshot",
+            "dvas.utility_record",
+            "dvas.utility_trace",
+            "dvas.contract_constraint",
+            "dvas.constraint_apply_trace",
+            "dvas.allocation_priority_item",
+            "dvas.allocation_result",
+            "dvas.export_file",
+            "dvas.audit_log",
+        ]
+        for table in required_tables:
+            with self.subTest(table=table):
+                self.assertIn(table, source)
 
     def test_quick_run_skeleton_returns_explainable_precondition_failure(self):
         response = self.request("POST", "/api/v1/dashboard/actions/quick-run")

@@ -86,6 +86,36 @@ def main():
     require(abs(Decimal(md_dshap["weight_sum"]) - Decimal("1.000000")) <= Decimal("0.000001"), "weight sum mismatch")
     require(md_dshap["audit_snapshot_exists"] is True, "algorithm audit snapshot must exist")
 
+    resources = request(app, "GET", f"/api/projects/{project_id}/resources")
+    require(resources["total"] >= 1, "read resource details must not be empty")
+    require(resources["items"][0]["provider_parties"], "resource provider relation missing")
+
+    parties = request(app, "GET", f"/api/projects/{project_id}/parties")
+    require(parties["total"] >= 1, "read party list must not be empty")
+    require(any(item["include_in_md_dshap"] for item in parties["items"]), "md-dshap party flag missing")
+
+    quality = request(app, "GET", f"/api/projects/{project_id}/quality-summary")
+    require(quality["assessment"], "quality summary missing")
+    require(len(quality["details"]) >= 1, "quality details missing")
+
+    shuyuan = request(app, "GET", f"/api/projects/{project_id}/shuyuan-summary")
+    require(shuyuan["metering"], "shuyuan summary missing")
+    require(len(shuyuan["details"]) >= 1, "shuyuan details missing")
+
+    utility = request(app, "GET", f"/api/projects/{project_id}/utility-summary")
+    require(len(utility["records"]) >= 1, "utility records missing")
+    require(len(utility["traces"]) >= 1, "utility traces missing")
+
+    constraints = request(app, "GET", f"/api/projects/{project_id}/constraints-summary")
+    require(constraints["allocation"], "constraint allocation summary missing")
+    require(len(constraints["priority_items"]) >= 1, "priority allocation items missing")
+    require(len(constraints["constraints"]) >= 1, "contract constraints missing")
+    require(len(constraints["traces"]) >= 1, "constraint traces missing")
+
+    export_files = request(app, "GET", f"/api/projects/{project_id}/export-files")
+    require(export_files["total"] >= 4, "export files missing")
+    require(all(item["checksum"] for item in export_files["items"]), "export checksums missing")
+
     sql_project_id = sql_safe_id(project_id, "project_id")
     db_checks = PsqlJsonClient().query_json(
         f"""

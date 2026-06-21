@@ -85,6 +85,35 @@ def main():
     require(abs(Decimal(md_dshap["weight_sum"]) - Decimal("1.000000")) <= Decimal("0.000001"), "md-dshap weight sum mismatch")
     require(md_dshap["audit_snapshot_exists"] is True, "algorithm audit snapshot missing")
 
+    resources = request(app, f"/api/projects/{project_id}/resources")
+    require(resources["total"] >= 1, "resources must not be empty")
+    require("fields" in resources["items"][0], "resource fields summary missing")
+    require("provider_parties" in resources["items"][0], "resource provider parties missing")
+
+    parties = request(app, f"/api/projects/{project_id}/parties")
+    require(parties["total"] >= 1, "parties must not be empty")
+    require("include_in_md_dshap" in parties["items"][0], "party include_in_md_dshap missing")
+
+    quality = request(app, f"/api/projects/{project_id}/quality-summary")
+    require(quality["assessment"], "quality assessment summary missing")
+    require(len(quality["details"]) >= 1, "quality detail rows missing")
+
+    shuyuan = request(app, f"/api/projects/{project_id}/shuyuan-summary")
+    require(shuyuan["metering"], "shuyuan metering summary missing")
+    require(len(shuyuan["details"]) >= 1, "shuyuan detail rows missing")
+
+    utility = request(app, f"/api/projects/{project_id}/utility-summary")
+    require(len(utility["records"]) >= 1, "utility records missing")
+    require(len(utility["traces"]) >= 1, "utility traces missing")
+
+    constraints = request(app, f"/api/projects/{project_id}/constraints-summary")
+    require(constraints["allocation"], "constraints allocation summary missing")
+    require(len(constraints["traces"]) >= 1, "constraint traces missing")
+
+    export_files = request(app, f"/api/projects/{project_id}/export-files")
+    require(export_files["total"] >= 4, "export files must include P0 formats")
+    require(all(item["checksum"] for item in export_files["items"]), "export file checksum missing")
+
     print(f"DVAS backend PostgreSQL read API smoke test PASS project_id={project_id}")
     return 0
 

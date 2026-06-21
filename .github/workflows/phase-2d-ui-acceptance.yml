@@ -1,0 +1,153 @@
+name: Phase 2D UI Acceptance
+
+"on":
+  push:
+    branches:
+      - phase-2d-ui-acceptance-screenshots
+    paths:
+      - "backend/**"
+      - "db/**"
+      - "scripts/backend_api_smoke_test.py"
+      - "scripts/capture_ui_acceptance_screenshots.py"
+      - "scripts/frontend_real_api_smoke_test.py"
+      - "scripts/pipeline_db_write_smoke_test.py"
+      - "ui_prototype/**"
+      - "docs/**"
+      - ".github/workflows/phase-2d-ui-acceptance.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - "db/**"
+      - "scripts/backend_api_smoke_test.py"
+      - "scripts/capture_ui_acceptance_screenshots.py"
+      - "scripts/frontend_real_api_smoke_test.py"
+      - "scripts/pipeline_db_write_smoke_test.py"
+      - "ui_prototype/**"
+      - "docs/**"
+      - ".github/workflows/phase-2d-ui-acceptance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phase-2d-ui-acceptance:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://dvas_app:password@localhost:5432/dvas_p0
+      VITE_API_BASE_URL: http://127.0.0.1:8000
+      DVAS_API_BASE_URL: http://127.0.0.1:8000
+      DVAS_UI_BASE_URL: http://127.0.0.1:5173
+      DVAS_UI_PORT: "5173"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ui_prototype/package-lock.json
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Show PostgreSQL version
+        run: |
+          psql --version
+
+      - name: Create database and roles
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f db/dvas_p0_00_create_database.sql
+
+      - name: Apply schema
+        env:
+          PGPASSWORD: password
+        run: |
+          psql -h localhost -U dvas_app -d dvas_p0 -v ON_ERROR_STOP=1 -f db/dvas_p0_01_schema.sql
+
+      - name: Apply seed data
+        env:
+          PGPASSWORD: password
+        run: |
+          psql -h localhost -U dvas_app -d dvas_p0 -v ON_ERROR_STOP=1 -f db/dvas_p0_02_seed.sql
+
+      - name: Compile Python entrypoints
+        run: |
+          python3 -m py_compile backend/dvas/app.py backend/dvas/postgres_read_model.py backend/dvas/postgres_write_model.py backend/dvas/pipeline_write_service.py scripts/db_smoke_test.py scripts/backend_api_smoke_test.py scripts/pipeline_db_write_smoke_test.py scripts/frontend_real_api_smoke_test.py scripts/capture_ui_acceptance_screenshots.py
+
+      - name: Run backend unit tests
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s backend/tests -v
+
+      - name: Run Phase 2B write smoke
+        run: |
+          python3 scripts/pipeline_db_write_smoke_test.py
+
+      - name: Run backend API smoke
+        run: |
+          python3 scripts/backend_api_smoke_test.py
+
+      - name: Install frontend dependencies
+        working-directory: ui_prototype
+        run: |
+          npm ci
+
+      - name: Build frontend
+        working-directory: ui_prototype
+        run: |
+          npm run build
+
+      - name: Install Playwright Chromium
+        working-directory: ui_prototype
+        run: |
+          npx playwright install --with-deps chromium
+
+      - name: Run frontend real API smoke
+        run: |
+          python3 -m backend.dvas.server &
+          SERVER_PID=$!
+          sleep 2
+          python3 scripts/frontend_real_api_smoke_test.py
+          kill $SERVER_PID
+          wait $SERVER_PID || true
+
+      - name: Capture Phase 2D screenshots
+        run: |
+          python3 scripts/capture_ui_acceptance_screenshots.py
+
+      - name: Upload screenshot artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase-2d-screenshots
+          path: output/phase_2d_screenshots/
+          if-no-files-found: error
+
+      - name: Check whitespace
+        run: |
+          git diff --check

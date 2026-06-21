@@ -102,6 +102,62 @@ class DvasApplication:
             and method == "GET"
             and len(segments) == 3
             and segments[0] == "projects"
+            and segments[2] == "resources"
+        ):
+            return self.postgres_read_service.resources(segments[1])
+        if (
+            plain_api
+            and method == "GET"
+            and len(segments) == 3
+            and segments[0] == "projects"
+            and segments[2] == "parties"
+        ):
+            return self.postgres_read_service.parties(segments[1])
+        if (
+            plain_api
+            and method == "GET"
+            and len(segments) == 3
+            and segments[0] == "projects"
+            and segments[2] == "quality-summary"
+        ):
+            return self.postgres_read_service.quality_summary(segments[1])
+        if (
+            plain_api
+            and method == "GET"
+            and len(segments) == 3
+            and segments[0] == "projects"
+            and segments[2] == "shuyuan-summary"
+        ):
+            return self.postgres_read_service.shuyuan_summary(segments[1])
+        if (
+            plain_api
+            and method == "GET"
+            and len(segments) == 3
+            and segments[0] == "projects"
+            and segments[2] == "utility-summary"
+        ):
+            return self.postgres_read_service.utility_summary(segments[1])
+        if (
+            plain_api
+            and method == "GET"
+            and len(segments) == 3
+            and segments[0] == "projects"
+            and segments[2] == "constraints-summary"
+        ):
+            return self.postgres_read_service.constraints_summary(segments[1])
+        if (
+            plain_api
+            and method == "GET"
+            and len(segments) == 3
+            and segments[0] == "projects"
+            and segments[2] == "export-files"
+        ):
+            return self.postgres_read_service.export_files(segments[1])
+        if (
+            plain_api
+            and method == "GET"
+            and len(segments) == 3
+            and segments[0] == "projects"
             and segments[2] == "allocation-summary"
         ):
             return self.postgres_read_service.allocation_summary(segments[1])

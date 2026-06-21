@@ -493,7 +493,7 @@ export const actionRegistry = {
   }),
   "ALLOC-015": defineAction({
     id: "ALLOC-015",
-    label: "锁定分配方案",
+    label: "确认分配方案",
     moduleCode: "ALLOC",
     permission: "CONFIRM",
     sideEffect: "确认方案并写入审计；锁定后只能复制新版本",
@@ -555,10 +555,11 @@ export const actionRegistry = {
   }),
   "REP-002": defineAction({
     id: "REP-002",
-    label: "导出 Markdown",
+    label: "生成报告",
     moduleCode: "REP",
     permission: "EXPORT",
-    sideEffect: "生成 Markdown 报告、报告记录和校验和",
+    sideEffect: "生成 Markdown、CSV、JSON、JSONL 报告记录和校验和",
+    requiresConfirmation: true,
     phase: "P0",
   }),
   "REP-003": defineAction({

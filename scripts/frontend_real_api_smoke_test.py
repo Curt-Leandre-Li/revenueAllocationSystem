@@ -15,6 +15,13 @@ REQUIRED_ENDPOINTS = [
     "/health/db",
     "/api/projects",
     "/api/projects/:projectId/status",
+    "/api/projects/:projectId/resources",
+    "/api/projects/:projectId/parties",
+    "/api/projects/:projectId/quality-summary",
+    "/api/projects/:projectId/shuyuan-summary",
+    "/api/projects/:projectId/utility-summary",
+    "/api/projects/:projectId/constraints-summary",
+    "/api/projects/:projectId/export-files",
     "/api/audit/logs?project_id=",
     "/api/reports?project_id=",
     "/api/projects/:projectId/allocation-summary",
@@ -97,7 +104,33 @@ def main():
     require(md_dshap["algorithm_mode"] == "MD_DSHAP", "algorithm mode must be MD_DSHAP")
     require(abs(Decimal(md_dshap["weight_sum"]) - Decimal("1.000000")) <= Decimal("0.000001"), "weight sum mismatch")
 
-    print(f"DVAS Phase 2C frontend real API smoke PASS project_id={project_id}")
+    resources = read_json(f"/api/projects/{project_id}/resources")
+    require(resources["items"], "resource detail rows missing")
+
+    parties = read_json(f"/api/projects/{project_id}/parties")
+    require(parties["items"], "party detail rows missing")
+
+    quality = read_json(f"/api/projects/{project_id}/quality-summary")
+    require(quality["assessment"], "quality summary missing")
+    require(quality["details"], "quality details missing")
+
+    shuyuan = read_json(f"/api/projects/{project_id}/shuyuan-summary")
+    require(shuyuan["metering"], "shuyuan summary missing")
+    require(shuyuan["details"], "shuyuan details missing")
+
+    utility = read_json(f"/api/projects/{project_id}/utility-summary")
+    require(utility["records"], "utility records missing")
+    require(utility["traces"], "utility traces missing")
+
+    constraints = read_json(f"/api/projects/{project_id}/constraints-summary")
+    require(constraints["allocation"], "constraints allocation summary missing")
+    require(constraints["traces"], "constraint traces missing")
+
+    export_files = read_json(f"/api/projects/{project_id}/export-files")
+    require(export_files["items"], "export file rows missing")
+    require(all(item["checksum"] for item in export_files["items"]), "export file checksum missing")
+
+    print(f"DVAS Phase 2D frontend real API smoke PASS project_id={project_id}")
     return 0
 
 
