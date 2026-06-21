@@ -2,6 +2,7 @@ import json
 from urllib.parse import parse_qs, urlparse
 
 from .contracts import API_PREFIX, ApiError, error_response, ok_response
+from .pipeline_write_service import PostgresPipelineWriteService
 from .postgres_read_model import PostgresReadService
 from .repository import JsonFileRepository
 from .services import (
@@ -28,6 +29,7 @@ class DvasApplication:
     def __init__(self, repository=None):
         self.repository = repository or JsonFileRepository()
         self.postgres_read_service = PostgresReadService()
+        self.postgres_write_service = PostgresPipelineWriteService()
         self.project_service = ProjectService(self.repository)
         self.navigation_service = NavigationService()
         self.dashboard_service = DashboardService(self.repository)
@@ -115,6 +117,34 @@ class DvasApplication:
             return self.postgres_read_service.audit_logs(body.get("project_id"), body.get("limit"))
         if plain_api and method == "GET" and segments == ["reports"]:
             return self.postgres_read_service.reports(body.get("project_id"))
+        if plain_api and method == "POST" and segments == ["demo-cases", "load"]:
+            return self.postgres_write_service.load_demo_case(body)
+        if plain_api and method == "POST" and segments == ["data", "upload-json"]:
+            return self.postgres_write_service.upload_json(body)
+        if (
+            plain_api
+            and method == "POST"
+            and len(segments) == 4
+            and segments[0] == "projects"
+            and segments[2:] == ["pipeline", "run"]
+        ):
+            return self.postgres_write_service.run_pipeline(segments[1], body)
+        if (
+            plain_api
+            and method == "POST"
+            and len(segments) == 4
+            and segments[0] == "projects"
+            and segments[2:] == ["reports", "generate"]
+        ):
+            return self.postgres_write_service.generate_report(segments[1], body)
+        if (
+            plain_api
+            and method == "POST"
+            and len(segments) == 4
+            and segments[0] == "projects"
+            and segments[2:] == ["allocation", "confirm"]
+        ):
+            return self.postgres_write_service.confirm_allocation(segments[1], body)
 
         if method == "GET" and segments == ["projects", "current"]:
             return self.project_service.current_project()

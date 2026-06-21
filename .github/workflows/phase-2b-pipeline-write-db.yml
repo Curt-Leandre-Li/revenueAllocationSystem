@@ -1,0 +1,84 @@
+name: Phase 2B Pipeline Write DB
+
+"on":
+  push:
+    branches:
+      - phase-2b-pipeline-write-db
+    paths:
+      - "backend/**"
+      - "db/**"
+      - "scripts/pipeline_db_write_smoke_test.py"
+      - ".github/workflows/phase-2b-pipeline-write-db.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - "db/**"
+      - "scripts/pipeline_db_write_smoke_test.py"
+      - ".github/workflows/phase-2b-pipeline-write-db.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phase-2b-pipeline-write-db:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://dvas_app:password@localhost:5432/dvas_p0
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Show PostgreSQL version
+        run: |
+          psql --version
+
+      - name: Create database and roles
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f db/dvas_p0_00_create_database.sql
+
+      - name: Apply schema
+        env:
+          PGPASSWORD: password
+        run: |
+          psql -h localhost -U dvas_app -d dvas_p0 -v ON_ERROR_STOP=1 -f db/dvas_p0_01_schema.sql
+
+      - name: Apply seed data
+        env:
+          PGPASSWORD: password
+        run: |
+          psql -h localhost -U dvas_app -d dvas_p0 -v ON_ERROR_STOP=1 -f db/dvas_p0_02_seed.sql
+
+      - name: Compile backend write flow
+        run: |
+          python3 -m py_compile backend/dvas/app.py backend/dvas/postgres_read_model.py backend/dvas/postgres_write_model.py backend/dvas/pipeline_write_service.py scripts/pipeline_db_write_smoke_test.py
+
+      - name: Run Phase 2B pipeline write smoke test
+        run: |
+          python3 scripts/pipeline_db_write_smoke_test.py
