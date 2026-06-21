@@ -1765,6 +1765,7 @@ class Phase2APostgresReadApiTests(unittest.TestCase):
             "data_package",
             "quality_assessment",
             "shuyuan_metering",
+            "contribution_record",
             "utility_record",
             "md_dshap_task",
             "md_dshap_result",
@@ -1783,6 +1784,9 @@ class Phase2APostgresReadApiTests(unittest.TestCase):
         self.assertNotIn("JsonFileRepository", sql_text)
         self.assertNotIn("dvas_state.json", sql_text)
         self.assertNotIn("demo_data", sql_text)
+        for count_key in ["'quality_assessment'", "'shuyuan_metering'", "'contribution_record'"]:
+            with self.subTest(count_key=count_key):
+                self.assertIn(count_key, sql_text)
 
     def test_postgres_read_model_validates_limit_and_project_id(self):
         service = PostgresReadService(FakePostgresClient([]))
