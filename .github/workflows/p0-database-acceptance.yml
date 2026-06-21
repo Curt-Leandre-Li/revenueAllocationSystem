@@ -4,9 +4,12 @@ name: P0 Database Acceptance
   push:
     branches:
       - p0-postgres-acceptance
+      - phase-2a-backend-postgres-read-api
       - main
     paths:
+      - "backend/**"
       - "db/**"
+      - "scripts/backend_api_smoke_test.py"
       - "scripts/db_smoke_test.py"
       - ".github/workflows/p0-database-acceptance.yml"
       - "Makefile"
@@ -86,3 +89,7 @@ jobs:
       - name: Run smoke test
         run: |
           python3 scripts/db_smoke_test.py
+
+      - name: Run backend API smoke test
+        run: |
+          python3 scripts/backend_api_smoke_test.py

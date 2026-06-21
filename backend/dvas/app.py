@@ -95,8 +95,24 @@ class DvasApplication:
             and segments[2] == "status"
         ):
             return self.postgres_read_service.project_status(segments[1])
+        if (
+            plain_api
+            and method == "GET"
+            and len(segments) == 3
+            and segments[0] == "projects"
+            and segments[2] == "allocation-summary"
+        ):
+            return self.postgres_read_service.allocation_summary(segments[1])
+        if (
+            plain_api
+            and method == "GET"
+            and len(segments) == 3
+            and segments[0] == "projects"
+            and segments[2] == "md-dshap-summary"
+        ):
+            return self.postgres_read_service.md_dshap_summary(segments[1])
         if plain_api and method == "GET" and segments == ["audit", "logs"]:
-            return self.postgres_read_service.audit_logs(body.get("project_id"))
+            return self.postgres_read_service.audit_logs(body.get("project_id"), body.get("limit"))
         if plain_api and method == "GET" and segments == ["reports"]:
             return self.postgres_read_service.reports(body.get("project_id"))
 

@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 import csv
@@ -6,6 +7,7 @@ import io
 from pathlib import Path
 
 from backend.dvas.app import DvasApplication
+from backend.dvas.postgres_read_model import PostgresReadService
 from backend.dvas.repository import InMemoryRepository
 
 
@@ -1685,6 +1687,110 @@ class DvasApiContractTests(unittest.TestCase):
         self.assertEqual("DVAS_PRECONDITION_NOT_MET", response["error"]["code"])
         self.assertEqual("quality_assessment", response["error"]["field"])
         self.assertEqual("请先完成质量评估", response["error"]["message"])
+
+
+class FakePostgresClient:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.queries = []
+
+    def query_json(self, sql):
+        self.queries.append(sql)
+        if not self.responses:
+            return {}
+        return self.responses.pop(0)
+
+
+class Phase2APostgresReadApiTests(unittest.TestCase):
+    def setUp(self):
+        self.previous_database_url = os.environ.pop("DATABASE_URL", None)
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.repository = InMemoryRepository()
+        self.repository.runtime_dir = Path(self.temp_dir.name)
+
+    def tearDown(self):
+        if self.previous_database_url is not None:
+            os.environ["DATABASE_URL"] = self.previous_database_url
+        self.temp_dir.cleanup()
+
+    def test_database_url_missing_does_not_break_app_start_and_health_returns_503(self):
+        app = DvasApplication(self.repository)
+
+        status, headers, raw_body = app.handle_http("GET", "/health/db", b"")
+        body = json.loads(raw_body.decode("utf-8"))
+
+        self.assertEqual(503, status)
+        self.assertEqual("application/json; charset=utf-8", headers["Content-Type"])
+        self.assertFalse(body["success"])
+        self.assertEqual("DVAS_DB_URL_MISSING", body["code"])
+
+    def test_plain_postgres_api_routes_return_db_unavailable_without_json_fallback(self):
+        app = DvasApplication(self.repository)
+
+        for path in [
+            "/api/projects",
+            "/api/projects/PRJ_DEMO_001/status",
+            "/api/audit/logs?project_id=PRJ_DEMO_001",
+            "/api/reports?project_id=PRJ_DEMO_001",
+            "/api/projects/PRJ_DEMO_001/allocation-summary",
+            "/api/projects/PRJ_DEMO_001/md-dshap-summary",
+        ]:
+            with self.subTest(path=path):
+                response = app.handle("GET", path)
+                self.assertFalse(response["success"])
+                self.assertEqual("DVAS_DB_URL_MISSING", response["code"])
+
+    def test_postgres_read_model_sql_uses_real_dvas_tables_not_runtime_json(self):
+        responses = [
+            [],
+            {"project": {"project_id": "PRJ_DEMO_001"}},
+            [],
+            [],
+            {"allocation_id": "ALLOC_DEMO_001"},
+            {"task_id": "MDS_TASK_DEMO_001", "algorithm_mode": "MD_DSHAP"},
+        ]
+        client = FakePostgresClient(responses)
+        service = PostgresReadService(client)
+
+        service.projects()
+        service.project_status("PRJ_DEMO_001")
+        service.audit_logs("PRJ_DEMO_001", limit=10)
+        service.reports("PRJ_DEMO_001")
+        service.allocation_summary("PRJ_DEMO_001")
+        service.md_dshap_summary("PRJ_DEMO_001")
+
+        sql_text = "\n".join(client.queries)
+        for table_name in [
+            "allocation_project",
+            "data_package",
+            "quality_assessment",
+            "shuyuan_metering",
+            "utility_record",
+            "md_dshap_task",
+            "md_dshap_result",
+            "allocation_scenario",
+            "allocation_result",
+            "report_record",
+            "export_file",
+            "audit_log",
+            "snapshot_store",
+            "algorithm_audit_snapshot",
+            "party",
+        ]:
+            with self.subTest(table_name=table_name):
+                self.assertIn(f"dvas.{table_name}", sql_text)
+
+        self.assertNotIn("JsonFileRepository", sql_text)
+        self.assertNotIn("dvas_state.json", sql_text)
+        self.assertNotIn("demo_data", sql_text)
+
+    def test_postgres_read_model_validates_limit_and_project_id(self):
+        service = PostgresReadService(FakePostgresClient([]))
+
+        with self.assertRaisesRegex(Exception, "limit"):
+            service.audit_logs("PRJ_DEMO_001", limit="not-a-number")
+        with self.assertRaisesRegex(Exception, "project_id"):
+            service.project_status("PRJ_DEMO_001;DROP")
 
 
 if __name__ == "__main__":

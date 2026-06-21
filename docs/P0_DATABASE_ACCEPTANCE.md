@@ -164,9 +164,15 @@ GET /api/projects
 GET /api/projects/PRJ_DEMO_001/status
 GET /api/audit/logs?project_id=PRJ_DEMO_001
 GET /api/reports?project_id=PRJ_DEMO_001
+GET /api/projects/PRJ_DEMO_001/allocation-summary
+GET /api/projects/PRJ_DEMO_001/md-dshap-summary
 ```
 
 旧 `/api/v1/...` 本地 JSON 演示链路未在本次改为写数据库，避免扩大 P0 数据库落地范围。
+Phase 2A 后端读库联调在 CI 中追加 `scripts/backend_api_smoke_test.py`，
+复用 PostgreSQL 16 service container 和 00-04 SQL 初始化结果，验证
+`/health/db`、项目列表、项目状态、报告、审计日志、收益分配摘要和
+MD-DShap 摘要均从真实 PostgreSQL 表读取。
 
 ## 真实执行结果区域
 
