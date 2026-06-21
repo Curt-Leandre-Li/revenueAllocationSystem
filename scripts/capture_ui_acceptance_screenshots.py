@@ -59,7 +59,13 @@ def stop_process(process):
 
 
 def run_node_capture(script_source, env):
-    with tempfile.NamedTemporaryFile("w", suffix=".mjs", encoding="utf-8", delete=False) as script:
+    with tempfile.NamedTemporaryFile(
+        "w",
+        suffix=".mjs",
+        encoding="utf-8",
+        dir=str(UI_ROOT),
+        delete=False,
+    ) as script:
         script.write(script_source)
         script_path = Path(script.name)
     try:
