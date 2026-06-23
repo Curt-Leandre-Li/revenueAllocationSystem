@@ -10,12 +10,12 @@ Input:
 - Root V1.3 requirements update.
 - Root V1.1 detailed function design update.
 - Root V1.0 database/ER navigation update.
-- Existing `AGENTS.md`, `agents/*.md`, and `docs/**/*.md`.
+- Existing `AGENTS.md`, `.codex/agents/*.toml`, and `docs/**/*.md`.
 
 Output:
 
 - V1.2 project baseline.
-- Updated AGENTS and canonical agent role docs.
+- Updated AGENTS and canonical project-scoped agent definitions.
 - Updated navigation, algorithm, UI, database input, reporting contract,
   acceptance, workflow, and compliance docs.
 - Drift checklist and remaining implementation TODOs.

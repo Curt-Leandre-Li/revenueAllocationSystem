@@ -21,7 +21,7 @@
 | `docs/ui/page_structure.md` | 页面级结构说明和工程实现参考。 |
 | `docs/product_navigation.md` | 将系统首页主路由收敛为 `/dashboard`，旧首页拆分路径仅作兼容别名。 |
 | `docs/current_project_baseline.md` | 同步系统首页单一入口和旧首页路径兼容说明。 |
-| `docs/deliverables/01_需求规格说明书.md`, `docs/deliverables/04_UI设计方案.md`, `agents/ui_designer.md` | 将旧的系统首页拆分表述改为单一一级入口和同页区块表述。 |
+| `docs/deliverables/01_需求规格说明书.md`, `docs/deliverables/04_UI设计方案.md`, `.codex/agents/ui-designer.toml` | 将旧的系统首页拆分表述改为单一一级入口和同页区块表述。 |
 | `docs/ui/design_images/*.png` | 14 张 1440x900 工程级页面设计图。 |
 | `docs/ui/screenshots/pages/*.png` | 14 张 1440x900 页面级截图。 |
 | `docs/ui/screenshots/button_demos/**.png` | 66 个按钮目录，共 210 张点击前/点击后/确认/运行/成功/失败/审计截图。 |

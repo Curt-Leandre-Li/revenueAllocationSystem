@@ -10,8 +10,7 @@ coding-start approval by itself.
 - `AGENTS.md` reflects V1.2 positioning, navigation, P0/P1 boundary, MD-DShap
   default strategy, reporting/export boundary, audit snapshots, and forbidden
   actions.
-- `agents/*.md` reflects canonical agent responsibilities and this
-  documentation-only round.
+- `.codex/agents/*.toml` reflects canonical agent responsibilities.
 - `docs/current_project_baseline.md` records authority order and product
   baseline.
 - `docs/product_navigation.md` records the six-group left navigation.

@@ -1,13 +1,14 @@
 # Codex Subagents Orchestrator Guide
 
-This repository uses the canonical 9-agent structure. The role source files are
-`agents/*.md`; project-scoped TOML agents under `.codex/agents/` may be used
-only when implementation or review work is explicitly assigned.
+This repository uses the canonical 9-agent structure through project-scoped
+TOML agents under `.codex/agents/`. The older `agents/*.md` role notes are
+superseded and are not the current runtime or workflow source.
 
 ## Current-Round Rule
 
-For the V1.2 documentation alignment round, do not spawn agents to implement
-code. Use agents only as role guidance for documentation scope.
+For documentation alignment rounds, do not spawn agents to implement code. Use
+agents only as role guidance for documentation scope unless implementation or
+review work is explicitly assigned.
 
 ## Canonical Agents
 

@@ -32,7 +32,7 @@ This round is documentation synchronization only.
 Allowed:
 
 - `AGENTS.md`
-- `agents/*.md`
+- `.codex/agents/*.toml` when agent role configuration needs alignment
 - `docs/**/*.md`
 - `README.md` or project explanation Markdown files
 

@@ -5,7 +5,7 @@
 Checked current entrypoints and document areas:
 
 - `AGENTS.md`
-- `agents/*.md`
+- `.codex/agents/*.toml`
 - root baseline documents:
   - `数据收益分配系统_V1.3_需求规格说明书_导航结构更新版.md`
   - `数据收益分配系统_系统详细功能设计_V1.1_导航结构更新版.md`
@@ -30,7 +30,7 @@ Checked current entrypoints and document areas:
 | File | Current old wording/problem | Latest wording to use | Needs change | Change method |
 | --- | --- | --- | --- | --- |
 | `AGENTS.md` | Generic multi-agent governance and pre-coding setup; missing V1.2 product baseline. | V1.2 positioning, navigation, P0/P1, MD-DShap, exports, audit, documentation-only round. | Yes | Replaced with project-level V1.2 entry rules. |
-| `agents/*.md` | Roles allowed future implementation or lacked current product specifics. | Each agent knows this round is documentation-only and follows V1.2 baseline. | Yes | Rewrote all 9 canonical role files. |
+| `.codex/agents/*.toml` | Active project-scoped agent definitions. Older `agents/*.md` role notes were superseded. | Each active agent role follows current project rules and user-authorized scope. | Yes | Use TOML definitions as the current source. |
 | `docs/system_scope.md` | Older freeze scope, DAUS/Shapley generic chain, no latest navigation or export boundary. | 数据收益分配模拟与审计说明系统; P0/P1; full V1.2 chain. | Yes | Replaced with V1.2 scope. |
 | `docs/product_requirements.md` | Generic JSON/Data Unit requirements; no button-level GAP closure. | V1.3 PRD baseline, GAP-001 to GAP-005, latest navigation and exports. | Yes | Replaced with V1.2 requirements summary. |
 | `docs/system_architecture.md` | Suggested code layout and old DAUS/Shapley contribution module as default. | Documentation-only architecture input; MD-DShap default weight layer; reporting/audit boundaries. | Yes | Replaced with service/domain architecture input. |
@@ -56,7 +56,7 @@ High:
 
 Medium:
 
-- Agent role files were not aware of this documentation-only alignment round.
+- Agent role definitions must follow the active `.codex/agents/*.toml` files.
 - UI docs used a linear page flow instead of the latest management-backend
   navigation and module controls.
 - Database/API docs were older implementation drafts rather than V1.2 design

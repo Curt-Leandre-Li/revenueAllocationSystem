@@ -1,7 +1,8 @@
 # Codex Agent Definitions
 
-The source role documents are `agents/*.md`. They now describe DVAS V1.2
-documentation and future implementation responsibilities.
+The active project-scoped agent definitions are `.codex/agents/*.toml`. Older
+`agents/*.md` role notes have been superseded and are not a current workflow
+entry point.
 
 ## Canonical 9 Agents
 
@@ -22,9 +23,8 @@ approves a separate agent.
 
 ## Current-Round Boundary
 
-The current round is documentation synchronization only. The TOML files under
-`.codex/agents/` are not modified in this round because the user allowed only
-Markdown documentation files.
+Documentation synchronization and implementation rounds must follow the active
+`.codex/agents/*.toml` role definitions plus `AGENTS.md` project rules.
 
 ## Required Agent Knowledge
 
