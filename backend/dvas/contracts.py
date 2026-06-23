@@ -3,31 +3,23 @@ import json
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from .constants import P0_CONFIG, ProjectStatus
 
 API_PREFIX = "/api/v1"
-LOCAL_OPERATOR = "local_operator"
-SIMULATION_DISCLAIMER = "系统结果仅为模拟参考，非法律结算 / 非法定结算结果。"
+LOCAL_OPERATOR = P0_CONFIG.local_operator
+SIMULATION_DISCLAIMER = P0_CONFIG.simulation_disclaimer
 
-PROJECT_STATUSES = [
-    "DRAFT",
-    "INGESTED",
-    "ASSESSED",
-    "METERED",
-    "UTILITY_CALCULATED",
-    "WEIGHT_CALCULATED",
-    "ALLOCATED",
-    "CONFIRMED",
-    "EXPORTED",
-]
+PROJECT_STATUSES = ProjectStatus.values()
 
 
 class ApiError(Exception):
-    def __init__(self, code, message, status=400, field_errors=None):
+    def __init__(self, code, message, status=400, field_errors=None, audit_recorded=False):
         super().__init__(message)
         self.code = code
         self.message = message
         self.status = status
         self.field_errors = field_errors or []
+        self.audit_recorded = audit_recorded
 
 
 def utc_now():

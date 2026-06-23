@@ -2,6 +2,7 @@ import copy
 import json
 from pathlib import Path
 
+from .constants import AlgorithmMode, P0_CONFIG, ProjectStatus
 from .contracts import LOCAL_OPERATOR, SIMULATION_DISCLAIMER, utc_now
 
 
@@ -24,8 +25,15 @@ def default_system_parameters(now=None):
         ("DEFAULT_MD_DSHAP_SAMPLE_ROUNDS", "默认 MD-DShap 抽样轮次", "INTEGER", 64, True),
         ("DEFAULT_MD_DSHAP_EPSILON", "默认 MD-DShap 收敛阈值", "NUMBER", 0.000001, True),
         ("DEFAULT_MD_DSHAP_BASELINE_ENABLED", "默认 MD-DShap baseline_check", "BOOLEAN", True, True),
-        ("AMOUNT_DISPLAY_PRECISION", "金额显示精度", "INTEGER", 2, False),
-        ("WEIGHT_DISPLAY_PRECISION", "权重显示精度", "INTEGER", 6, False),
+        ("DEFAULT_ALGORITHM_MODE", "默认算法模式", "ENUM", AlgorithmMode.MD_DSHAP.value, False),
+        ("QUALITY_WEIGHT_COMPLETENESS", "质量完整性权重", "NUMBER", 0.35, True),
+        ("QUALITY_WEIGHT_CONSISTENCY", "质量一致性权重", "NUMBER", 0.30, True),
+        ("QUALITY_WEIGHT_USABILITY", "质量可用性权重", "NUMBER", 0.35, True),
+        ("DEFAULT_USAGE_WEIGHT", "默认使用权重", "NUMBER", 1.0, True),
+        ("DEFAULT_COVERAGE_WEIGHT", "默认覆盖权重", "NUMBER", 1.0, True),
+        ("DEFAULT_SCARCITY_WEIGHT", "默认稀缺权重", "NUMBER", 1.0, True),
+        ("AMOUNT_DISPLAY_PRECISION", "金额显示精度", "INTEGER", P0_CONFIG.amount_precision, False),
+        ("WEIGHT_DISPLAY_PRECISION", "权重显示精度", "INTEGER", P0_CONFIG.weight_precision, False),
     ]
     return {
         code: {
@@ -49,10 +57,10 @@ def initial_state():
     return {
         "counters": {},
         "project": {
-            "project_id": "project_p0_local_demo",
+            "project_id": P0_CONFIG.default_demo_project_id,
             "project_name": "数据收益分配系统 P0 本地演示项目",
             "scenario_name": "P0 本地演示闭环",
-            "project_status": "DRAFT",
+            "project_status": ProjectStatus.DRAFT.value,
             "operator_id": LOCAL_OPERATOR,
             "current_package_id": None,
             "current_input_snapshot_id": None,
@@ -86,6 +94,7 @@ def initial_state():
         "export_files": {},
         "system_parameters": default_system_parameters(now),
         "parameter_versions": {},
+        "business_drafts": {},
         "snapshots": {},
         "audit_logs": {},
     }
@@ -114,6 +123,7 @@ class InMemoryRepository:
         self.state.setdefault("export_files", {})
         self.state.setdefault("system_parameters", {})
         self.state.setdefault("parameter_versions", {})
+        self.state.setdefault("business_drafts", {})
         self.state.setdefault("snapshots", {})
         self.state["project"].setdefault("current_algorithm_task_id", None)
         self.state["project"].setdefault("current_allocation_id", None)
@@ -431,6 +441,21 @@ class InMemoryRepository:
         if parameter_code:
             items = [item for item in items if item["parameter_code"] == parameter_code]
         return sorted(items, key=lambda item: (item["created_at"], item["version_id"]))
+
+    def put_business_draft(self, draft):
+        self.state["business_drafts"][draft["draft_id"]] = copy.deepcopy(draft)
+        self.save()
+        return copy.deepcopy(draft)
+
+    def get_business_draft(self, draft_id):
+        draft = self.state["business_drafts"].get(draft_id)
+        return copy.deepcopy(draft) if draft else None
+
+    def list_business_drafts(self, draft_type=None):
+        items = [copy.deepcopy(item) for item in self.state["business_drafts"].values()]
+        if draft_type:
+            items = [item for item in items if item["draft_type"] == draft_type]
+        return sorted(items, key=lambda item: (item["created_at"], item["draft_id"]))
 
     def put_audit_log(self, audit_log):
         self.state["audit_logs"][audit_log["log_id"]] = copy.deepcopy(audit_log)

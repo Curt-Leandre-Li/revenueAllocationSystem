@@ -6,6 +6,21 @@ import io
 from pathlib import Path
 
 from backend.dvas.app import DvasApplication
+from backend.dvas.contracts import ApiError
+from backend.dvas.constants import (
+    AllocationMode,
+    AlgorithmMode,
+    ContractConstraintType,
+    ProjectStatus,
+    ReportFormat,
+    SnapshotType,
+)
+from backend.dvas.persistence_mapping import (
+    assert_runtime_enums_mapped,
+    assert_sql_enums_mapped,
+    runtime_to_sql_enum,
+    sql_to_runtime_enum,
+)
 from backend.dvas.repository import InMemoryRepository
 
 
@@ -103,6 +118,180 @@ class DvasApiContractTests(unittest.TestCase):
 
     def read_csv_rows(self, file_path):
         return list(csv.DictReader(io.StringIO(Path(file_path).read_text(encoding="utf-8"))))
+
+    def latest_audit(self, operation_type):
+        logs = [
+            item
+            for item in self.repository.list_audit_logs()
+            if item["operation_type"] == operation_type
+        ]
+        self.assertTrue(logs, operation_type)
+        return logs[-1]
+
+    def test_backend_canonical_enums_map_to_sql_schema_values(self):
+        mapped_runtime = assert_runtime_enums_mapped()
+        mapped_sql = assert_sql_enums_mapped()
+
+        self.assertEqual(ProjectStatus.EXPORTED.value, mapped_runtime["project_status"][-1])
+        self.assertEqual("VALID", runtime_to_sql_enum("data_package_status", "VALIDATED"))
+        self.assertEqual("VALIDATED", sql_to_runtime_enum("data_package_status", "VALID"))
+        self.assertEqual("SUCCESS", runtime_to_sql_enum("md_dshap_task_status", "COMPLETED"))
+        self.assertEqual("COMPLETED", sql_to_runtime_enum("md_dshap_task_status", "SUCCESS"))
+        self.assertEqual("BASIC_SHAPLEY", runtime_to_sql_enum("algorithm_mode", AlgorithmMode.BASELINE_SHAPLEY.value))
+        self.assertEqual(AlgorithmMode.BASELINE_SHAPLEY.value, sql_to_runtime_enum("algorithm_mode", "BASIC_SHAPLEY"))
+        self.assertEqual("ALGORITHM", runtime_to_sql_enum("snapshot_type", SnapshotType.ALGORITHM_AUDIT.value))
+        self.assertEqual("MD", runtime_to_sql_enum("report_format", ReportFormat.MARKDOWN.value))
+        self.assertEqual(ReportFormat.MARKDOWN.value, sql_to_runtime_enum("report_format", "MD"))
+        self.assertEqual(
+            "MD_DSHAP_WEIGHT",
+            runtime_to_sql_enum("allocation_mode", AllocationMode.MD_DSHAP_WEIGHT_WITH_CONSTRAINTS.value),
+        )
+        self.assertEqual(
+            AllocationMode.MD_DSHAP_WEIGHT_WITH_CONSTRAINTS.value,
+            sql_to_runtime_enum("allocation_mode", "MD_DSHAP_WEIGHT"),
+        )
+        self.assertEqual(
+            "PRIORITY_AMOUNT",
+            runtime_to_sql_enum("contract_constraint_type", ContractConstraintType.PRIORITY_ALLOCATION.value),
+        )
+        self.assertEqual(
+            ContractConstraintType.PRIORITY_ALLOCATION.value,
+            sql_to_runtime_enum("contract_constraint_type", "PRIORITY_AMOUNT"),
+        )
+        self.assertEqual("file_id", runtime_to_sql_enum("export_file_id_field", "export_file_id"))
+        self.assertEqual("export_file_id", sql_to_runtime_enum("export_file_id_field", "file_id"))
+        self.assertEqual("P1_DISABLED", next(item for item in mapped_sql["report_format"] if item["sql"] == "PDF")["runtime"])
+        with self.assertRaises(ApiError) as cm:
+            sql_to_runtime_enum("report_format", "PDF")
+        self.assertEqual("DVAS_P1_CAPABILITY_NOT_ENABLED", cm.exception.code)
+
+    def test_state_machine_blocking_writes_failed_audit(self):
+        response = self.request("POST", "/api/v1/quality-assessments/run", {})
+
+        self.assert_error_envelope(response, "DVAS_PRECONDITION_NOT_MET")
+        audit = self.latest_audit("RUN_QUALITY_ASSESSMENT")
+        self.assertEqual("FAILED", audit["status"])
+        self.assertEqual("DVAS_PRECONDITION_NOT_MET", audit["error_code"])
+        self.assertEqual("local_operator", audit["created_by"])
+        self.assertEqual("QUAL", audit["module_code"])
+
+    def test_parameter_validation_failure_writes_failed_audit(self):
+        self.request("POST", "/api/v1/demo-cases/lung_screening_demo/initialize")
+        self.request("POST", "/api/v1/quality-assessments/run", {})
+
+        response = self.request("POST", "/api/v1/shuyuan-meterings/run", {"base_price": "bad"})
+
+        self.assert_error_envelope(response, "DVAS_FACTOR_INVALID")
+        audit = self.latest_audit("RUN_SHUYUAN_METERING")
+        self.assertEqual("FAILED", audit["status"])
+        self.assertEqual("DVAS_FACTOR_INVALID", audit["error_code"])
+        self.assertEqual("DU", audit["module_code"])
+
+    def test_report_export_failure_writes_failed_audit(self):
+        response = self.request("POST", "/api/v1/reports/markdown", {})
+
+        self.assert_error_envelope(response, "DVAS_PRECONDITION_NOT_MET")
+        audit = self.latest_audit("GENERATE_MARKDOWN_REPORT")
+        self.assertEqual("FAILED", audit["status"])
+        self.assertEqual("DVAS_PRECONDITION_NOT_MET", audit["error_code"])
+        self.assertEqual("REP", audit["module_code"])
+
+    def test_draft_endpoints_persist_parameters_or_runtime_drafts(self):
+        quality_weights = self.assert_ok(
+            self.request(
+                "PUT",
+                "/api/v1/metering/quality/weights",
+                {
+                    "items": [
+                        {"dimension_code": "completeness", "weight": 0.4},
+                        {"dimension_code": "consistency", "weight": 0.25},
+                        {"dimension_code": "usability", "weight": 0.35},
+                    ]
+                },
+            )
+        )
+        self.assertEqual(3, len(quality_weights["updated_parameters"]))
+        self.assertEqual(0.4, self.repository.get_system_parameter("QUALITY_WEIGHT_COMPLETENESS")["current_value"])
+
+        shuyuan_params = self.assert_ok(
+            self.request("PUT", "/api/v1/metering/shuyuan/parameters", {"base_price": 3.5})
+        )
+        self.assertEqual(3.5, shuyuan_params["shuyuan_parameters"]["base_price"])
+
+        contribution_factors = self.assert_ok(
+            self.request(
+                "PUT",
+                "/api/v1/metering/utility/contribution-factors",
+                {"usage_weight": 1.2, "coverage_weight": 1.1},
+            )
+        )
+        self.assertEqual(1.2, contribution_factors["contribution_factors"]["usage_weight"])
+
+        md_config = self.assert_ok(
+            self.request(
+                "PUT",
+                "/api/v1/allocation/md-dshap/config",
+                {"algorithm_mode": "MD_DSHAP", "sample_rounds": 96},
+            )
+        )
+        self.assertEqual("MD_DSHAP", md_config["algorithm_mode"])
+        self.assertEqual(96, md_config["sample_rounds"])
+
+        self.assert_ok(
+            self.request("PUT", "/api/v1/metering/shuyuan/call-counts", {"RES_A": 10})
+        )
+        self.assert_ok(
+            self.request(
+                "PUT",
+                "/api/v1/metering/utility/function",
+                {"formula": "normalized_contribution * quality_factor"},
+            )
+        )
+        self.assert_ok(
+            self.request(
+                "PUT",
+                "/api/v1/allocation/simulation/revenue-pool",
+                {"total_revenue": 1000, "priority_allocation_amount": 100},
+            )
+        )
+        self.assert_ok(
+            self.request(
+                "PUT",
+                "/api/v1/allocation/simulation/priority-items",
+                {"items": [{"party_id": "party_a", "priority_amount": 10}]},
+            )
+        )
+        self.assert_ok(
+            self.request(
+                "PUT",
+                "/api/v1/allocation/simulation/mode",
+                {"allocation_mode": "MD_DSHAP_WEIGHT_WITH_CONSTRAINTS"},
+            )
+        )
+
+        draft_types = {draft["draft_type"] for draft in self.repository.list_business_drafts()}
+        self.assertEqual(
+            {
+                "SHUYUAN_CALL_COUNTS",
+                "UTILITY_FUNCTION",
+                "ALLOCATION_REVENUE_POOL",
+                "ALLOCATION_PRIORITY_ITEMS",
+                "ALLOCATION_MODE",
+            },
+            draft_types,
+        )
+        self.assertTrue(all(draft["snapshot_id"].startswith("snapshot_") for draft in self.repository.list_business_drafts()))
+        self.assertGreaterEqual(len(self.repository.list_parameter_versions()), 7)
+
+    def test_md_dshap_rejects_baseline_shapley_as_final_algorithm_mode(self):
+        self.run_demo_to_utility()
+
+        response = self.request("POST", "/api/v1/md-dshap/tasks", {"algorithm_mode": "BASELINE_SHAPLEY"})
+
+        self.assert_error_envelope(response, "DVAS_FACTOR_INVALID")
+        audit = self.latest_audit("RUN_MD_DSHAP")
+        self.assertEqual("FAILED", audit["status"])
+        self.assertEqual("DVAS_FACTOR_INVALID", audit["error_code"])
 
     def test_current_project_starts_as_draft_with_stable_envelope(self):
         data = self.assert_ok(self.request("GET", "/api/v1/projects/current"))

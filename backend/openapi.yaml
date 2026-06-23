@@ -801,12 +801,12 @@ paths:
           $ref: "#/components/responses/StandardSuccess"
   /metering/quality/weights:
     get:
-      summary: Read P0 quality weights
+      summary: Read persisted P0 quality weight parameters
       responses:
         "200":
           $ref: "#/components/responses/StandardSuccess"
     put:
-      summary: Save P0 quality weights
+      summary: Persist P0 quality weight parameters with parameter versions
       responses:
         "200":
           $ref: "#/components/responses/StandardSuccess"
@@ -818,13 +818,13 @@ paths:
           $ref: "#/components/responses/StandardSuccess"
   /metering/shuyuan/parameters:
     put:
-      summary: Save shuyuan parameter draft
+      summary: Persist shuyuan metering parameters with parameter versions
       responses:
         "200":
           $ref: "#/components/responses/StandardSuccess"
   /metering/shuyuan/call-counts:
     put:
-      summary: Save shuyuan call counts
+      summary: Persist shuyuan call-count runtime draft with snapshot and audit
       responses:
         "200":
           $ref: "#/components/responses/StandardSuccess"
@@ -836,7 +836,7 @@ paths:
           $ref: "#/components/responses/StandardSuccess"
   /metering/utility/contribution-factors:
     put:
-      summary: Save contribution factor draft
+      summary: Persist contribution factor parameters with parameter versions
       responses:
         "200":
           $ref: "#/components/responses/StandardSuccess"
@@ -848,7 +848,7 @@ paths:
           $ref: "#/components/responses/StandardSuccess"
   /metering/utility/function:
     put:
-      summary: Save utility function draft
+      summary: Persist utility-function runtime draft with snapshot and audit
       responses:
         "200":
           $ref: "#/components/responses/StandardSuccess"
@@ -860,12 +860,12 @@ paths:
           $ref: "#/components/responses/StandardSuccess"
   /allocation/md-dshap/config:
     get:
-      summary: Read MD-DShap default config
+      summary: Read persisted MD-DShap default config
       responses:
         "200":
           $ref: "#/components/responses/StandardSuccess"
     put:
-      summary: Save MD-DShap config draft
+      summary: Persist MD-DShap config parameters; BASELINE_SHAPLEY is not a final allocation mode
       responses:
         "200":
           $ref: "#/components/responses/StandardSuccess"
@@ -921,19 +921,19 @@ paths:
           $ref: "#/components/responses/StandardError"
   /allocation/simulation/revenue-pool:
     put:
-      summary: Save revenue pool draft
+      summary: Persist revenue-pool runtime draft with snapshot and audit
       responses:
         "200":
           $ref: "#/components/responses/StandardSuccess"
   /allocation/simulation/priority-items:
     put:
-      summary: Save priority allocation draft
+      summary: Persist priority-allocation runtime draft with snapshot and audit
       responses:
         "200":
           $ref: "#/components/responses/StandardSuccess"
   /allocation/simulation/mode:
     put:
-      summary: Save allocation mode draft
+      summary: Persist allocation-mode runtime draft with snapshot and audit
       responses:
         "200":
           $ref: "#/components/responses/StandardSuccess"
@@ -1225,7 +1225,9 @@ components:
       properties:
         algorithm_mode:
           type: string
+          enum: [MD_DSHAP, BASELINE_SHAPLEY]
           default: MD_DSHAP
+          description: MD_DSHAP is the P0 default final weight mode; BASELINE_SHAPLEY is baseline_check only.
         seed:
           type: integer
           default: 42
@@ -1290,6 +1292,7 @@ components:
           default: 0
         allocation_mode:
           type: string
+          enum: [MD_DSHAP_WEIGHT_WITH_CONSTRAINTS, CONTRIBUTION, UTILITY, MANUAL]
           default: MD_DSHAP_WEIGHT_WITH_CONSTRAINTS
         weight_task_id:
           type: string

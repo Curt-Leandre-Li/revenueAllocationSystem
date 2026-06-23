@@ -1,6 +1,7 @@
 import json
 from urllib.parse import parse_qs, urlparse
 
+from .audit import AuditService
 from .contracts import API_PREFIX, ApiError, error_response, ok_response
 from .postgres_read_model import PostgresReadService
 from .repository import JsonFileRepository
@@ -11,6 +12,7 @@ from .services import (
     ContractConstraintService,
     DashboardService,
     DataIngestionService,
+    DraftConfigurationService,
     MdDshapService,
     NavigationService,
     PartyService,
@@ -43,18 +45,20 @@ class DvasApplication:
         self.allocation_service = AllocationService(self.repository)
         self.report_service = ReportService(self.repository)
         self.system_parameter_service = SystemParameterService(self.repository)
+        self.draft_configuration_service = DraftConfigurationService(self.repository)
         self.audit_log_service = AuditLogService(self.repository)
 
     def handle(self, method, path, body=None):
         trace_id = None
+        method = method.upper()
+        payload = body or {}
         try:
-            method = method.upper()
-            payload = body or {}
             if method == "GET":
                 payload = {**self._query_params(path), **payload}
             data = self._dispatch(method, self._normalize_path(path), payload)
             return ok_response(data, trace_id=trace_id)
         except ApiError as error:
+            self._record_failure_audit(method, path, payload, error)
             return error_response(error, trace_id=trace_id)
 
     def handle_http(self, method, path, raw_body):
@@ -189,16 +193,9 @@ class DvasApplication:
         if method == "POST" and segments == ["quality-assessments", "run"]:
             return self.quality_service.run(body)
         if method == "GET" and segments == ["metering", "quality", "weights"]:
-            return {
-                "project_status": self.repository.get_project()["project_status"],
-                "items": [
-                    {"dimension_code": "completeness", "weight": 0.35},
-                    {"dimension_code": "consistency", "weight": 0.30},
-                    {"dimension_code": "usability", "weight": 0.35},
-                ],
-            }
+            return self.system_parameter_service.quality_weights()
         if method == "PUT" and segments == ["metering", "quality", "weights"]:
-            return {"project_status": self.repository.get_project()["project_status"], "items": body.get("items", [])}
+            return self.system_parameter_service.update_quality_weights(body)
         if method == "POST" and segments == ["metering", "quality", "evaluate"]:
             return self.quality_service.run(body)
         if method == "GET" and segments == ["quality-assessments", "latest"]:
@@ -213,9 +210,9 @@ class DvasApplication:
         if method == "POST" and segments == ["shuyuan-meterings", "run"]:
             return self.shuyuan_service.run(body)
         if method == "PUT" and segments == ["metering", "shuyuan", "parameters"]:
-            return {"project_status": self.repository.get_project()["project_status"], "parameters": body}
+            return self.system_parameter_service.update_shuyuan_parameters(body)
         if method == "PUT" and segments == ["metering", "shuyuan", "call-counts"]:
-            return {"project_status": self.repository.get_project()["project_status"], "call_counts": body}
+            return self.draft_configuration_service.save_shuyuan_call_counts(body)
         if method == "POST" and segments == ["metering", "shuyuan", "calculate"]:
             return self.shuyuan_service.run(body)
         if method == "GET" and segments == ["shuyuan-meterings", "latest"]:
@@ -230,11 +227,11 @@ class DvasApplication:
         if method == "POST" and segments == ["contributions", "run"]:
             return self.contribution_service.run(body)
         if method == "PUT" and segments == ["metering", "utility", "contribution-factors"]:
-            return {"project_status": self.repository.get_project()["project_status"], "contribution_factors": body}
+            return self.system_parameter_service.update_contribution_factors(body)
         if method == "POST" and segments == ["metering", "utility", "contribution", "calculate"]:
             return self.contribution_service.run(body)
         if method == "PUT" and segments == ["metering", "utility", "function"]:
-            return {"project_status": self.repository.get_project()["project_status"], "utility_function": body}
+            return self.draft_configuration_service.save_utility_function(body)
         if method == "POST" and segments == ["metering", "utility", "calculate"]:
             return self.utility_service.run(body)
         if method == "POST" and segments == ["utilities", "run"]:
@@ -251,15 +248,9 @@ class DvasApplication:
         if method == "POST" and segments == ["md-dshap", "tasks"]:
             return self.md_dshap_service.run(body)
         if method == "GET" and segments == ["allocation", "md-dshap", "config"]:
-            return {
-                "project_status": self.repository.get_project()["project_status"],
-                "algorithm_mode": "MD_DSHAP",
-                "seed": 42,
-                "sample_rounds": 64,
-                "epsilon": 0.000001,
-            }
+            return self.system_parameter_service.md_dshap_config()
         if method == "PUT" and segments == ["allocation", "md-dshap", "config"]:
-            return {"project_status": self.repository.get_project()["project_status"], "config": body}
+            return self.system_parameter_service.update_md_dshap_config(body)
         if method == "GET" and segments == ["allocation", "md-dshap", "participant-pool"]:
             return self.md_dshap_service.participant_pool()
         if method == "POST" and segments == ["allocation", "md-dshap", "tasks"]:
@@ -314,11 +305,11 @@ class DvasApplication:
         if method == "POST" and segments == ["allocation-scenarios"]:
             return self.allocation_service.create(body)
         if method == "PUT" and segments == ["allocation", "simulation", "revenue-pool"]:
-            return {"project_status": self.repository.get_project()["project_status"], "revenue_pool": body}
+            return self.draft_configuration_service.save_revenue_pool(body)
         if method == "PUT" and segments == ["allocation", "simulation", "priority-items"]:
-            return {"project_status": self.repository.get_project()["project_status"], "priority_items": body}
+            return self.draft_configuration_service.save_priority_items(body)
         if method == "PUT" and segments == ["allocation", "simulation", "mode"]:
-            return {"project_status": self.repository.get_project()["project_status"], "mode": body}
+            return self.draft_configuration_service.save_allocation_mode(body)
         if method == "POST" and segments == ["allocation", "simulation", "run"]:
             return self.allocation_service.run(body)
         if (
@@ -419,6 +410,148 @@ class DvasApplication:
             return 409
         if code == "DVAS_FACTOR_INVALID":
             return 422
+        if code == "DVAS_UNMAPPED_ENUM_VALUE":
+            return 500
+        if code == "DVAS_P1_CAPABILITY_NOT_ENABLED":
+            return 501
         if code.startswith("DVAS_DB_"):
             return 503
         return 400
+
+    def _record_failure_audit(self, method, path, payload, error):
+        if error.audit_recorded:
+            return
+        context = self._failure_audit_context(method, path, payload)
+        if not context:
+            return
+        try:
+            AuditService(self.repository).record_failure(
+                module_code=context["module_code"],
+                menu_code=context["menu_code"],
+                operation_type=context["operation_type"],
+                object_type=context["object_type"],
+                object_id=context.get("object_id"),
+                error_code=error.code,
+                error_message=error.message,
+                before_value_json={"request": payload or {}},
+            )
+        except Exception:
+            return
+
+    def _failure_audit_context(self, method, path, payload):
+        try:
+            normalized_path = self._normalize_path(path)
+        except ApiError:
+            return None
+        if normalized_path.startswith(API_PREFIX):
+            segments = [
+                segment
+                for segment in normalized_path.removeprefix(API_PREFIX).split("/")
+                if segment
+            ]
+        else:
+            segments = [
+                segment
+                for segment in normalized_path.removeprefix("/api").split("/")
+                if segment
+            ]
+        if method == "POST" and segments in (
+            ["data-packages", "upload"],
+            ["data", "packages", "upload"],
+        ):
+            return self._audit_context("DATA", "NAV_DATA_PACKAGE", "UPLOAD_JSON", "data_package")
+        if method == "POST" and segments in (
+            ["quality-assessments", "run"],
+            ["metering", "quality", "evaluate"],
+        ):
+            return self._audit_context("QUAL", "NAV_MEASURE_QUALITY", "RUN_QUALITY_ASSESSMENT", "quality_assessment")
+        if method == "POST" and segments in (
+            ["shuyuan-meterings", "run"],
+            ["metering", "shuyuan", "calculate"],
+        ):
+            return self._audit_context("DU", "NAV_MEASURE_SHUYUAN", "RUN_SHUYUAN_METERING", "shuyuan_metering")
+        if method == "POST" and segments in (
+            ["contributions", "run"],
+            ["metering", "utility", "contribution", "calculate"],
+        ):
+            return self._audit_context("UTIL", "NAV_MEASURE_UTILITY", "RUN_CONTRIBUTION", "contribution_run")
+        if method == "POST" and segments in (
+            ["utilities", "run"],
+            ["metering", "utility", "calculate"],
+        ):
+            return self._audit_context("UTIL", "NAV_MEASURE_UTILITY", "RUN_UTILITY", "utility")
+        if method == "POST" and segments in (
+            ["md-dshap", "tasks"],
+            ["allocation", "md-dshap", "tasks"],
+        ):
+            return self._audit_context("MDS", "NAV_ALLOC_MDS", "RUN_MD_DSHAP", "md_dshap_task")
+        if method == "POST" and segments == ["allocation-scenarios"]:
+            return self._audit_context("ALLOC", "NAV_ALLOC_SIMULATION", "CREATE_ALLOCATION_SCENARIO", "allocation_scenario")
+        if method == "POST" and segments == ["allocation", "simulation", "run"]:
+            return self._audit_context(
+                "ALLOC",
+                "NAV_ALLOC_SIMULATION",
+                "SIMULATE_ALLOCATION",
+                "allocation_scenario",
+                payload.get("allocation_id"),
+            )
+        if (
+            method == "POST"
+            and len(segments) == 3
+            and segments[0] == "allocation-scenarios"
+            and segments[2] == "simulate"
+        ):
+            return self._audit_context("ALLOC", "NAV_ALLOC_SIMULATION", "SIMULATE_ALLOCATION", "allocation_scenario", segments[1])
+        if (
+            method == "POST"
+            and len(segments) == 3
+            and segments[0] == "allocation-scenarios"
+            and segments[2] == "lock"
+        ):
+            return self._audit_context("ALLOC", "NAV_ALLOC_SIMULATION", "LOCK_ALLOCATION", "allocation_scenario", segments[1])
+        if method == "POST" and segments in (
+            ["reports", "markdown"],
+            ["reports", "csv"],
+            ["reports", "json"],
+            ["reports", "audit-log"],
+            ["reports", "md-dshap-audit"],
+        ):
+            operation_by_path = {
+                "markdown": "GENERATE_MARKDOWN_REPORT",
+                "csv": "GENERATE_CSV_EXPORT",
+                "json": "GENERATE_JSON_EXPORT",
+                "audit-log": "EXPORT_AUDIT_LOG",
+                "md-dshap-audit": "EXPORT_MD_DSHAP_AUDIT",
+            }
+            return self._audit_context("REP", "NAV_REPORT_EXPORT", operation_by_path[segments[1]], "report_record")
+        if method == "POST" and len(segments) == 5 and segments[:3] == ["allocation", "md-dshap", "tasks"] and segments[4] == "audit-export":
+            return self._audit_context("MDS", "NAV_ALLOC_MDS", "EXPORT_MD_DSHAP_AUDIT", "report_record", segments[3])
+        if method == "PUT" and segments == ["metering", "quality", "weights"]:
+            return self._audit_context("QUAL", "NAV_MEASURE_QUALITY", "UPDATE_QUALITY_WEIGHTS", "system_parameter")
+        if method == "PUT" and segments == ["metering", "shuyuan", "parameters"]:
+            return self._audit_context("DU", "NAV_MEASURE_SHUYUAN", "UPDATE_SHUYUAN_PARAMETERS", "system_parameter")
+        if method == "PUT" and segments == ["metering", "utility", "contribution-factors"]:
+            return self._audit_context("UTIL", "NAV_MEASURE_UTILITY", "UPDATE_CONTRIBUTION_FACTORS", "system_parameter")
+        draft_routes = {
+            ("metering", "shuyuan", "call-counts"): ("DU", "NAV_MEASURE_SHUYUAN", "SAVE_SHUYUAN_CALL_COUNTS_DRAFT"),
+            ("metering", "utility", "function"): ("UTIL", "NAV_MEASURE_UTILITY", "SAVE_UTILITY_FUNCTION_DRAFT"),
+            ("allocation", "simulation", "revenue-pool"): ("ALLOC", "NAV_ALLOC_SIMULATION", "SAVE_REVENUE_POOL_DRAFT"),
+            ("allocation", "simulation", "priority-items"): ("ALLOC", "NAV_ALLOC_SIMULATION", "SAVE_PRIORITY_ITEMS_DRAFT"),
+            ("allocation", "simulation", "mode"): ("ALLOC", "NAV_ALLOC_SIMULATION", "SAVE_ALLOCATION_MODE_DRAFT"),
+            ("allocation", "md-dshap", "config"): ("MDS", "NAV_ALLOC_MDS", "UPDATE_MD_DSHAP_CONFIG"),
+        }
+        key = tuple(segments)
+        if method == "PUT" and key in draft_routes:
+            module_code, menu_code, operation_type = draft_routes[key]
+            object_type = "system_parameter" if operation_type == "UPDATE_MD_DSHAP_CONFIG" else "business_draft"
+            return self._audit_context(module_code, menu_code, operation_type, object_type)
+        return None
+
+    def _audit_context(self, module_code, menu_code, operation_type, object_type, object_id=None):
+        return {
+            "module_code": module_code,
+            "menu_code": menu_code,
+            "operation_type": operation_type,
+            "object_type": object_type,
+            "object_id": object_id,
+        }

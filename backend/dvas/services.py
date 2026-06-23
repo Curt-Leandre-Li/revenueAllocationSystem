@@ -5,6 +5,16 @@ import io
 import json
 from pathlib import Path
 
+from .audit import AuditService
+from .constants import (
+    AllocationMode,
+    AlgorithmMode,
+    ContractConstraintType,
+    P0_CONFIG,
+    ProjectStatus,
+    ReportFormat,
+    SnapshotType,
+)
 from .contracts import (
     LOCAL_OPERATOR,
     SIMULATION_DISCLAIMER,
@@ -14,6 +24,7 @@ from .contracts import (
     utc_now,
 )
 from .demo_data import get_demo_case
+from .state_machine import ProjectStateMachine
 
 
 SYSTEM_HOME_MENU = {
@@ -75,27 +86,35 @@ def write_audit(
     after_value_json=None,
     button_code=None,
 ):
-    audit_log = {
-        "log_id": repository.next_id("audit"),
-        "project_id": repository.get_project()["project_id"],
-        "module_code": module_code,
-        "menu_code": menu_code,
-        "button_code": button_code,
-        "operation_type": operation_type,
-        "object_type": object_type,
-        "object_id": object_id,
-        "operator_id": LOCAL_OPERATOR,
-        "before_value_json": before_value_json,
-        "after_value_json": after_value_json,
-        "input_snapshot_id": input_snapshot_id,
-        "parameter_snapshot_id": parameter_snapshot_id,
-        "result_snapshot_id": result_snapshot_id,
-        "status": status,
-        "failure_reason": failure_reason,
-        "created_at": utc_now(),
-    }
-    repository.put_audit_log(audit_log)
-    return audit_log
+    audit = AuditService(repository)
+    if status == "FAILED":
+        return audit.record_failure(
+            module_code=module_code,
+            menu_code=menu_code,
+            operation_type=operation_type,
+            object_type=object_type,
+            object_id=object_id,
+            error_message=failure_reason,
+            input_snapshot_id=input_snapshot_id,
+            parameter_snapshot_id=parameter_snapshot_id,
+            output_snapshot_id=result_snapshot_id,
+            before_value_json=before_value_json,
+            after_value_json=after_value_json,
+            button_code=button_code,
+        )
+    return audit.record_success(
+        module_code=module_code,
+        menu_code=menu_code,
+        operation_type=operation_type,
+        object_type=object_type,
+        object_id=object_id,
+        input_snapshot_id=input_snapshot_id,
+        parameter_snapshot_id=parameter_snapshot_id,
+        output_snapshot_id=result_snapshot_id,
+        before_value_json=before_value_json,
+        after_value_json=after_value_json,
+        button_code=button_code,
+    )
 
 
 def parameter_current_value(repository, parameter_code, default):
@@ -243,6 +262,35 @@ class SystemParameterService:
         "DEFAULT_EXPERT_COEFFICIENT",
         "DEFAULT_DEVELOPMENT_COEFFICIENT",
         "DEFAULT_MD_DSHAP_EPSILON",
+        "QUALITY_WEIGHT_COMPLETENESS",
+        "QUALITY_WEIGHT_CONSISTENCY",
+        "QUALITY_WEIGHT_USABILITY",
+        "DEFAULT_USAGE_WEIGHT",
+        "DEFAULT_COVERAGE_WEIGHT",
+        "DEFAULT_SCARCITY_WEIGHT",
+    }
+    QUALITY_WEIGHT_PARAMS = {
+        "completeness": "QUALITY_WEIGHT_COMPLETENESS",
+        "consistency": "QUALITY_WEIGHT_CONSISTENCY",
+        "usability": "QUALITY_WEIGHT_USABILITY",
+    }
+    SHUYUAN_PARAM_CODES = {
+        "base_price": "DEFAULT_SHUYUAN_BASE_PRICE",
+        "scenario_coefficient": "DEFAULT_SCENARIO_COEFFICIENT",
+        "technology_coefficient": "DEFAULT_TECHNOLOGY_COEFFICIENT",
+        "expert_coefficient": "DEFAULT_EXPERT_COEFFICIENT",
+        "development_coefficient": "DEFAULT_DEVELOPMENT_COEFFICIENT",
+    }
+    CONTRIBUTION_FACTOR_CODES = {
+        "usage_weight": "DEFAULT_USAGE_WEIGHT",
+        "coverage_weight": "DEFAULT_COVERAGE_WEIGHT",
+        "scarcity_weight": "DEFAULT_SCARCITY_WEIGHT",
+    }
+    MD_DSHAP_PARAM_CODES = {
+        "seed": "DEFAULT_MD_DSHAP_SEED",
+        "sample_rounds": "DEFAULT_MD_DSHAP_SAMPLE_ROUNDS",
+        "epsilon": "DEFAULT_MD_DSHAP_EPSILON",
+        "baseline_enabled": "DEFAULT_MD_DSHAP_BASELINE_ENABLED",
     }
 
     def __init__(self, repository):
@@ -253,6 +301,133 @@ class SystemParameterService:
 
     def detail(self, parameter_code):
         return self._parameter(parameter_code)
+
+    def quality_weights(self):
+        return {
+            "project_status": self.repository.get_project()["project_status"],
+            "items": [
+                {
+                    "dimension_code": dimension_code,
+                    "parameter_code": parameter_code,
+                    "weight": self._parameter(parameter_code)["current_value"],
+                }
+                for dimension_code, parameter_code in self.QUALITY_WEIGHT_PARAMS.items()
+            ],
+        }
+
+    def update_quality_weights(self, payload):
+        items = payload.get("items") if isinstance(payload, dict) else None
+        if not isinstance(items, list) or not items:
+            raise ApiError(
+                "DVAS_REQUIRED_FIELD_MISSING",
+                "质量权重配置不能为空",
+                field_errors=[{"field": "items", "reason": "items 必须为非空数组"}],
+            )
+        seen = set()
+        pending_updates = []
+        for index, item in enumerate(items):
+            dimension_code = item.get("dimension_code")
+            if dimension_code not in self.QUALITY_WEIGHT_PARAMS:
+                raise ApiError(
+                    "DVAS_FACTOR_INVALID",
+                    "质量权重维度不支持",
+                    field_errors=[{"field": f"items[{index}].dimension_code", "reason": "不支持的质量维度"}],
+                )
+            if dimension_code in seen:
+                raise ApiError(
+                    "DVAS_FACTOR_INVALID",
+                    "质量权重维度重复",
+                    field_errors=[{"field": f"items[{index}].dimension_code", "reason": "质量维度不能重复"}],
+                )
+            seen.add(dimension_code)
+            try:
+                weight = float(item.get("weight"))
+            except (TypeError, ValueError) as exc:
+                raise ApiError(
+                    "DVAS_FACTOR_INVALID",
+                    "质量权重不合法",
+                    field_errors=[{"field": f"items[{index}].weight", "reason": "weight 必须是数字"}],
+                ) from exc
+            if weight < 0:
+                raise ApiError(
+                    "DVAS_FACTOR_INVALID",
+                    "质量权重不合法",
+                    field_errors=[{"field": f"items[{index}].weight", "reason": "weight 必须大于等于 0"}],
+                )
+            pending_updates.append((dimension_code, weight))
+        missing = set(self.QUALITY_WEIGHT_PARAMS) - seen
+        if missing:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "质量权重维度不完整",
+                field_errors=[{"field": "items", "reason": f"缺少维度: {', '.join(sorted(missing))}"}],
+            )
+        if abs(sum(weight for _, weight in pending_updates) - 1.0) > P0_CONFIG.weight_normalization_tolerance:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "质量权重不合法",
+                field_errors=[{"field": "items", "reason": "质量权重之和必须为 1.000000"}],
+            )
+        updated = [
+            self.update(self.QUALITY_WEIGHT_PARAMS[dimension_code], {"current_value": weight})
+            for dimension_code, weight in pending_updates
+        ]
+        return {**self.quality_weights(), "updated_parameters": updated}
+
+    def update_shuyuan_parameters(self, payload):
+        return self._update_parameter_group(
+            payload,
+            self.SHUYUAN_PARAM_CODES,
+            "数元计量参数配置不能为空",
+            "shuyuan_parameters",
+        )
+
+    def update_contribution_factors(self, payload):
+        return self._update_parameter_group(
+            payload,
+            self.CONTRIBUTION_FACTOR_CODES,
+            "贡献因子配置不能为空",
+            "contribution_factors",
+        )
+
+    def md_dshap_config(self):
+        return {
+            "project_status": self.repository.get_project()["project_status"],
+            "algorithm_mode": self._parameter("DEFAULT_ALGORITHM_MODE")["current_value"],
+            "seed": self._parameter("DEFAULT_MD_DSHAP_SEED")["current_value"],
+            "sample_rounds": self._parameter("DEFAULT_MD_DSHAP_SAMPLE_ROUNDS")["current_value"],
+            "epsilon": self._parameter("DEFAULT_MD_DSHAP_EPSILON")["current_value"],
+            "baseline_enabled": self._parameter("DEFAULT_MD_DSHAP_BASELINE_ENABLED")["current_value"],
+        }
+
+    def update_md_dshap_config(self, payload):
+        if "algorithm_mode" in payload and payload["algorithm_mode"] != AlgorithmMode.MD_DSHAP.value:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "P0 默认分配算法必须为 MD_DSHAP",
+                field_errors=[
+                    {
+                        "field": "algorithm_mode",
+                        "reason": "BASELINE_SHAPLEY 仅可作为 baseline_check，不可作为默认分配算法",
+                    }
+                ],
+            )
+        allowed_payload = {key: payload[key] for key in self.MD_DSHAP_PARAM_CODES if key in payload}
+        if not allowed_payload:
+            if "algorithm_mode" in payload:
+                return {**self.md_dshap_config(), "updated_parameters": []}
+            raise ApiError(
+                "DVAS_REQUIRED_FIELD_MISSING",
+                "MD-DShap 配置不能为空",
+                field_errors=[{"field": "config", "reason": "至少提供一个可配置字段"}],
+            )
+        updated = self._update_parameter_group(
+            allowed_payload,
+            self.MD_DSHAP_PARAM_CODES,
+            "MD-DShap 配置不能为空",
+            "md_dshap_config",
+        )
+        return {**self.md_dshap_config(), "updated_parameters": updated["updated_parameters"]}
 
     def update(self, parameter_code, payload):
         parameter = self._parameter(parameter_code)
@@ -349,6 +524,35 @@ class SystemParameterService:
         )
         return updated
 
+    def _update_parameter_group(self, payload, mapping, empty_message, response_key):
+        values = payload.get(response_key, payload) if isinstance(payload, dict) else {}
+        if not isinstance(values, dict) or not values:
+            raise ApiError(
+                "DVAS_REQUIRED_FIELD_MISSING",
+                empty_message,
+                field_errors=[{"field": response_key, "reason": "至少提供一个可配置字段"}],
+            )
+        unknown = sorted(set(values) - set(mapping))
+        if unknown:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "存在不支持的参数字段",
+                field_errors=[{"field": response_key, "reason": f"不支持字段: {', '.join(unknown)}"}],
+            )
+        updated = [
+            self.update(parameter_code, {"current_value": values[field]})
+            for field, parameter_code in mapping.items()
+            if field in values
+        ]
+        return {
+            "project_status": self.repository.get_project()["project_status"],
+            response_key: {
+                field: self._parameter(parameter_code)["current_value"]
+                for field, parameter_code in mapping.items()
+            },
+            "updated_parameters": updated,
+        }
+
     def _normalize_value(self, parameter, raw_value):
         parameter_code = parameter["parameter_code"]
         parameter_type = parameter["parameter_type"]
@@ -374,6 +578,14 @@ class SystemParameterService:
                 "系统参数值不合法",
                 field_errors=[{"field": "current_value", "reason": f"{parameter_code} 必须是布尔值"}],
             )
+        if parameter_type == "ENUM":
+            if raw_value != AlgorithmMode.MD_DSHAP.value:
+                raise ApiError(
+                    "DVAS_FACTOR_INVALID",
+                    "系统参数值不合法",
+                    field_errors=[{"field": "current_value", "reason": "默认算法必须为 MD_DSHAP"}],
+                )
+            return raw_value
         if parameter_type == "INTEGER":
             try:
                 value = int(raw_value)
@@ -423,6 +635,217 @@ class SystemParameterService:
                 field_errors=[{"field": "current_value", "reason": f"{parameter_code} 必须大于 0"}],
             )
         return round(value, 6)
+
+
+class DraftConfigurationService:
+    DRAFT_SPECS = {
+        "SHUYUAN_CALL_COUNTS": {
+            "module_code": "DU",
+            "menu_code": "NAV_MEASURE_SHUYUAN",
+            "operation_type": "SAVE_SHUYUAN_CALL_COUNTS_DRAFT",
+            "snapshot_type": SnapshotType.PARAMETER.value,
+        },
+        "UTILITY_FUNCTION": {
+            "module_code": "UTIL",
+            "menu_code": "NAV_MEASURE_UTILITY",
+            "operation_type": "SAVE_UTILITY_FUNCTION_DRAFT",
+            "snapshot_type": SnapshotType.PARAMETER.value,
+        },
+        "ALLOCATION_REVENUE_POOL": {
+            "module_code": "ALLOC",
+            "menu_code": "NAV_ALLOC_SIMULATION",
+            "operation_type": "SAVE_REVENUE_POOL_DRAFT",
+            "snapshot_type": SnapshotType.ASSUMPTION.value,
+        },
+        "ALLOCATION_PRIORITY_ITEMS": {
+            "module_code": "ALLOC",
+            "menu_code": "NAV_ALLOC_SIMULATION",
+            "operation_type": "SAVE_PRIORITY_ITEMS_DRAFT",
+            "snapshot_type": SnapshotType.ASSUMPTION.value,
+        },
+        "ALLOCATION_MODE": {
+            "module_code": "ALLOC",
+            "menu_code": "NAV_ALLOC_SIMULATION",
+            "operation_type": "SAVE_ALLOCATION_MODE_DRAFT",
+            "snapshot_type": SnapshotType.PARAMETER.value,
+        },
+    }
+
+    def __init__(self, repository):
+        self.repository = repository
+
+    def save_shuyuan_call_counts(self, payload):
+        values = payload.get("call_counts", payload) if isinstance(payload, dict) else {}
+        if not isinstance(values, dict) or not values:
+            raise ApiError(
+                "DVAS_REQUIRED_FIELD_MISSING",
+                "数元调用次数草稿不能为空",
+                field_errors=[{"field": "call_counts", "reason": "call_counts 必须为非空对象"}],
+            )
+        normalized = {}
+        for resource_id, raw_count in values.items():
+            try:
+                count = int(raw_count)
+            except (TypeError, ValueError) as exc:
+                raise ApiError(
+                    "DVAS_FACTOR_INVALID",
+                    "数元调用次数不合法",
+                    field_errors=[{"field": str(resource_id), "reason": "调用次数必须是整数"}],
+                ) from exc
+            if count < 0:
+                raise ApiError(
+                    "DVAS_FACTOR_INVALID",
+                    "数元调用次数不合法",
+                    field_errors=[{"field": str(resource_id), "reason": "调用次数必须大于等于 0"}],
+                )
+            normalized[str(resource_id)] = count
+        return self._persist("SHUYUAN_CALL_COUNTS", normalized)
+
+    def save_utility_function(self, payload):
+        if not isinstance(payload, dict) or not payload:
+            raise ApiError(
+                "DVAS_REQUIRED_FIELD_MISSING",
+                "效用函数草稿不能为空",
+                field_errors=[{"field": "utility_function", "reason": "必须提供效用函数配置"}],
+            )
+        return self._persist("UTILITY_FUNCTION", copy.deepcopy(payload))
+
+    def save_revenue_pool(self, payload):
+        try:
+            total_revenue = float(payload["total_revenue"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ApiError(
+                "DVAS_REQUIRED_FIELD_MISSING",
+                "收益池草稿缺少总收益",
+                field_errors=[{"field": "total_revenue", "reason": "total_revenue 为必填数字"}],
+            ) from exc
+        priority_amount = self._amount(payload.get("priority_allocation_amount", 0), "priority_allocation_amount")
+        if total_revenue < 0:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "收益池金额不合法",
+                field_errors=[{"field": "total_revenue", "reason": "total_revenue 必须大于等于 0"}],
+            )
+        if priority_amount > total_revenue:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "优先分配金额不能超过总收益",
+                field_errors=[{"field": "priority_allocation_amount", "reason": "优先分配金额不能超过总收益"}],
+            )
+        return self._persist(
+            "ALLOCATION_REVENUE_POOL",
+            {
+                "total_revenue": round(total_revenue, P0_CONFIG.amount_precision),
+                "priority_allocation_amount": priority_amount,
+                "currency": payload.get("currency", "CNY"),
+                "data_provider_revenue_pool": round(total_revenue - priority_amount, P0_CONFIG.amount_precision),
+            },
+        )
+
+    def save_priority_items(self, payload):
+        items = payload.get("items", payload.get("priority_items")) if isinstance(payload, dict) else None
+        if not isinstance(items, list):
+            raise ApiError(
+                "DVAS_REQUIRED_FIELD_MISSING",
+                "优先分配草稿不能为空",
+                field_errors=[{"field": "items", "reason": "items 必须为数组"}],
+            )
+        normalized = []
+        for index, item in enumerate(items):
+            party_id = item.get("party_id")
+            if not party_id:
+                raise ApiError(
+                    "DVAS_REQUIRED_FIELD_MISSING",
+                    "优先分配项缺少参与方",
+                    field_errors=[{"field": f"items[{index}].party_id", "reason": "party_id 为必填字段"}],
+                )
+            normalized.append(
+                {
+                    "party_id": party_id,
+                    "priority_amount": self._amount(item.get("priority_amount", 0), f"items[{index}].priority_amount"),
+                    "basis_text": item.get("basis_text") or "P0 本地草稿配置",
+                    "priority_order": int(item.get("priority_order", index + 1)),
+                }
+            )
+        return self._persist("ALLOCATION_PRIORITY_ITEMS", normalized)
+
+    def save_allocation_mode(self, payload):
+        mode = payload.get("allocation_mode") or payload.get("mode")
+        if mode not in AllocationMode.values():
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "收益分配模式不支持",
+                field_errors=[{"field": "allocation_mode", "reason": "不支持的收益分配模式"}],
+            )
+        return self._persist("ALLOCATION_MODE", {"allocation_mode": mode})
+
+    def _persist(self, draft_type, content):
+        now = utc_now()
+        spec = self.DRAFT_SPECS[draft_type]
+        project = self.repository.get_project()
+        snapshot_id = self.repository.next_id("snapshot")
+        draft_id = self.repository.next_id("draft")
+        snapshot = {
+            "snapshot_id": snapshot_id,
+            "project_id": project["project_id"],
+            "snapshot_type": spec["snapshot_type"],
+            "content_json": {"draft_type": draft_type, "content": copy.deepcopy(content)},
+            "checksum": stable_checksum({"draft_type": draft_type, "content": content}),
+            "created_by": LOCAL_OPERATOR,
+            "created_at": now,
+        }
+        draft = {
+            "draft_id": draft_id,
+            "project_id": project["project_id"],
+            "draft_type": draft_type,
+            "content_json": copy.deepcopy(content),
+            "snapshot_id": snapshot_id,
+            "checksum": snapshot["checksum"],
+            "created_by": LOCAL_OPERATOR,
+            "created_at": now,
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+        }
+        self.repository.put_snapshot(snapshot)
+        self.repository.put_business_draft(draft)
+        write_audit(
+            self.repository,
+            module_code=spec["module_code"],
+            menu_code=spec["menu_code"],
+            operation_type=spec["operation_type"],
+            object_type="business_draft",
+            object_id=draft_id,
+            status="SUCCESS",
+            parameter_snapshot_id=snapshot_id
+            if spec["snapshot_type"] == SnapshotType.PARAMETER.value
+            else None,
+            result_snapshot_id=snapshot_id
+            if spec["snapshot_type"] == SnapshotType.ASSUMPTION.value
+            else None,
+            after_value_json=draft,
+        )
+        return {
+            "project_id": project["project_id"],
+            "project_status": project["project_status"],
+            "draft": draft,
+            "snapshot": snapshot,
+        }
+
+    def _amount(self, raw_value, field):
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "金额参数不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须是数字"}],
+            ) from exc
+        if value < 0:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "金额参数不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须大于等于 0"}],
+            )
+        return round(value, P0_CONFIG.amount_precision)
 
 
 class AuditLogService:
@@ -817,6 +1240,7 @@ class DataIngestionService:
                 validation_result["code"],
                 "上传 JSON 校验失败",
                 field_errors=validation_result["field_errors"],
+                audit_recorded=True,
             )
         return self._create_valid_ingestion(
             source_type="UPLOAD",
@@ -990,7 +1414,7 @@ class DataIngestionService:
         party_by_name = {party["party_name"]: party for party in created_parties}
         created_resources = self._create_resources(resources, package_id, project["project_id"], party_by_name, now)
         updated_project = self.repository.update_project(
-            project_status="INGESTED",
+            project_status=ProjectStatus.INGESTED.value,
             current_package_id=package_id,
             current_input_snapshot_id=snapshot_id,
             scenario_name=scenario_name or project["scenario_name"],
@@ -1319,6 +1743,7 @@ class QualityAssessmentService:
 
     def run(self, payload):
         project = self.repository.get_project()
+        ProjectStateMachine(self.repository).require_quality_allowed()
         package_id = payload.get("package_id") or project.get("current_package_id")
         package = self.repository.get_data_package(package_id) if package_id else None
         if not package or package.get("status") != "VALIDATED":
@@ -1374,7 +1799,7 @@ class QualityAssessmentService:
         }
         self.repository.put_snapshot(output_snapshot)
         self.repository.put_quality_assessment(assessment, details)
-        updated_project = self.repository.update_project(project_status="ASSESSED")
+        updated_project = self.repository.update_project(project_status=ProjectStatus.ASSESSED.value)
         write_audit(
             self.repository,
             module_code="QUAL",
@@ -1422,6 +1847,7 @@ class ShuyuanMeteringService:
         self.repository = repository
 
     def run(self, payload):
+        ProjectStateMachine(self.repository).require_metering_allowed()
         quality = self._latest_quality()
         package = self.repository.get_data_package(quality["package_id"])
         resources = self.repository.list_data_resources(quality["package_id"])
@@ -1512,7 +1938,7 @@ class ShuyuanMeteringService:
         self.repository.put_snapshot(parameter_snapshot)
         self.repository.put_snapshot(result_snapshot)
         self.repository.put_shuyuan_metering(metering, details)
-        updated_project = self.repository.update_project(project_status="METERED")
+        updated_project = self.repository.update_project(project_status=ProjectStatus.METERED.value)
         write_audit(
             self.repository,
             module_code="DU",
@@ -1637,6 +2063,7 @@ class ContributionService:
         self.repository = repository
 
     def run(self, payload):
+        ProjectStateMachine(self.repository).require_contribution_allowed()
         metering = self._latest_metering()
         details = self.repository.get_shuyuan_metering_details(metering["metering_id"])
         now = utc_now()
@@ -1769,6 +2196,7 @@ class UtilityService:
         self.repository = repository
 
     def run(self, payload):
+        ProjectStateMachine(self.repository).require_utility_allowed()
         contribution_records = self._latest_contribution_records()
         quality = self._latest_quality()
         now = utc_now()
@@ -1806,7 +2234,7 @@ class UtilityService:
             self._snapshot(result_snapshot_id, "RESULT", {"utility": utility, "trace": trace}, now)
         )
         self.repository.put_utility_record(utility, trace)
-        updated_project = self.repository.update_project(project_status="UTILITY_CALCULATED")
+        updated_project = self.repository.update_project(project_status=ProjectStatus.UTILITY_CALCULATED.value)
         write_audit(
             self.repository,
             module_code="UTIL",
@@ -2038,7 +2466,7 @@ class MdDshapService:
         self.repository.put_algorithm_audit_snapshot(algorithm_audit_snapshot)
         self.repository.put_md_dshap_task(task, results, traces)
         updated_project = self.repository.update_project(
-            project_status="WEIGHT_CALCULATED",
+            project_status=ProjectStatus.WEIGHT_CALCULATED.value,
             current_algorithm_task_id=task_id,
         )
         write_audit(
@@ -2077,12 +2505,7 @@ class MdDshapService:
         return table_page(self.repository.list_md_dshap_marginal_traces(task_id))
 
     def _ensure_project_ready(self, project):
-        if project["project_status"] not in {"UTILITY_CALCULATED", "WEIGHT_CALCULATED"}:
-            raise ApiError(
-                "DVAS_PRECONDITION_NOT_MET",
-                "请先完成效用计算",
-                field_errors=[{"field": "project_status", "reason": "请先完成效用计算"}],
-            )
+        ProjectStateMachine(self.repository).require_md_dshap_allowed()
 
     def _latest_utility(self):
         utilities = self.repository.list_utility_records()
@@ -2142,8 +2565,20 @@ class MdDshapService:
         return party.get("status") in {"ACTIVE", "ENABLED"}
 
     def _parameters(self, payload, participant_count):
+        algorithm_mode = payload.get("algorithm_mode", P0_CONFIG.default_algorithm_mode)
+        if algorithm_mode != AlgorithmMode.MD_DSHAP.value:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "MD-DShap 任务算法模式不支持",
+                field_errors=[
+                    {
+                        "field": "algorithm_mode",
+                        "reason": "BASELINE_SHAPLEY 仅可作为 baseline_check，不可作为最终权重任务模式",
+                    }
+                ],
+            )
         return {
-            "algorithm_mode": payload.get("algorithm_mode", "MD_DSHAP"),
+            "algorithm_mode": algorithm_mode,
             "seed": self._int(
                 payload,
                 "seed",
@@ -2311,15 +2746,8 @@ class MdDshapService:
 
 
 class ContractConstraintService:
-    SUPPORTED_TYPES = {
-        "MIN_AMOUNT",
-        "MAX_AMOUNT",
-        "CAP_AMOUNT",
-        "FLOOR_AMOUNT",
-        "FIXED_RATIO",
-        "PRIORITY_ALLOCATION",
-    }
-    RATIO_TYPES = {"FIXED_RATIO"}
+    SUPPORTED_TYPES = set(ContractConstraintType.values())
+    RATIO_TYPES = {ContractConstraintType.FIXED_RATIO.value}
 
     def __init__(self, repository):
         self.repository = repository
@@ -2417,7 +2845,7 @@ class ContractConstraintService:
                 status=404,
                 field_errors=[{"field": "party_id", "reason": "参与方不存在"}],
             )
-        constraint_type = payload.get("constraint_type", "MIN_AMOUNT")
+        constraint_type = payload.get("constraint_type", ContractConstraintType.MIN_AMOUNT.value)
         if constraint_type not in self.SUPPORTED_TYPES:
             raise ApiError(
                 "DVAS_FACTOR_INVALID",
@@ -2478,6 +2906,7 @@ class AllocationService:
         self.repository = repository
 
     def run(self, payload):
+        ProjectStateMachine(self.repository).require_allocation_allowed()
         payload = payload or {}
         allocation_id = payload.get("allocation_id") or self.repository.get_project().get(
             "current_allocation_id"
@@ -2489,17 +2918,31 @@ class AllocationService:
                 "total_revenue": payload.get("total_revenue", 1000),
                 "priority_allocation_amount": payload.get("priority_allocation_amount", 0),
                 "currency": payload.get("currency", "CNY"),
-                "allocation_mode": payload.get("allocation_mode", "MD_DSHAP_WEIGHT_WITH_CONSTRAINTS"),
+                "allocation_mode": payload.get(
+                    "allocation_mode",
+                    AllocationMode.MD_DSHAP_WEIGHT_WITH_CONSTRAINTS.value,
+                ),
             }
         )
         return self.simulate(allocation["allocation_id"])
 
     def create(self, payload):
         project = self.repository.get_project()
+        ProjectStateMachine(self.repository).require_allocation_allowed()
         task = self._resolve_weight_task(payload.get("weight_task_id"), project)
         results = self._weight_results(task["task_id"])
         total_revenue = self._amount(payload, "total_revenue", required=True)
         priority_amount = self._amount(payload, "priority_allocation_amount", default=0)
+        allocation_mode = payload.get(
+            "allocation_mode",
+            AllocationMode.MD_DSHAP_WEIGHT_WITH_CONSTRAINTS.value,
+        )
+        if allocation_mode not in AllocationMode.values():
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "收益分配模式不支持",
+                field_errors=[{"field": "allocation_mode", "reason": "不支持的收益分配模式"}],
+            )
         if priority_amount > total_revenue:
             raise ApiError(
                 "DVAS_PRECONDITION_NOT_MET",
@@ -2514,7 +2957,7 @@ class AllocationService:
             "currency": payload.get("currency", "CNY"),
             "priority_allocation_amount": priority_amount,
             "data_provider_revenue_pool": round(total_revenue - priority_amount, 2),
-            "allocation_mode": payload.get("allocation_mode", "MD_DSHAP_WEIGHT_WITH_CONSTRAINTS"),
+            "allocation_mode": allocation_mode,
             "weight_task_id": task["task_id"],
             "status": "DRAFT",
             "locked_by": None,
@@ -2539,6 +2982,7 @@ class AllocationService:
         return allocation
 
     def simulate(self, allocation_id):
+        ProjectStateMachine(self.repository).require_allocation_allowed()
         allocation = self._allocation(allocation_id)
         task = self._resolve_weight_task(allocation["weight_task_id"], self.repository.get_project())
         weight_results = self._weight_results(task["task_id"])
@@ -2615,7 +3059,7 @@ class AllocationService:
         self.repository.put_allocation_scenario(updated_allocation)
         self.repository.put_allocation_results(results, traces)
         updated_project = self.repository.update_project(
-            project_status="ALLOCATED",
+            project_status=ProjectStatus.ALLOCATED.value,
             current_allocation_id=allocation_id,
         )
         write_audit(
@@ -2653,7 +3097,7 @@ class AllocationService:
             "updated_at": utc_now(),
         }
         self.repository.put_allocation_scenario(updated)
-        updated_project = self.repository.update_project(project_status="CONFIRMED")
+        updated_project = self.repository.update_project(project_status=ProjectStatus.CONFIRMED.value)
         write_audit(
             self.repository,
             module_code="ALLOC",
@@ -2683,12 +3127,7 @@ class AllocationService:
         return allocation
 
     def _resolve_weight_task(self, weight_task_id, project):
-        if project["project_status"] not in {"WEIGHT_CALCULATED", "ALLOCATED", "CONFIRMED"}:
-            raise ApiError(
-                "DVAS_PRECONDITION_NOT_MET",
-                "请先完成 MD-DShap 权重计算",
-                field_errors=[{"field": "weight_task_id", "reason": "请先完成 MD-DShap 权重计算"}],
-            )
+        ProjectStateMachine(self.repository).require_allocation_allowed()
         task = self.repository.get_md_dshap_task(weight_task_id) if weight_task_id else None
         if not task:
             tasks = self.repository.list_md_dshap_tasks()
@@ -2710,7 +3149,7 @@ class AllocationService:
                 field_errors=[{"field": "weight_task_id", "reason": "MD-DShap 权重结果不存在"}],
             )
         total_weight = round(sum(float(item["normalized_weight"]) for item in results), 6)
-        if abs(total_weight - 1.0) > 0.000001:
+        if abs(total_weight - 1.0) > P0_CONFIG.weight_normalization_tolerance:
             raise ApiError(
                 "DVAS_PRECONDITION_NOT_MET",
                 "MD-DShap 归一化权重不等于 1",
@@ -2887,12 +3326,12 @@ class ReportService:
 
     def generate_markdown(self):
         context = self._final_export_context()
-        context["project"] = self.repository.update_project(project_status="EXPORTED")
+        context["project"] = self.repository.update_project(project_status=ProjectStatus.EXPORTED.value)
         content = self._markdown_content(context)
         return self._persist_report(
             report_type="P0_MARKDOWN_REPORT",
             primary_file_name="p0_simulation_reference_report.md",
-            file_format="MARKDOWN",
+            file_format=ReportFormat.MARKDOWN.value,
             files=[("p0_simulation_reference_report.md", content)],
             context=context,
             operation_type="GENERATE_MARKDOWN_REPORT",
@@ -2900,12 +3339,12 @@ class ReportService:
 
     def generate_csv(self):
         context = self._final_export_context()
-        context["project"] = self.repository.update_project(project_status="EXPORTED")
+        context["project"] = self.repository.update_project(project_status=ProjectStatus.EXPORTED.value)
         files = self._csv_files(context)
         return self._persist_report(
             report_type="P0_CSV_EXPORT",
             primary_file_name="source_level_allocation.csv",
-            file_format="CSV",
+            file_format=ReportFormat.CSV.value,
             files=files,
             context=context,
             operation_type="GENERATE_CSV_EXPORT",
@@ -2913,13 +3352,13 @@ class ReportService:
 
     def generate_json(self):
         context = self._final_export_context()
-        context["project"] = self.repository.update_project(project_status="EXPORTED")
+        context["project"] = self.repository.update_project(project_status=ProjectStatus.EXPORTED.value)
         payload = self._json_payload(context)
         content = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
         return self._persist_report(
             report_type="P0_JSON_EXPORT",
             primary_file_name="p0_simulation_reference_export.json",
-            file_format="JSON",
+            file_format=ReportFormat.JSON.value,
             files=[("p0_simulation_reference_export.json", content)],
             context=context,
             operation_type="GENERATE_JSON_EXPORT",
@@ -2935,7 +3374,7 @@ class ReportService:
             )
         context = self._optional_export_context()
         if context["allocation"] and context["allocation_results"]:
-            context["project"] = self.repository.update_project(project_status="EXPORTED")
+            context["project"] = self.repository.update_project(project_status=ProjectStatus.EXPORTED.value)
         lines = [
             json.dumps(record, ensure_ascii=False, sort_keys=True)
             for record in self._audit_jsonl_records(audit_logs)
@@ -2944,7 +3383,7 @@ class ReportService:
         return self._persist_report(
             report_type="P0_AUDIT_LOG_EXPORT",
             primary_file_name="audit_log.jsonl",
-            file_format="JSONL",
+            file_format=ReportFormat.JSONL.value,
             files=[("audit_log.jsonl", content)],
             context=context,
             operation_type="EXPORT_AUDIT_LOG",
@@ -2966,14 +3405,14 @@ class ReportService:
                 "MD-DShap 任务尚无权重结果",
                 field_errors=[{"field": "task_id", "reason": "请先完成 MD-DShap 权重计算"}],
             )
-        context["project"] = self.repository.update_project(project_status="EXPORTED")
+        context["project"] = self.repository.update_project(project_status=ProjectStatus.EXPORTED.value)
         payload = self._md_dshap_audit_payload(context, task, results, traces)
         markdown = self._md_dshap_audit_markdown(payload)
         json_content = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
         return self._persist_report(
             report_type="MD_DSHAP_AUDIT_REPORT",
             primary_file_name="md_dshap_audit_report.md",
-            file_format="MARKDOWN",
+            file_format=ReportFormat.MARKDOWN.value,
             files=[
                 ("md_dshap_audit_report.md", markdown),
                 ("md_dshap_audit_report.json", json_content),
@@ -2985,10 +3424,9 @@ class ReportService:
         )
 
     def _final_export_context(self):
+        ProjectStateMachine(self.repository).require_report_export_allowed()
         context = self._optional_export_context()
         project = context["project"]
-        if project["project_status"] not in {"ALLOCATED", "CONFIRMED", "EXPORTED"}:
-            raise self._allocation_precondition_error()
         if not context["allocation"] or not context["allocation_results"]:
             raise self._allocation_precondition_error()
         return context
@@ -3612,7 +4050,7 @@ class ReportService:
         }
 
     def _export_root(self):
-        return Path(getattr(self.repository, "runtime_dir", "backend/runtime")) / "exports"
+        return Path(getattr(self.repository, "runtime_dir", "backend/runtime")) / P0_CONFIG.default_export_dir
 
     def _prepare_report_dir(self, report_id):
         export_root = self._export_root()
@@ -3629,13 +4067,13 @@ class ReportService:
     def _format_for_file(self, file_name, default):
         suffix = Path(file_name).suffix.lower()
         if suffix == ".md":
-            return "MARKDOWN"
+            return ReportFormat.MARKDOWN.value
         if suffix == ".csv":
-            return "CSV"
+            return ReportFormat.CSV.value
         if suffix == ".json":
-            return "JSON"
+            return ReportFormat.JSON.value
         if suffix == ".jsonl":
-            return "JSONL"
+            return ReportFormat.JSONL.value
         return default
 
     def _amount_text(self, value):
