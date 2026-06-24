@@ -4,13 +4,13 @@ import {
   ActionButton,
   DetailDrawer,
   DrawerSection,
+  EmptyGuide,
   MetricCard,
   PageHeader,
   RiskNotice,
   WorkbenchCard,
 } from "../../ui";
 import type { DataRow } from "../../domain/types";
-import { getMockWorkspace } from "../phase2aUtils";
 import type { PageProps } from "../pageTypes";
 
 const roleTabs = ["全部", "数据源主体", "运营方 / 技术服务方 / 中试基地", "专家方", "合同主体", "停用主体"];
@@ -21,7 +21,7 @@ interface PartyListItem {
   typeCode: string;
   dataProvider: string;
   mds: string;
-  resources: number;
+  resources: string;
   status: string;
   summary: string;
 }
@@ -34,48 +34,32 @@ interface PartyDraft {
   description: string;
 }
 
-const fallbackParties: PartyListItem[] = [
-  { partyId: "fallback_party_a", name: "数据源主体甲", type: "数据提供方", typeCode: "DATA_PROVIDER", dataProvider: "是", mds: "是", resources: 3, status: "有效" },
-  { partyId: "fallback_party_b", name: "数据源主体乙", type: "数据提供方", typeCode: "DATA_PROVIDER", dataProvider: "是", mds: "是", resources: 2, status: "有效" },
-  { partyId: "fallback_party_operator", name: "运营服务方", type: "运营方", typeCode: "OPERATOR", dataProvider: "否", mds: "否", resources: 0, status: "合同优先" },
-  { partyId: "fallback_party_service", name: "技术服务方", type: "技术服务方", typeCode: "SERVICE_PROVIDER", dataProvider: "否", mds: "否", resources: 0, status: "合同优先" },
-  { partyId: "fallback_party_expert", name: "外部专家组", type: "专家方", typeCode: "EXPERT", dataProvider: "否", mds: "否", resources: 0, status: "有效" },
-].map((party) => ({
-  ...party,
-  summary: party.mds === "是" ? "数据贡献主体，进入权重层候选" : "非数据贡献主体，合同优先或约束处理",
-}));
-
 function readCell(row: DataRow, key: string, fallback = "") {
   const value = row[key];
   return value === undefined || value === null || value === "" ? fallback : String(value);
 }
 
 function partyFromRow(row: DataRow, index: number): PartyListItem {
-  const dataProvider = readCell(row, "is_data_provider", "否");
-  const mds = readCell(row, "include_in_md_dshap", dataProvider === "是" ? "是" : "否");
-  const typeCode = readCell(row, "party_type_code", dataProvider === "是" ? "DATA_PROVIDER" : "SERVICE_PROVIDER");
+  const dataProvider = readCell(row, "is_data_provider", "后端未返回");
+  const mds = readCell(row, "include_in_md_dshap", "后端未返回");
+  const typeCode = readCell(row, "party_type_code", "后端未返回");
   return {
-    partyId: readCell(row, "party_id", `party_${index + 1}`),
-    name: readCell(row, "party_name", `参与方 ${index + 1}`),
+    partyId: readCell(row, "party_id", `backend_party_${index + 1}`),
+    name: readCell(row, "party_name", "后端未返回"),
     type: readCell(row, "party_type", "未分类"),
     typeCode,
     dataProvider,
     mds,
-    resources: Number(readCell(row, "linked_resource_count", "0")) || 0,
-    status: readCell(row, "status", "有效"),
-    summary: readCell(
-      row,
-      "contribution_summary",
-      mds === "是" ? "数据贡献主体，进入权重层候选" : "非数据贡献主体，合同优先或约束处理",
-    ),
+    resources: readCell(row, "linked_resource_count", "后端未返回"),
+    status: readCell(row, "status", "后端未返回"),
+    summary: readCell(row, "contribution_summary", "后端未返回"),
   };
 }
 
 export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageProps) {
-  const mock = getMockWorkspace(snapshot);
   const pageData = snapshot.pages[route.path];
-  const parties =
-    pageData.rows.length > 0 ? pageData.rows.map(partyFromRow) : fallbackParties;
+  const parties = pageData.rows.map(partyFromRow);
+  const partyMetrics = new Map(pageData.metrics.map((item) => [item.label, item]));
   const [activeTab, setActiveTab] = useState("全部");
   const [drawer, setDrawer] = useState<"" | "form" | "contribution" | "link">("");
   const [partyDraft, setPartyDraft] = useState<PartyDraft>(() => newPartyDraft());
@@ -87,9 +71,6 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
         : activeTab === "停用主体"
           ? parties.filter((party) => party.status === "停用")
           : parties.filter((party) => activeTab.includes(party.type) || party.status === "合同优先");
-  const dataProviderCount = parties.filter((party) => party.dataProvider === "是").length;
-  const mdsCount = parties.filter((party) => party.mds === "是").length;
-  const disabledCount = parties.filter((party) => party.status === "停用").length;
 
   return (
     <div className="pageWorkspace phase2Page partiesPage">
@@ -103,11 +84,11 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
       />
 
       <div className="metricGrid five">
-        <MetricCard item={{ label: "主体总数", value: String(parties.length), hint: "含合同优先主体", tone: "neutral" }} />
-        <MetricCard item={{ label: "数据源主体", value: String(dataProviderCount), hint: "默认进入算法权重池", tone: "success" }} />
-        <MetricCard item={{ label: "非数据主体", value: String(parties.length - dataProviderCount), hint: "按合同优先处理", tone: "neutral" }} />
-        <MetricCard item={{ label: "权重池主体", value: String(mdsCount || mock.dataProviders.filter((item) => item.includeInMDDShap).length), hint: "仅数据提供方", tone: "success" }} />
-        <MetricCard item={{ label: "停用主体", value: String(disabledCount), hint: "不参与后续计算", tone: "neutral" }} />
+        <MetricCard item={partyMetrics.get("参与方") ?? { label: "参与方", value: "后端未返回", hint: "需要 party summary DTO", tone: "neutral" }} />
+        <MetricCard item={partyMetrics.get("数据源主体") ?? { label: "数据源主体", value: "后端摘要待补", hint: "不在前端聚合", tone: "neutral" }} />
+        <MetricCard item={{ label: "非数据主体", value: "后端摘要待补", hint: "不在前端聚合", tone: "neutral" }} />
+        <MetricCard item={partyMetrics.get("进入权重池") ?? { label: "权重池主体", value: "后端摘要待补", hint: "需要 participant-pool DTO", tone: "neutral" }} />
+        <MetricCard item={{ label: "停用主体", value: "后端摘要待补", hint: "不在前端聚合", tone: "neutral" }} />
       </div>
 
       <RiskNotice compact />
@@ -181,8 +162,7 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
                           编辑
                         </button>
                         <button
-                          disabled={dataProviderCount <= 1 && party.dataProvider === "是"}
-                          title={dataProviderCount <= 1 && party.dataProvider === "是" ? "最后一个数据源主体不能停用" : actionRegistry["PARTY-005"].sideEffect}
+                          title="最后一个数据源主体、枚举合法性等规则由后端守卫返回。"
                           type="button"
                           onClick={() =>
                             onAction(actionRegistry["PARTY-005"], {
@@ -370,14 +350,10 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
         onClose={() => setDrawer("")}
       >
         <DrawerSection title="可关联资源">
-          <div className="checkList">
-            {mock.resources.slice(0, 4).map((resource) => (
-              <label key={resource.resourceKey}>
-                <input type="checkbox" defaultChecked={resource.providerName !== "未关联"} />
-                <span>{resource.name} / {resource.modality}</span>
-              </label>
-            ))}
-          </div>
+          <EmptyGuide
+            title="后端未提供参与方中心资源关联 DTO"
+            description="当前只保留资源页的主体关系入口；参与方页不再展示 mock 资源列表或假保存。"
+          />
         </DrawerSection>
       </DetailDrawer>
 
@@ -391,21 +367,10 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
         onClose={() => setDrawer("")}
       >
         <DrawerSection title="贡献、效用和权重摘要">
-          <div className="tableWrap">
-            <table className="dataTable phase2Table">
-              <thead><tr><th>主体</th><th>贡献得分</th><th>效用值</th><th>权重</th></tr></thead>
-              <tbody>
-                {mock.mdsWeights.map((weight) => (
-                  <tr key={weight.partyName}>
-                    <td>{weight.partyName}</td>
-                    <td>{weight.marginalContribution.toFixed(6)}</td>
-                    <td>{weight.utilityValue.toFixed(6)}</td>
-                    <td>{weight.normalizedWeight.toFixed(6)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <EmptyGuide
+            title="后端未提供参与方贡献摘要 DTO"
+            description="贡献得分、效用值和权重摘要必须来自 contribution/utility/MD-DShap 后端结果；页面不再展示 mock 权重。"
+          />
         </DrawerSection>
       </DetailDrawer>
     </div>

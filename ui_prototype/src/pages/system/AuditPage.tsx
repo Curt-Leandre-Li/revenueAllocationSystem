@@ -11,22 +11,14 @@ import {
   TraceDrawer,
   WorkbenchCard,
 } from "../../ui";
-import { getMockWorkspace } from "../phase2aUtils";
+import { cellText, pageMetrics, pageRows } from "../backendPageData";
 import type { PageProps } from "../pageTypes";
 
 export function AuditPage({ route, snapshot, onAction }: PageProps) {
   const [drawer, setDrawer] = useState<"" | "log" | "snapshot" | "export">("");
-  const mock = getMockWorkspace(snapshot);
-  const logs = mock.auditLogs.slice(0, 50);
-  const failureCount = logs.filter((log) => log.status === "失败").length;
-  const snapshotTypeLabels: Record<string, string> = {
-    INPUT: "输入快照",
-    PARAMETER: "参数快照",
-    OUTPUT: "输出快照",
-    UTILITY_OUTPUT: "效用输出快照",
-    ALGORITHM_OUTPUT: "算法输出快照",
-    REPORT_OUTPUT: "报告输出快照",
-  };
+  const pageData = snapshot.pages[route.path];
+  const logs = pageRows(pageData);
+  const metrics = pageMetrics(pageData);
 
   return (
     <div className="pageWorkspace phase2Page auditPage">
@@ -40,10 +32,10 @@ export function AuditPage({ route, snapshot, onAction }: PageProps) {
       />
 
       <div className="metricGrid four">
-        <MetricCard item={{ label: "最近日志", value: String(logs.length), hint: "默认最近 50 条", tone: "neutral" }} />
-        <MetricCard item={{ label: "失败日志", value: String(failureCount), hint: "不允许遗漏", tone: failureCount ? "warning" : "success" }} />
-        <MetricCard item={{ label: "快照记录", value: String(mock.snapshots.length), hint: "输入/参数/输出", tone: "success" }} />
-        <MetricCard item={{ label: "导出记录", value: String(mock.exports.length), hint: "可生成审计导出", tone: "neutral" }} />
+        {metrics.map((item) => (
+          <MetricCard item={item} key={item.label} />
+        ))}
+        <MetricCard item={{ label: "快照详情", value: "后端 detail", hint: "不使用 mock 快照", tone: "neutral" }} />
       </div>
 
       <WorkbenchCard
@@ -77,14 +69,14 @@ export function AuditPage({ route, snapshot, onAction }: PageProps) {
               <thead><tr><th>操作</th><th>对象</th><th>操作人</th><th>状态</th><th>时间</th><th>摘要</th><th>操作</th></tr></thead>
               <tbody>
                 {logs.length > 0 ? (
-                  logs.map((log) => (
-                    <tr key={`${log.operation}-${log.createdAt}`}>
-                      <td>{log.operation}</td>
-                      <td>{log.objectType}</td>
-                      <td>{log.operator}</td>
-                      <td><span className={`tag ${log.status === "失败" ? "danger" : "success"}`}>{log.status}</span></td>
-                      <td>{log.createdAt}</td>
-                      <td>{log.summary}</td>
+                  logs.map((log, index) => (
+                    <tr key={`${cellText(log, "operation", "operation")}-${index}`}>
+                      <td>{cellText(log, "operation")}</td>
+                      <td>{cellText(log, "object_type")}</td>
+                      <td>{cellText(log, "operator")}</td>
+                      <td><span className={`tag ${cellText(log, "status") === "失败" ? "danger" : "success"}`}>{cellText(log, "status")}</span></td>
+                      <td>{cellText(log, "created_at")}</td>
+                      <td>{cellText(log, "summary")}</td>
                       <td>
                         <div className="rowAction">
                           <button
@@ -117,15 +109,10 @@ export function AuditPage({ route, snapshot, onAction }: PageProps) {
         </WorkbenchCard>
 
         <WorkbenchCard title="快照详情" description="工程编号只在技术详情折叠展示。">
-          <div className="compactList">
-            {mock.snapshots.map((item) => (
-              <article key={`${item.name}-${item.createdAt}`}>
-                <strong>{item.name}</strong>
-                <span>{snapshotTypeLabels[item.type] ?? item.type} / {item.status}</span>
-                <small>{item.createdAt}</small>
-              </article>
-            ))}
-          </div>
+          <EmptyGuide
+            title="快照详情等待后端 audit detail DTO"
+            description="页面不再展示 mock 输入/参数/输出快照；点击日志详情后应由后端返回 snapshot_refs。"
+          />
         </WorkbenchCard>
       </div>
 
@@ -133,22 +120,12 @@ export function AuditPage({ route, snapshot, onAction }: PageProps) {
         footerNote="日志详情用于审计追溯，不显示工程编号正文。"
         objectType="日志详情"
         open={drawer === "log"}
-        output={{ 日志状态: "已读取", 失败原因: "无" }}
-        parameters={{ 操作员: snapshot.operator, 状态筛选: "全部" }}
+        output={{ 日志状态: "等待后端 detail", 失败原因: "以后端 failure_reason 为准" }}
+        parameters={{ 操作员: snapshot.operator }}
         statusTag="只读"
-        summary="展示操作、对象、状态、失败原因和修复建议；失败日志会保留在最近列表中。"
-        technicalDetails={{ input_snapshot_ref: "技术详情折叠", parameter_snapshot_ref: "技术详情折叠", output_snapshot_ref: "技术详情折叠" }}
+        summary="展示操作、对象、状态、失败原因和修复建议；详情应来自 /audit-logs/{id}。"
+        technicalDetails={pageData.technicalDetails}
         title="审计日志详情"
-        traceColumns={[
-          { key: "stage", label: "阶段" },
-          { key: "status", label: "状态" },
-          { key: "summary", label: "摘要" },
-        ]}
-        traceRows={[
-          { stage: "输入快照", status: "已生成", summary: "记录操作输入" },
-          { stage: "参数快照", status: "已生成", summary: "记录参数版本" },
-          { stage: "输出快照", status: "已生成", summary: "记录输出结果" },
-        ]}
         onClose={() => setDrawer("")}
       />
 
@@ -156,17 +133,11 @@ export function AuditPage({ route, snapshot, onAction }: PageProps) {
         footerNote="快照详情仅用于审计定位，工程编号在技术详情中折叠。"
         objectType="快照详情"
         open={drawer === "snapshot"}
-        output={{ 快照状态: "已读取", 快照范围: "输入/参数/输出" }}
+        output={{ 快照状态: "等待后端 detail", 快照范围: "以后端 snapshot_refs 为准" }}
         statusTag="只读"
-        summary="展示快照名称、类型、状态和生成时间。"
-        technicalDetails={{ snapshot_ref: "技术详情折叠" }}
+        summary="快照详情必须来自 audit detail DTO；当前不使用 mock 快照。"
+        technicalDetails={pageData.technicalDetails}
         title="快照详情"
-        traceColumns={[
-          { key: "name", label: "快照名称" },
-          { key: "type", label: "类型" },
-          { key: "status", label: "状态" },
-        ]}
-        traceRows={mock.snapshots.map((item) => ({ name: item.name, type: snapshotTypeLabels[item.type] ?? item.type, status: item.status }))}
         onClose={() => setDrawer("")}
       />
 

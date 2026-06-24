@@ -11,7 +11,7 @@ import {
   TechnicalDetails,
   WorkbenchCard,
 } from "../../ui";
-import type { DataRow, MetricItem } from "../../domain/types";
+import type { DataRow } from "../../domain/types";
 import type { PageProps } from "../pageTypes";
 
 interface PackageListItem {
@@ -22,68 +22,14 @@ interface PackageListItem {
   fileSize: string;
   receivedAt: string;
   active: boolean;
+  inputSnapshotId: string;
+  validationResultId: string;
+  checksum: string;
   resourceCount: string;
   partyCount: string;
   repairSuggestion: string;
   errorField: string;
 }
-
-const fallbackDataPackages: PackageListItem[] = [
-  {
-    name: "演示项目数据包",
-    source: "演示数据",
-    status: "校验通过",
-    fileName: "demo_input.json",
-    fileSize: "1.8 MB",
-    receivedAt: "2026-06-18 09:30",
-    active: true,
-    resourceCount: "4",
-    partyCount: "5",
-    repairSuggestion: "可进入资源管理",
-    errorField: "无",
-  },
-  {
-    name: "上传候选数据包",
-    source: "本地 JSON",
-    status: "待校验",
-    fileName: "candidate_input.json",
-    fileSize: "942 KB",
-    receivedAt: "待上传",
-    active: false,
-    resourceCount: "0",
-    partyCount: "0",
-    repairSuggestion: "按失败字段修复后重新上传",
-    errorField: "待校验",
-  },
-];
-
-const fallbackValidationIssues = [
-  {
-    problem: "participants 缺失",
-    location: "participants[2].party_type",
-    type: "必要字段缺失",
-    suggestion: "补充主体类型，并确认是否为数据提供方。",
-  },
-  {
-    problem: "总收益不能为负",
-    location: "revenue.total_revenue",
-    type: "数值范围错误",
-    suggestion: "将总收益调整为 0 或正数后重新上传。",
-  },
-  {
-    problem: "参与方名称重复",
-    location: "participants[*].party_name",
-    type: "唯一性冲突",
-    suggestion: "合并重复主体或改为不同主体名称。",
-  },
-];
-
-const fallbackMetrics: MetricItem[] = [
-  { label: "数据包", value: "2", hint: "演示与上传候选", tone: "neutral" },
-  { label: "校验通过", value: "1", hint: "可生成输入快照", tone: "success" },
-  { label: "校验失败", value: "1", hint: "包含字段修复建议", tone: "warning" },
-  { label: "输入快照", value: "1", hint: "最近一次有效接入", tone: "success" },
-];
 
 function readCell(row: DataRow, key: string, fallback = "") {
   const value = row[key];
@@ -91,21 +37,24 @@ function readCell(row: DataRow, key: string, fallback = "") {
 }
 
 function packageFromRow(row: DataRow, index: number): PackageListItem {
-  const status = readCell(row, "validation_status", "待校验");
+  const status = readCell(row, "validation_status", "后端未返回");
   const accessStatus = readCell(row, "access_status");
   const active = status.includes("通过") || status.includes("有效") || accessStatus.includes("接入");
   return {
-    name: readCell(row, "package_name", `数据包 ${index + 1}`),
+    name: readCell(row, "package_name", `后端数据包 ${index + 1}`),
     source: readCell(row, "source_type", "后端未同步"),
     status,
     fileName: readCell(row, "file_name", "-"),
     fileSize: readCell(row, "file_size", "-"),
     receivedAt: readCell(row, "created_at", "-"),
     active,
-    resourceCount: readCell(row, "resource_count", "0"),
-    partyCount: readCell(row, "party_count", "0"),
-    repairSuggestion: readCell(row, "repair_suggestion", active ? "可进入资源管理" : "按失败字段修复后重新上传"),
-    errorField: readCell(row, "error_field", active ? "无" : "未提供"),
+    inputSnapshotId: readCell(row, "input_snapshot_id", ""),
+    validationResultId: readCell(row, "validation_result_id", ""),
+    checksum: readCell(row, "checksum", ""),
+    resourceCount: readCell(row, "resource_count", "后端未返回"),
+    partyCount: readCell(row, "party_count", "后端未返回"),
+    repairSuggestion: readCell(row, "repair_suggestion", ""),
+    errorField: readCell(row, "error_field", ""),
   };
 }
 
@@ -114,22 +63,23 @@ export function DataPackagesPage({ route, snapshot, onAction, onNavigate }: Page
   const [uploadState, setUploadState] = useState("等待选择 UTF-8 JSON 文件");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pageData = snapshot.pages[route.path];
-  const dataPackages =
-    pageData.rows.length > 0 ? pageData.rows.map(packageFromRow) : fallbackDataPackages;
-  const metrics = pageData.metrics.length > 0 ? pageData.metrics : fallbackMetrics;
-  const selectedPackage = dataPackages[0] ?? fallbackDataPackages[0];
+  const dataPackages = pageData.rows.map(packageFromRow);
+  const metrics = pageData.metrics.length > 0
+    ? pageData.metrics
+    : [{ label: "数据接入摘要", value: "后端未返回", hint: "等待后端 page DTO", tone: "warning" as const }];
+  const selectedPackage = dataPackages[0];
   const validationIssues =
     dataPackages
-      .filter((item) => !item.active || item.errorField !== "无")
+      .filter((item) => item.errorField || item.repairSuggestion)
       .map((item) => ({
-        problem: item.status,
-        location: item.errorField,
+        problem: item.status || "后端校验记录",
+        location: item.errorField || "后端未返回字段位置",
         type: item.active ? "提醒" : "校验失败",
-        suggestion: item.repairSuggestion,
+        suggestion: item.repairSuggestion || "后端未返回修复建议",
       }));
-  const visibleIssues = validationIssues.length > 0 ? validationIssues : fallbackValidationIssues;
+  const visibleIssues = validationIssues;
 
-  function handleFile(file?: File) {
+  async function handleFile(file?: File) {
     if (!file) {
       return;
     }
@@ -138,7 +88,20 @@ export function DataPackagesPage({ route, snapshot, onAction, onNavigate }: Page
       setDrawer("failure");
       return;
     }
-    setUploadState(`${file.name} 已进入本地校验队列，校验通过后生成输入快照。`);
+    try {
+      const payload = JSON.parse(await file.text()) as unknown;
+      setUploadState(`${file.name} 已提交后端校验，等待接口返回校验结果。`);
+      onAction(actionRegistry["DATA-003"], {
+        kind: "data-package-upload",
+        payload,
+        fileName: file.name,
+      });
+    } catch (error) {
+      setUploadState(
+        `${file.name} 解析失败：${error instanceof Error ? error.message : "JSON 格式错误"}`,
+      );
+      setDrawer("failure");
+    }
   }
 
   return (
@@ -181,8 +144,7 @@ export function DataPackagesPage({ route, snapshot, onAction, onNavigate }: Page
           actions={
             <ActionButton
               action={actionRegistry["DATA-003"]}
-              onClick={(action) => {
-                onAction(action);
+              onClick={() => {
                 fileInputRef.current?.click();
               }}
             />
@@ -235,16 +197,35 @@ export function DataPackagesPage({ route, snapshot, onAction, onNavigate }: Page
           }
         >
           <div className="validationSummary">
-            <article className="success">
-              <strong>{selectedPackage.name}</strong>
-              <span>{selectedPackage.status} / {selectedPackage.active ? "已生成输入快照" : "未生成有效数据包"}</span>
-              <p>包含资源 {selectedPackage.resourceCount} 个，参与方 {selectedPackage.partyCount} 个。</p>
-            </article>
-            <article className="warning">
-              <strong>{visibleIssues[0]?.problem ?? "暂无失败记录"}</strong>
-              <span>{visibleIssues[0]?.location ?? "无"} / {visibleIssues[0]?.type ?? "通过"}</span>
-              <p>{visibleIssues[0]?.suggestion ?? "当前没有需要修复的校验问题。"}</p>
-            </article>
+            {selectedPackage ? (
+              <article className={selectedPackage.active ? "success" : "warning"}>
+                <strong>{selectedPackage.name}</strong>
+                <span>
+                  {selectedPackage.status} / {selectedPackage.inputSnapshotId ? "后端已返回输入快照" : "后端未返回输入快照"}
+                </span>
+                <p>
+                  资源数 {selectedPackage.resourceCount}；参与方数 {selectedPackage.partyCount}。
+                </p>
+              </article>
+            ) : (
+              <EmptyGuide
+                title="后端未返回数据包"
+                description="选择演示数据或上传 JSON 后，页面只展示后端返回的数据包记录。"
+              />
+            )}
+            {visibleIssues[0] ? (
+              <article className="warning">
+                <strong>{visibleIssues[0].problem}</strong>
+                <span>{visibleIssues[0].location} / {visibleIssues[0].type}</span>
+                <p>{visibleIssues[0].suggestion}</p>
+              </article>
+            ) : (
+              <article className="warning">
+                <strong>后端未返回失败详情</strong>
+                <span>上传校验 DTO / 后端字段</span>
+                <p>前端不再使用本地样例错误伪造校验结果。</p>
+              </article>
+            )}
           </div>
         </WorkbenchCard>
 
@@ -282,7 +263,7 @@ export function DataPackagesPage({ route, snapshot, onAction, onNavigate }: Page
               </tr>
             </thead>
             <tbody>
-            {dataPackages.map((item) => (
+            {dataPackages.length ? dataPackages.map((item) => (
                 <tr key={item.name}>
                   <td><strong>{item.name}</strong></td>
                   <td>{item.source}</td>
@@ -298,7 +279,16 @@ export function DataPackagesPage({ route, snapshot, onAction, onNavigate }: Page
                     </div>
                   </td>
                 </tr>
-              ))}
+              )) : (
+                <tr>
+                  <td colSpan={7}>
+                    <EmptyGuide
+                      title="后端未返回数据包列表"
+                      description="前端不会显示 demo_input.json 或候选文件作为成功兜底。"
+                    />
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -315,24 +305,31 @@ export function DataPackagesPage({ route, snapshot, onAction, onNavigate }: Page
         onClose={() => setDrawer("")}
       >
         <DrawerSection title="数据包概览">
-          <dl className="businessDetail compact">
-            <div><dt>数据包名称</dt><dd>{selectedPackage.name}</dd></div>
-            <div><dt>校验状态</dt><dd>{selectedPackage.status}</dd></div>
-            <div><dt>资源数量</dt><dd>{selectedPackage.resourceCount}</dd></div>
-            <div><dt>参与方数量</dt><dd>{selectedPackage.partyCount}</dd></div>
-          </dl>
+          {selectedPackage ? (
+            <dl className="businessDetail compact">
+              <div><dt>数据包名称</dt><dd>{selectedPackage.name}</dd></div>
+              <div><dt>校验状态</dt><dd>{selectedPackage.status}</dd></div>
+              <div><dt>输入快照</dt><dd>{selectedPackage.inputSnapshotId || "后端未返回"}</dd></div>
+              <div><dt>校验记录</dt><dd>{selectedPackage.validationResultId || "后端未返回"}</dd></div>
+              <div><dt>checksum</dt><dd>{selectedPackage.checksum || "后端未返回"}</dd></div>
+            </dl>
+          ) : (
+            <EmptyGuide
+              title="暂无可预览数据包"
+              description="后端未返回数据包记录，前端不展示样例安全摘要。"
+            />
+          )}
         </DrawerSection>
         <DrawerSection title="字段摘要">
-          <div className="chipList">
-            {["资源名称", "资源模态", "主体名称", "收益池", "质量输入", "效用输入"].map((item) => (
-              <span key={item}>{item}</span>
-            ))}
-          </div>
+          <EmptyGuide
+            title="后端未提供字段摘要 DTO"
+            description="字段、模态和缺失情况应由后端返回，不由前端从样例字段拼接。"
+          />
         </DrawerSection>
         <TechnicalDetails
           details={{
-            input_snapshot_id: "仅技术详情展示",
-            upload_validation_result: "校验通过",
+            input_snapshot_id: selectedPackage?.inputSnapshotId || "后端未返回",
+            upload_validation_result_id: selectedPackage?.validationResultId || "后端未返回",
           }}
         />
       </DetailDrawer>
@@ -348,8 +345,9 @@ export function DataPackagesPage({ route, snapshot, onAction, onNavigate }: Page
         onClose={() => setDrawer("")}
       >
         <DrawerSection title="失败原因与修复建议">
-          <div className="issueList">
-            {visibleIssues.map((issue) => (
+          {visibleIssues.length ? (
+            <div className="issueList">
+              {visibleIssues.map((issue) => (
               <article key={issue.location}>
                 <strong>{issue.problem}</strong>
                 <dl className="businessDetail compact">
@@ -358,13 +356,19 @@ export function DataPackagesPage({ route, snapshot, onAction, onNavigate }: Page
                   <div><dt>修复建议</dt><dd>{issue.suggestion}</dd></div>
                 </dl>
               </article>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyGuide
+              title="后端未返回失败详情"
+              description="本区域不再显示本地样例错误；上传接口返回字段级错误后再展示。"
+            />
+          )}
         </DrawerSection>
         <TechnicalDetails
           details={{
-            upload_validation_result: "失败记录仅用于审计追溯",
-            rejected_package_status: "未生成有效数据包",
+            upload_validation_result: visibleIssues.length ? "后端返回失败详情" : "后端未返回",
+            rejected_package_status: selectedPackage?.active ? "后端状态非失败" : "后端未返回有效数据包",
           }}
         />
       </DetailDrawer>

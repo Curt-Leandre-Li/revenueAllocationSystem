@@ -11,7 +11,6 @@ import {
   StatusStepper,
   WorkbenchCard,
 } from "../../ui";
-import { formatAmount, getMockWorkspace, isResourceBlocked } from "../phase2aUtils";
 import type { PageProps } from "../pageTypes";
 
 const processSteps = [
@@ -103,13 +102,9 @@ export function OverviewPage({
   onAction,
   onNavigate,
 }: PageProps) {
-  const mock = getMockWorkspace(snapshot);
   const pageData = snapshot.pages[route.path];
   const pageMetrics = new Map(pageData.metrics.map((item) => [item.label, item]));
-  const resources = mock.resources;
-  const blockedResources = resources.filter(isResourceBlocked).length;
-  const poolCount = mock.dataProviders.filter((party) => party.includeInMDDShap).length;
-  const reportReady = mock.reports.length > 0 ? "已有报告" : "待生成";
+  const reportReady = pageMetrics.get("报告状态")?.value ?? "后端未返回";
   useEffect(() => {
     function scrollToHash() {
       const sectionId = window.location.hash.replace("#", "");
@@ -132,32 +127,32 @@ export function OverviewPage({
   const metricItems = [
     {
       label: "数据包",
-      value: pageMetrics.get("数据包")?.value ?? "2",
-      hint: pageMetrics.get("数据包")?.hint ?? "演示数据与上传候选",
+      value: pageMetrics.get("数据包")?.value ?? "后端未返回",
+      hint: pageMetrics.get("数据包")?.hint ?? "来自 dashboard 聚合字段",
       tone: "neutral" as const,
     },
     {
       label: "数据资源",
-      value: pageMetrics.get("数据资源")?.value ?? String(resources.length),
-      hint: pageMetrics.get("数据资源")?.hint ?? `${resources.filter((item) => item.includeInCalculation).length} 个进入后续计算`,
+      value: pageMetrics.get("数据资源")?.value ?? "后端未返回",
+      hint: pageMetrics.get("数据资源")?.hint ?? "来自 dashboard 聚合字段",
       tone: "success" as const,
     },
     {
       label: "参与方",
-      value: pageMetrics.get("参与方")?.value ?? "5",
-      hint: pageMetrics.get("参与方")?.hint ?? "3 个数据源主体，2 个合同优先主体",
+      value: pageMetrics.get("参与方")?.value ?? "后端未返回",
+      hint: pageMetrics.get("参与方")?.hint ?? "来自 dashboard 聚合字段",
       tone: "neutral" as const,
     },
     {
       label: "算法权重池",
-      value: String(poolCount),
-      hint: "仅数据提供方进入",
-      tone: blockedResources ? "warning" as const : "success" as const,
+      value: "后端未返回",
+      hint: "需要 participant-pool summary DTO",
+      tone: "warning" as const,
     },
     {
       label: "当前收益池",
-      value: formatAmount(mock.currentRevenuePool),
-      hint: "模拟数据源收益池",
+      value: "后端未返回",
+      hint: "需要 allocation summary DTO",
       tone: "neutral" as const,
     },
     {
@@ -217,11 +212,7 @@ export function OverviewPage({
 
         <WorkbenchCard
           title="下一步操作"
-          description={
-            blockedResources
-              ? "先补齐资源主体归属，再启动完整链路计算。"
-              : "前置条件基本满足，可继续执行完整链路或查看报告。"
-          }
+          description="下一步操作和前置条件状态以后端 dashboard / disabled_actions 为准。"
           actions={
             <>
               <ActionButton
@@ -250,7 +241,7 @@ export function OverviewPage({
           }
         >
           <div className="nextActionBody">
-            <strong>{blockedResources ? "资源主体绑定未完成" : "可启动完整链路计算"}</strong>
+            <strong>{pageData.primaryTask || "等待后端返回下一步"}</strong>
             <p>
               计算会生成阶段快照、算法权重记录和审计日志；输出仅作模拟参考。
             </p>
@@ -322,12 +313,12 @@ export function OverviewPage({
           <div className="oneClickGrid">
             <article>
               <strong>前置条件检查</strong>
-              <span>{blockedResources ? "存在阻断" : "可继续执行"}</span>
-              <p>{blockedResources ? "仍有进入计算资源未绑定数据源主体。" : "资源、主体、效用和权重池条件已满足演示计算。"}</p>
+              <span>后端状态守卫</span>
+              <p>是否可执行以 dashboard preconditions 和 disabled_actions 为准。</p>
             </article>
             <article>
               <strong>失败节点</strong>
-              <span>{blockedResources ? "资源主体归属" : "暂无失败节点"}</span>
+              <span>后端未返回摘要</span>
               <p>失败节点会写入运行日志摘要，并保留阶段快照。</p>
             </article>
             <article>
@@ -346,15 +337,15 @@ export function OverviewPage({
 
       <div className="dashboardGrid">
         <SectionCard title="最近报告" description="报告记录包含字段范围和版本，不覆盖历史。">
-          <RecentReportList reports={mock.reports} />
+          <RecentReportList reports={[]} />
         </SectionCard>
 
         <SectionCard title="最近审计记录" description="关键操作生成审计日志。">
-          <RecentAuditList auditLogs={mock.auditLogs} />
+          <RecentAuditList auditLogs={[]} />
         </SectionCard>
 
         <SectionCard title="快照轨迹" description="阶段性输入、参数和输出快照。">
-          <SnapshotTimeline snapshots={mock.snapshots} />
+          <SnapshotTimeline snapshots={[]} />
         </SectionCard>
       </div>
     </div>
