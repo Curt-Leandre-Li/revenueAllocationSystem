@@ -900,33 +900,33 @@ button:disabled {
 
 .backendUnavailable {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(320px, 1.1fr);
-  gap: 22px;
-  margin-top: 18px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  margin-top: 12px;
   border: 1px solid #d8b56d;
   border-radius: 8px;
-  background:
-    linear-gradient(90deg, rgba(168, 101, 18, 0.08), rgba(13, 123, 114, 0.04)),
-    var(--surface);
-  padding: 24px;
+  background: #fff9ed;
+  padding: 12px 14px;
 }
 
-.backendUnavailable h1 {
-  margin: 8px 0 10px;
+.backendUnavailable h2 {
+  margin: 4px 0;
   color: var(--night);
-  font-size: 28px;
+  font-size: 16px;
 }
 
 .backendUnavailable p {
   max-width: 760px;
   margin: 0;
   color: #465668;
+  font-size: 13px;
 }
 
 .backendUnavailable dl {
   display: grid;
   gap: 8px;
-  margin: 0;
+  margin: 8px 0 0;
 }
 
 .backendUnavailable dl div {
@@ -948,6 +948,27 @@ button:disabled {
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.backendUnavailableInline {
+  display: grid;
+  gap: 4px;
+  color: #5e4520;
+  font-size: 12px;
+  justify-items: end;
+  text-align: right;
+}
+
+.backendUnavailableDetails {
+  grid-column: 1 / -1;
+  color: #465668;
+  font-size: 13px;
+}
+
+.backendUnavailableDetails summary {
+  cursor: pointer;
+  color: #294f86;
+  font-weight: 800;
 }
 
 .stateEyebrow {

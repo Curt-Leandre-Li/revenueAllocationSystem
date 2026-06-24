@@ -21,7 +21,7 @@ npm install
 npm run dev
 ```
 
-前端 API Base URL 通过 `VITE_API_BASE_URL` 或 `window.__DVAS_API_BASE_URL__` 配置；未配置时使用默认 `/api/v1`。
+前端 API Base URL 通过 `VITE_API_BASE_URL` 或 `VITE_DVAS_API_BASE_URL` 配置；未配置时使用默认 `http://127.0.0.1:8000/api/v1`。
 
 ## 构建前端
 

@@ -1,6 +1,6 @@
 import type { ActionId, StatusCode } from "./types";
 
-const DEFAULT_API_BASE_URL = "/api/v1";
+const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000/api/v1";
 
 export interface ApiEnvelope<T> {
   success: boolean;
@@ -173,7 +173,46 @@ async function request<T>(
       ...options.headers,
     },
   });
-  const envelope = (await response.json()) as ApiEnvelope<T>;
+  const contentType = response.headers.get("content-type") ?? "";
+  const responseText = await response.text();
+  if (isHtmlResponse(contentType, responseText)) {
+    throw new ApiClientError(
+      {
+        success: false,
+        code: "DVAS_API_BASE_MISCONFIGURED",
+        message:
+          "当前 API 请求返回 HTML，可能是 API Base 指向了前端开发服务器。请检查 .env.local 或 Vite proxy。",
+        trace_id: null,
+        field_errors: [
+          {
+            field: "API Base",
+            reason: `当前 API Base: ${getApiBaseUrl()}`,
+          },
+        ],
+      },
+      response.status,
+    );
+  }
+  let envelope: ApiEnvelope<T>;
+  try {
+    envelope = JSON.parse(responseText) as ApiEnvelope<T>;
+  } catch (error) {
+    throw new ApiClientError(
+      {
+        success: false,
+        code: "DVAS_INVALID_JSON_RESPONSE",
+        message: "后端响应不是标准 JSON 信封",
+        trace_id: null,
+        field_errors: [
+          {
+            field: "response",
+            reason: error instanceof Error ? error.message : String(error),
+          },
+        ],
+      },
+      response.status,
+    );
+  }
   if (!response.ok || !envelope.success) {
     throw new ApiClientError(envelope, response.status);
   }
@@ -181,6 +220,16 @@ async function request<T>(
     throw new Error("后端响应缺少 data 字段");
   }
   return envelope.data;
+}
+
+function isHtmlResponse(contentType: string, body: string) {
+  const normalizedType = contentType.toLowerCase();
+  const trimmedBody = body.trimStart().toLowerCase();
+  return (
+    normalizedType.includes("text/html") ||
+    trimmedBody.startsWith("<!doctype") ||
+    trimmedBody.startsWith("<html")
+  );
 }
 
 export const dvasApi = {

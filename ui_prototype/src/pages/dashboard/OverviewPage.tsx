@@ -104,6 +104,7 @@ export function OverviewPage({
 }: PageProps) {
   const pageData = snapshot.pages[route.path];
   const pageMetrics = new Map(pageData.metrics.map((item) => [item.label, item]));
+  const backendDisconnected = snapshot.backend?.connected === false;
   const reportReady = pageMetrics.get("报告状态")?.value ?? "后端未返回";
   useEffect(() => {
     function scrollToHash() {
@@ -190,8 +191,8 @@ export function OverviewPage({
         <section className="projectSnapshot">
           <div>
             <span className="eyebrow">当前项目</span>
-            <h2>{snapshot.projectName}</h2>
-            <p>{snapshot.scenarioName}</p>
+            <h2>{backendDisconnected ? "等待后端连接" : snapshot.projectName}</h2>
+            <p>{backendDisconnected ? "后端连接后显示项目与场景" : snapshot.scenarioName}</p>
           </div>
           <div className="statusPill">{projectStatusLabels[snapshot.status]}</div>
           <dl>
@@ -201,7 +202,7 @@ export function OverviewPage({
             </div>
             <div>
               <dt>最近同步</dt>
-              <dd>{snapshot.updatedAt}</dd>
+              <dd>{backendDisconnected ? "未连接" : snapshot.updatedAt}</dd>
             </div>
             <div>
               <dt>模拟边界</dt>
@@ -228,6 +229,7 @@ export function OverviewPage({
               </button>
               <ActionButton
                 action={actionRegistry["SYS-004"]}
+                disabledReason={backendDisconnected ? "后端连接后可用" : undefined}
                 onClick={(action) => onAction(action)}
               />
               <button
@@ -271,7 +273,13 @@ export function OverviewPage({
             {processSteps.map((step, index) => (
               <div
                 className={
-                  index < 6 ? "done" : index === 6 ? "current" : "pending"
+                  backendDisconnected
+                    ? "pending"
+                    : index < 6
+                      ? "done"
+                      : index === 6
+                        ? "current"
+                        : "pending"
                 }
                 key={step}
               >
@@ -306,6 +314,7 @@ export function OverviewPage({
           actions={
             <ActionButton
               action={actionRegistry["SYS-004"]}
+              disabledReason={backendDisconnected ? "后端连接后可用" : undefined}
               onClick={(action) => onAction(action)}
             />
           }

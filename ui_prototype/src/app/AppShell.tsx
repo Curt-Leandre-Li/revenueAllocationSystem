@@ -224,22 +224,22 @@ export function AppShell() {
 
         <p className="operationMessage">{store.lastMessage}</p>
 
-        {store.dataSource.mode === "backend" ? (
-          <RoutePage
-            route={route}
-            snapshot={store.snapshot}
-            onAction={handleAction}
-            onNavigate={navigate}
-            onOpenDetail={(title, row) => setRowDetail({ title, row })}
-            onOpenTrace={() => setTraceOpen(true)}
-          />
-        ) : (
+        {store.dataSource.mode !== "backend" ? (
           <BackendUnavailableState
-            apiBaseUrl={store.snapshot.backend?.apiBaseUrl ?? "/api/v1"}
+            apiBaseUrl={store.snapshot.backend?.apiBaseUrl ?? "http://127.0.0.1:8000/api/v1"}
             error={store.dataSource.lastError}
             modeLabel={backendChecked ? "后端不可用" : "正在连接后端"}
           />
-        )}
+        ) : null}
+
+        <RoutePage
+          route={route}
+          snapshot={store.snapshot}
+          onAction={handleAction}
+          onNavigate={navigate}
+          onOpenDetail={(title, row) => setRowDetail({ title, row })}
+          onOpenTrace={() => setTraceOpen(true)}
+        />
       </main>
 
       <DetailDrawer

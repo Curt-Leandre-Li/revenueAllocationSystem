@@ -35,10 +35,40 @@ export async function apiRequest<T>(
       ...headers,
     },
   });
+  const contentType = response.headers.get("content-type") ?? "";
+  const responseText = await response.text();
+
+  if (isHtmlResponse(contentType, responseText)) {
+    throw new DvasApiError(
+      apiErrorFromEnvelope(
+        {
+          success: false,
+          code: "DVAS_API_BASE_MISCONFIGURED",
+          message:
+            "当前 API 请求返回 HTML，可能是 API Base 指向了前端开发服务器。请检查 .env.local 或 Vite proxy。",
+          error: {
+            code: "DVAS_API_BASE_MISCONFIGURED",
+            field: "API Base",
+            detail: {
+              api_root_url: getDvasApiRootUrl(),
+              content_type: contentType || "unknown",
+            },
+          },
+          field_errors: [
+            {
+              field: "API Base",
+              reason: "后端未启动或 API Base 配置错误；请指向 http://127.0.0.1:8000/api/v1。",
+            },
+          ],
+        },
+        response.status,
+      ),
+    );
+  }
 
   let envelope: ApiEnvelope<T>;
   try {
-    envelope = (await response.json()) as ApiEnvelope<T>;
+    envelope = JSON.parse(responseText) as ApiEnvelope<T>;
   } catch (error) {
     throw new DvasApiError(
       apiErrorFromEnvelope(
@@ -71,4 +101,14 @@ export async function apiRequest<T>(
     );
   }
   return envelope.data;
+}
+
+function isHtmlResponse(contentType: string, body: string) {
+  const normalizedType = contentType.toLowerCase();
+  const trimmedBody = body.trimStart().toLowerCase();
+  return (
+    normalizedType.includes("text/html") ||
+    trimmedBody.startsWith("<!doctype") ||
+    trimmedBody.startsWith("<html")
+  );
 }
