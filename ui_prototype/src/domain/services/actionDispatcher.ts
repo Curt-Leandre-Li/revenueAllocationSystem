@@ -44,6 +44,13 @@ export function dispatchWorkbenchAction(
   action: ActionDefinition,
   payload?: ActionPayload,
 ): WorkbenchStore | Promise<WorkbenchStore> {
+  if (store.dataSource.mode !== "backend") {
+    return {
+      ...store,
+      lastMessage: `${action.label} 未执行：后端未连接，前端不会使用 mock 或 fallback 伪造成业务成功。`,
+    };
+  }
+
   const disabledReason = getActionDisabledReason(
     action,
     store.snapshot.status,

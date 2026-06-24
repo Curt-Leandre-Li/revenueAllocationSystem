@@ -3,7 +3,7 @@ import {
   isDvasBackendEnabled,
   type ApiError,
 } from "./api";
-import { workbenchSnapshot } from "./mockData";
+import { devOnlyWorkbenchSnapshot } from "./mockData";
 import {
   loadBackendWorkspaceSnapshot,
   markSnapshotSource,
@@ -11,8 +11,11 @@ import {
 import type { WorkbenchSnapshot } from "./types";
 
 const initialWorkbenchSnapshot: WorkbenchSnapshot = {
-  ...workbenchSnapshot,
-  status: "UTILITY_CALCULATED",
+  ...devOnlyWorkbenchSnapshot,
+  projectName: "后端未连接",
+  scenarioName: "等待后端工作区",
+  status: "DRAFT",
+  updatedAt: "",
   backend: {
     apiBaseUrl: getDvasApiBaseUrl(),
     availableActions: [
@@ -39,7 +42,7 @@ const initialWorkbenchSnapshot: WorkbenchSnapshot = {
   },
 };
 
-export type DataSourceMode = "mock" | "backend" | "mock_fallback";
+export type DataSourceMode = "initializing" | "backend" | "backend_unavailable";
 
 export interface DataSourceState {
   mode: DataSourceMode;
@@ -56,10 +59,10 @@ export interface WorkbenchStore {
 
 export function createWorkbenchStore(): WorkbenchStore {
   return {
-    snapshot: markSnapshotSource(initialWorkbenchSnapshot, "mock"),
-    lastMessage: "工作区已加载，正在等待后端同步；写操作不会使用前端 mock 伪造成功。",
+    snapshot: markSnapshotSource(initialWorkbenchSnapshot, "backend_unavailable"),
+    lastMessage: "工作区正在连接后端；连接前不展示 mock 业务成功状态。",
     dataSource: {
-      mode: "mock",
+      mode: "initializing",
       backendAvailable: false,
     },
   };
@@ -87,7 +90,7 @@ export async function loadBackendWorkbenchStore(
     };
   }
 
-  const fallbackSnapshot = markSnapshotSource(fallbackStore.snapshot, "mock_fallback");
+  const fallbackSnapshot = markSnapshotSource(fallbackStore.snapshot, "backend_unavailable");
   return {
     ...fallbackStore,
     snapshot: fallbackSnapshot,
@@ -96,7 +99,7 @@ export async function loadBackendWorkbenchStore(
       "dashboard workspace sync",
     ),
     dataSource: {
-      mode: "mock_fallback",
+      mode: "backend_unavailable",
       lastError: result.error,
       backendAvailable: false,
     },

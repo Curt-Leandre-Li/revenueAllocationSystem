@@ -46,6 +46,7 @@ export function ConfirmModal({
       <section className="confirmModal" role="dialog" aria-modal="true" aria-label="确认操作">
         <h2>{modalTitle}</h2>
         <p>{modalDescription}</p>
+        {action ? <p className="modalActionCode">功能编号：{action.id}</p> : null}
         {modalEffect ? <p className="modalEffect">{modalEffect}</p> : null}
         <p className="modalRisk">{modalRisk}</p>
         <div className="modalActions">

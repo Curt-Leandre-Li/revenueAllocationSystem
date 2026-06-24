@@ -8,6 +8,7 @@ import { getActionDisabledReason } from "../domain/permissions";
 import type { ActionDefinition, AppRoute, DataRow, RoutePath, WorkbenchSnapshot } from "../domain/types";
 import {
   ActionButton,
+  ChartPanel,
   DataTable,
   MetricCard,
   PageHeader,
@@ -99,6 +100,12 @@ export function ModulePageScaffold({
         </WorkbenchCard>
 
         <aside className="sideRail">
+          <ChartPanel
+            title="可视化数据源"
+            description="图表只消费后端字段或 chart DTO。"
+            source={pageData.chart?.source?.snapshot_id ?? pageData.chart?.source?.result_id}
+          />
+
           <SectionCard title="前置条件" description="按钮执行前必须满足的业务检查。">
             <PreconditionPanel items={pageData.preconditions} onNavigate={onNavigate} />
           </SectionCard>

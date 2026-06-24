@@ -1,22 +1,25 @@
 :root {
-  color: #172033;
-  background: #f4f6f8;
-  font-family: Inter, "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+  color: #132033;
+  background: #f5f7fa;
+  font-family: "Inter", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
   font-size: 14px;
   line-height: 1.45;
   letter-spacing: 0;
+  --ink: #132033;
+  --night: #0f172a;
   --surface: #ffffff;
-  --page: #f4f6f8;
-  --line: #d7dee8;
-  --line-strong: #b8c4d3;
-  --text: #172033;
-  --muted: #657386;
-  --blue: #1d4ed8;
-  --teal: #0f766e;
-  --green: #15803d;
-  --amber: #b45309;
+  --page: #f5f7fa;
+  --line: #d9e1ea;
+  --line-strong: #aebdcc;
+  --text: #132033;
+  --muted: #637184;
+  --blue: #1f5f99;
+  --teal: #0d7b72;
+  --green: #167348;
+  --amber: #a86512;
   --red: #b42318;
-  --purple: #6d28d9;
+  --purple: #6654a8;
+  --focus: #2f80ed;
 }
 
 * {
@@ -413,7 +416,7 @@ button:disabled {
 
 .topbar {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) repeat(2, auto) auto auto;
+  grid-template-columns: auto minmax(220px, 1fr) repeat(3, auto) auto auto;
   gap: 10px;
   align-items: center;
   min-height: 58px;
@@ -421,6 +424,10 @@ button:disabled {
   border-radius: 8px;
   background: var(--surface);
   padding: 10px 12px;
+}
+
+.topbarSystem strong {
+  color: var(--night);
 }
 
 .topbar div {
@@ -458,6 +465,14 @@ button:disabled {
   background: #f3f7ff;
   color: #183d7a;
   padding: 8px 10px;
+}
+
+.globalStatusRail {
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 10px;
 }
 
 .pageWorkspace {
@@ -719,8 +734,10 @@ button:disabled {
 
 .actionButton {
   display: inline-flex;
+  position: relative;
   min-height: 32px;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   border: 1px solid var(--line-strong);
   border-radius: 6px;
@@ -733,6 +750,14 @@ button:disabled {
   color: var(--muted);
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 11px;
+}
+
+.actionButton small {
+  flex-basis: 100%;
+  color: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.78;
 }
 
 .actionButton.primary {
@@ -871,6 +896,148 @@ button:disabled {
 .precondition p {
   margin: 0;
   color: var(--muted);
+}
+
+.backendUnavailable {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(320px, 1.1fr);
+  gap: 22px;
+  margin-top: 18px;
+  border: 1px solid #d8b56d;
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(168, 101, 18, 0.08), rgba(13, 123, 114, 0.04)),
+    var(--surface);
+  padding: 24px;
+}
+
+.backendUnavailable h1 {
+  margin: 8px 0 10px;
+  color: var(--night);
+  font-size: 28px;
+}
+
+.backendUnavailable p {
+  max-width: 760px;
+  margin: 0;
+  color: #465668;
+}
+
+.backendUnavailable dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.backendUnavailable dl div {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 10px;
+}
+
+.backendUnavailable dt {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.backendUnavailable dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.stateEyebrow {
+  display: inline-flex;
+  border: 1px solid #e5c786;
+  border-radius: 999px;
+  background: #fff7e6;
+  color: #7b4a07;
+  padding: 3px 9px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.chartPanel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 12px;
+}
+
+.chartPanelHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chartPanelHead h2 {
+  margin: 0;
+  color: var(--night);
+  font-size: 16px;
+}
+
+.chartPanelHead p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.chartPanelHead span {
+  align-self: start;
+  border: 1px solid #cfe2df;
+  border-radius: 999px;
+  background: #f3fbfa;
+  color: #0b5f59;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.chartPanelBody {
+  min-height: 118px;
+  border: 1px dashed #c7d3df;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 12px;
+}
+
+.chartEmpty {
+  display: grid;
+  height: 100%;
+  min-height: 90px;
+  align-content: center;
+  gap: 4px;
+  color: var(--muted);
+}
+
+.chartEmpty strong {
+  color: var(--text);
+}
+
+.chartEmpty p,
+.chartDisclaimer {
+  margin: 0;
+}
+
+.chartDisclaimer {
+  color: #73510a;
+  font-size: 12px;
+}
+
+.modalActionCode {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #405064;
+  padding: 8px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
 }
 
 .traceButton {
@@ -1770,12 +1937,6 @@ button:disabled {
   background: var(--teal);
 }
 
-.weightTotal {
-  margin: 10px 0 0;
-  color: #405064;
-  text-align: right;
-}
-
 .oneClickGrid,
 .reportsGrid,
 .exportCards {
@@ -2132,7 +2293,8 @@ textarea {
   .topbar,
   .pageHeader,
   .workspaceGrid,
-  .workbenchCardHead {
+  .workbenchCardHead,
+  .backendUnavailable {
     grid-template-columns: 1fr;
   }
 

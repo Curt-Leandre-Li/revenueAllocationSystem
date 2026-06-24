@@ -9,11 +9,23 @@ import {
 
 export const AllocationService: MockDomainService = {
   readPage: readPageFromStore,
-  handleAction(store, action) {
+  handleAction(store, action, payload) {
     if (action.id === "ALLOC-011") {
+      if (payload?.kind !== "allocation-run") {
+        return backendUnavailableStore(
+          store,
+          action.label,
+          "allocation run requires backend-owned revenue payload",
+        );
+      }
       return mutateBackendAndRefresh(
         store,
-        () => dvasApi.runAllocationSimulation(),
+        () =>
+          dvasApi.runAllocationSimulation({
+            total_revenue: payload.totalRevenue,
+            priority_allocation_amount: payload.priorityAllocationAmount,
+            allocation_mode: payload.allocationMode,
+          }),
         "收益分配模拟已由后端完成，项目状态已刷新。",
         "allocation simulation run",
       );

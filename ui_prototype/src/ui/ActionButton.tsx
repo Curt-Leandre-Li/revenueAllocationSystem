@@ -15,7 +15,9 @@ export function ActionButton({ action, disabledReason, onClick }: ActionButtonPr
       type="button"
       onClick={() => onClick(action)}
     >
+      <span>{action.id}</span>
       {action.label}
+      {disabledReason ? <small>{disabledReason}</small> : null}
     </button>
   );
 }

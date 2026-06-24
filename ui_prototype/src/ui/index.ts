@@ -1,4 +1,6 @@
 export * from "./ActionButton";
+export * from "./BackendUnavailableState";
+export * from "./ChartPanel";
 export * from "./ConfirmModal";
 export * from "./DataTable";
 export * from "./DetailDrawer";

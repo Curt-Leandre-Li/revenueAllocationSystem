@@ -15,27 +15,6 @@ import type {
   BackendUploadValidationResultDto,
 } from "./dtoMappers";
 
-const demoUploadPayload = {
-  package_name: "前端联调 JSON 上传示例",
-  file_name: "frontend-upload-demo.json",
-  resources: [
-    {
-      resource_name: "联调结构化数据表",
-      modality: "TABULAR",
-      field_count: 12,
-      sample_count: 240,
-      provider_party_name: "前端联调数据源主体",
-    },
-  ],
-  parties: [
-    {
-      party_name: "前端联调数据源主体",
-      party_type: "DATA_PROVIDER",
-      include_in_md_dshap: true,
-    },
-  ],
-};
-
 export const dvasApi = {
   getProject: () => apiRequest<BackendProjectDto>(endpoints.projectCurrentStatus),
   getNavigationMenus: () =>
@@ -62,7 +41,7 @@ export const dvasApi = {
       bodyJson: {},
     });
   },
-  uploadJson: (payload: unknown = demoUploadPayload) =>
+  uploadJson: (payload: unknown) =>
     apiRequest<unknown>(endpoints.uploadDataPackage, {
       method: "POST",
       bodyJson: payload,
@@ -119,20 +98,65 @@ export const dvasApi = {
       method: "POST",
       bodyJson: {},
     }),
+  getQualityWeights: () => apiRequest<Record<string, unknown>>(endpoints.qualityWeights),
+  saveQualityWeights: (payload: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>(endpoints.qualityWeights, {
+      method: "PUT",
+      bodyJson: payload,
+    }),
+  getLatestQualityAssessment: () =>
+    apiRequest<Record<string, unknown>>(endpoints.qualityLatest),
+  getQualityAssessmentDetails: (assessmentId: string) =>
+    apiRequest<Record<string, unknown>>(endpoints.qualityDetails(assessmentId)),
+  saveShuyuanParameters: (payload: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>(endpoints.shuyuanParameters, {
+      method: "PUT",
+      bodyJson: payload,
+    }),
+  saveShuyuanCallCounts: (payload: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>(endpoints.shuyuanCallCounts, {
+      method: "PUT",
+      bodyJson: payload,
+    }),
   runShuyuanMetering: () =>
     apiRequest<unknown>(endpoints.shuyuanCalculate, {
       method: "POST",
       bodyJson: {},
+    }),
+  getLatestShuyuanMetering: () =>
+    apiRequest<Record<string, unknown>>(endpoints.shuyuanLatest),
+  getShuyuanMeteringDetails: (meteringId: string) =>
+    apiRequest<Record<string, unknown>>(endpoints.shuyuanDetails(meteringId)),
+  saveContributionFactors: (payload: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>(endpoints.contributionFactors, {
+      method: "PUT",
+      bodyJson: payload,
     }),
   runContribution: () =>
     apiRequest<unknown>(endpoints.contributionCalculate, {
       method: "POST",
       bodyJson: {},
     }),
+  saveUtilityFunction: (payload: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>(endpoints.utilityFunction, {
+      method: "PUT",
+      bodyJson: payload,
+    }),
   runUtility: () =>
     apiRequest<unknown>(endpoints.utilityCalculate, {
       method: "POST",
       bodyJson: {},
+    }),
+  getLatestUtility: () =>
+    apiRequest<Record<string, unknown>>(endpoints.utilityLatest),
+  getUtilityTrace: (utilityId: string) =>
+    apiRequest<Record<string, unknown>>(endpoints.utilityTrace(utilityId)),
+  getMdDshapConfig: () =>
+    apiRequest<Record<string, unknown>>(endpoints.mdDshapConfig),
+  saveMdDshapConfig: (payload: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>(endpoints.mdDshapConfig, {
+      method: "PUT",
+      bodyJson: payload,
     }),
   listMdDshapParticipantPool: () =>
     apiRequest<unknown>(endpoints.mdDshapParticipantPool),
@@ -140,6 +164,8 @@ export const dvasApi = {
     apiRequest<Record<string, unknown>>(endpoints.mdDshapTask(taskId)),
   getMdDshapTaskResults: (taskId: string) =>
     apiRequest<TablePage<Record<string, unknown>>>(endpoints.mdDshapTaskResults(taskId)),
+  getMdDshapMarginalTraces: (taskId: string) =>
+    apiRequest<TablePage<Record<string, unknown>>>(endpoints.mdDshapMarginalTraces(taskId)),
   runMdDshap: (payload: Record<string, unknown> = {}) =>
     apiRequest<unknown>(endpoints.mdDshapTasks, {
       method: "POST",
@@ -159,10 +185,25 @@ export const dvasApi = {
       bodyJson: {},
     });
   },
-  runAllocationSimulation: () =>
+  runAllocationSimulation: (payload: Record<string, unknown>) =>
     apiRequest<unknown>(endpoints.allocationRun, {
       method: "POST",
-      bodyJson: { total_revenue: 1000, priority_allocation_amount: 0 },
+      bodyJson: payload,
+    }),
+  saveAllocationRevenuePool: (payload: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>(endpoints.allocationRevenuePool, {
+      method: "PUT",
+      bodyJson: payload,
+    }),
+  saveAllocationPriorityItems: (payload: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>(endpoints.allocationPriorityItems, {
+      method: "PUT",
+      bodyJson: payload,
+    }),
+  saveAllocationMode: (payload: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>(endpoints.allocationMode, {
+      method: "PUT",
+      bodyJson: payload,
     }),
   getAllocationResults: (allocationId: string) =>
     apiRequest<TablePage<Record<string, unknown>>>(endpoints.allocationResults(allocationId)),

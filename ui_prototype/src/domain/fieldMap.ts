@@ -398,7 +398,7 @@ export const routeFieldMappings: RouteFieldMapping[] = [
     ]),
   },
   {
-    routePath: "/measure/quality",
+    routePath: "/metering/quality",
     menuCode: "NAV_MEASURE_QUALITY",
     moduleCode: "QUAL",
     pageName: "质量评估管理",
@@ -424,7 +424,7 @@ export const routeFieldMappings: RouteFieldMapping[] = [
     ]),
   },
   {
-    routePath: "/measure/shuyuan",
+    routePath: "/metering/shuyuan",
     menuCode: "NAV_MEASURE_SHUYUAN",
     moduleCode: "DU",
     pageName: "数元计量管理",
@@ -449,7 +449,7 @@ export const routeFieldMappings: RouteFieldMapping[] = [
     ]),
   },
   {
-    routePath: "/measure/utility",
+    routePath: "/metering/utility",
     menuCode: "NAV_MEASURE_UTILITY",
     moduleCode: "UTIL",
     pageName: "贡献度与效用计算",

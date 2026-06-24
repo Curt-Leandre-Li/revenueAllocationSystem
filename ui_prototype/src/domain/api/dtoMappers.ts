@@ -136,6 +136,7 @@ export interface BackendReportRecordDto extends BackendRecord {
   file_name?: string;
   file_format?: string;
   checksum?: string;
+  status?: string;
   created_at: string;
   export_file_ids?: string[];
   simulation_disclaimer?: string;
@@ -526,9 +527,9 @@ export function mapReportRecordDto(dto: BackendReportRecordDto): ReportModel {
     reportType: stringValue(dto.report_type),
     checksum: stringValue(dto.checksum),
     exportFileIds: stringArray(dto.export_file_ids),
-    name: reportTypeLabel(dto.report_type),
+    name: stringValue(dto.file_name, reportTypeLabel(dto.report_type)),
     type: fileFormat,
-    status: "已生成",
+    status: stringValue(dto.status, "后端未返回"),
     createdAt: formatDateTime(dto.created_at),
     fieldScope: stringValue(
       dto.simulation_disclaimer,
@@ -610,6 +611,8 @@ export function mapPartyToProviderOption(party: PartyModel, linkedResourceCount:
 
 export function mapDataResourceToRow(resource: DataResourceModel): DataRow {
   return {
+    resource_id: resource.resourceId,
+    package_id: resource.packageId,
     resource_name: resource.name,
     modality: resource.modality,
     field_count: resource.fieldCount,

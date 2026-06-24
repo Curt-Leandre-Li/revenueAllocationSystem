@@ -1,5 +1,8 @@
 import type { ActionDefinition, PermissionCode, Phase, StatusCode } from "./types";
-import { isLockedStatus } from "./status";
+import {
+  getContractDisabledReason,
+  getReadOnlyDisabledReason,
+} from "./stateGuards";
 
 export const permissionLabels: Record<PermissionCode, string> = {
   VIEW: "查看",
@@ -34,17 +37,18 @@ export function getActionDisabledReason(
     return "P1 能力，当前 P0 阶段仅展示规划";
   }
 
+  const contractReason = getContractDisabledReason(action);
+  if (contractReason) {
+    return contractReason;
+  }
+
   if (!localOperatorPermissions.includes(action.permission)) {
     return "本地操作员无此按钮权限";
   }
 
-  if (
-    isLockedStatus(projectStatus) &&
-    ["CREATE", "UPDATE", "DELETE_DISABLE", "CALCULATE", "CONFIRM"].includes(
-      action.permission,
-    )
-  ) {
-    return "方案已锁定或已导出，请复制新版本后再修改";
+  const readOnlyReason = getReadOnlyDisabledReason(action, projectStatus);
+  if (readOnlyReason) {
+    return readOnlyReason;
   }
 
   const backendDisabled = backendDisabledActions.find(

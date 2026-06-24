@@ -183,27 +183,6 @@ async function request<T>(
   return envelope.data;
 }
 
-const demoUploadPayload = {
-  package_name: "前端联调 JSON 上传示例",
-  file_name: "frontend-upload-demo.json",
-  resources: [
-    {
-      resource_name: "联调结构化数据表",
-      modality: "TABULAR",
-      field_count: 12,
-      sample_count: 240,
-      provider_party_name: "前端联调数据源主体",
-    },
-  ],
-  parties: [
-    {
-      party_name: "前端联调数据源主体",
-      party_type: "DATA_PROVIDER",
-      include_in_md_dshap: true,
-    },
-  ],
-};
-
 export const dvasApi = {
   baseUrl: getApiBaseUrl,
   getProject: () => request<BackendProject>("/projects/current"),
@@ -216,10 +195,10 @@ export const dvasApi = {
       method: "POST",
       body: "{}",
     }),
-  uploadDemoJson: () =>
+  uploadJson: (payload: unknown) =>
     request<unknown>("/data-packages/upload", {
       method: "POST",
-      body: JSON.stringify(demoUploadPayload),
+      body: JSON.stringify(payload),
     }),
   listPackages: () => request<TablePage<BackendDataPackage>>("/data-packages"),
   listResources: () => request<TablePage<BackendDataResource>>("/data-resources"),

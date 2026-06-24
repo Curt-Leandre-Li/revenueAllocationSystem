@@ -25,17 +25,37 @@ export const endpoints = {
   partyStatus: (partyId: string) =>
     `/data/parties/${encodeURIComponent(partyId)}/status`,
   qualityEvaluate: "/metering/quality/evaluate",
+  qualityWeights: "/metering/quality/weights",
+  qualityLatest: "/quality-assessments/latest",
+  qualityDetails: (assessmentId: string) =>
+    `/quality-assessments/${encodeURIComponent(assessmentId)}/details`,
+  shuyuanParameters: "/metering/shuyuan/parameters",
+  shuyuanCallCounts: "/metering/shuyuan/call-counts",
   shuyuanCalculate: "/metering/shuyuan/calculate",
+  shuyuanLatest: "/shuyuan-meterings/latest",
+  shuyuanDetails: (meteringId: string) =>
+    `/shuyuan-meterings/${encodeURIComponent(meteringId)}/details`,
+  contributionFactors: "/metering/utility/contribution-factors",
   contributionCalculate: "/metering/utility/contribution/calculate",
+  utilityFunction: "/metering/utility/function",
   utilityCalculate: "/metering/utility/calculate",
+  utilityLatest: "/utilities/latest",
+  utilityTrace: (utilityId: string) =>
+    `/utilities/${encodeURIComponent(utilityId)}/trace`,
+  mdDshapConfig: "/allocation/md-dshap/config",
   mdDshapParticipantPool: "/allocation/md-dshap/participant-pool",
   mdDshapTasks: "/allocation/md-dshap/tasks",
   mdDshapTask: (taskId: string) =>
     `/allocation/md-dshap/tasks/${encodeURIComponent(taskId)}`,
   mdDshapTaskResults: (taskId: string) =>
     `/allocation/md-dshap/tasks/${encodeURIComponent(taskId)}/results`,
+  mdDshapMarginalTraces: (taskId: string) =>
+    `/md-dshap/tasks/${encodeURIComponent(taskId)}/marginal-traces`,
   mdDshapTaskAuditExport: (taskId: string) =>
     `/allocation/md-dshap/tasks/${encodeURIComponent(taskId)}/audit-export`,
+  allocationRevenuePool: "/allocation/simulation/revenue-pool",
+  allocationPriorityItems: "/allocation/simulation/priority-items",
+  allocationMode: "/allocation/simulation/mode",
   allocationRun: "/allocation/simulation/run",
   allocationResults: (allocationId: string) =>
     `/allocation-scenarios/${encodeURIComponent(allocationId)}/results`,

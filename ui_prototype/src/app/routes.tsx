@@ -6,9 +6,9 @@ import { DataPackagesPage } from "../pages/data/DataPackagesPage";
 import { DataPartiesPage } from "../pages/data/DataPartiesPage";
 import { DataResourcesPage } from "../pages/data/DataResourcesPage";
 import { OverviewPage } from "../pages/dashboard/OverviewPage";
-import { QualityPage } from "../pages/measure/QualityPage";
-import { ShuyuanPage } from "../pages/measure/ShuyuanPage";
-import { UtilityPage } from "../pages/measure/UtilityPage";
+import { QualityPage } from "../pages/metering/QualityPage";
+import { ShuyuanPage } from "../pages/metering/ShuyuanPage";
+import { UtilityPage } from "../pages/metering/UtilityPage";
 import type { PageProps } from "../pages/pageTypes";
 import { ReportsPage } from "../pages/reports/ReportsPage";
 import { AuditPage } from "../pages/system/AuditPage";
@@ -54,7 +54,7 @@ export const appRoutes: AppRoute[] = [
     actionIds: ["PARTY-002", "PARTY-003", "PARTY-005", "PARTY-006", "PARTY-008"],
   },
   {
-    path: "/measure/quality",
+    path: "/metering/quality",
     label: "质量评估管理",
     menuCode: "NAV_MEASURE_QUALITY",
     moduleCode: "QUAL",
@@ -63,7 +63,7 @@ export const appRoutes: AppRoute[] = [
     actionIds: ["QUAL-002", "QUAL-003", "QUAL-006", "QUAL-009"],
   },
   {
-    path: "/measure/shuyuan",
+    path: "/metering/shuyuan",
     label: "数元计量管理",
     menuCode: "NAV_MEASURE_SHUYUAN",
     moduleCode: "DU",
@@ -72,7 +72,7 @@ export const appRoutes: AppRoute[] = [
     actionIds: ["DU-002", "DU-003", "DU-009", "DU-010"],
   },
   {
-    path: "/measure/utility",
+    path: "/metering/utility",
     label: "贡献度与效用计算",
     menuCode: "NAV_MEASURE_UTILITY",
     moduleCode: "UTIL",
@@ -170,14 +170,10 @@ export const dashboardSectionRouteMap: Record<string, { path: RoutePath; section
 
 export const compatibilityRouteMap: Record<string, RoutePath> = {
   "/": "/dashboard",
-  "/dashboard": "/dashboard",
   "/data/packages": "/data/ingestion",
-  "/metering/quality": "/measure/quality",
-  "/metering/shuyuan": "/measure/shuyuan",
-  "/metering/utility": "/measure/utility",
-  "/quality": "/measure/quality",
-  "/shuyuan": "/measure/shuyuan",
-  "/utility": "/measure/utility",
+  "/quality": "/metering/quality",
+  "/shuyuan": "/metering/shuyuan",
+  "/utility": "/metering/utility",
   "/md-dshap": "/allocation/md-dshap",
   "/allocation": "/allocation/simulation",
   "/constraints": "/allocation/constraints",
@@ -191,9 +187,9 @@ export const routeComponents: Record<RoutePath, ComponentType<PageProps>> = {
   "/data/ingestion": DataPackagesPage,
   "/data/resources": DataResourcesPage,
   "/data/parties": DataPartiesPage,
-  "/measure/quality": QualityPage,
-  "/measure/shuyuan": ShuyuanPage,
-  "/measure/utility": UtilityPage,
+  "/metering/quality": QualityPage,
+  "/metering/shuyuan": ShuyuanPage,
+  "/metering/utility": UtilityPage,
   "/allocation/md-dshap": MDDShapPage,
   "/allocation/simulation": SimulationPage,
   "/allocation/constraints": ConstraintsPage,

@@ -36,7 +36,24 @@ export async function apiRequest<T>(
     },
   });
 
-  const envelope = (await response.json()) as ApiEnvelope<T>;
+  let envelope: ApiEnvelope<T>;
+  try {
+    envelope = (await response.json()) as ApiEnvelope<T>;
+  } catch (error) {
+    throw new DvasApiError(
+      apiErrorFromEnvelope(
+        {
+          success: false,
+          code: "DVAS_INVALID_JSON_RESPONSE",
+          message: "后端响应不是标准 JSON 信封",
+          error: {
+            detail: error instanceof Error ? error.message : String(error),
+          },
+        },
+        response.status,
+      ),
+    );
+  }
   if (!response.ok || !envelope.success) {
     throw new DvasApiError(apiErrorFromEnvelope(envelope, response.status));
   }

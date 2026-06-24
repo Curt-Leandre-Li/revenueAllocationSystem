@@ -11,6 +11,7 @@ import { fieldLabels } from "../domain/fieldMap";
 import { dvasApi, formatApiError, type BackendNavigationMenuDto } from "../domain/api";
 import { dispatchWorkbenchAction } from "../domain/services";
 import { projectStatusLabels } from "../domain/status";
+import { simulationDisclaimer } from "../domain/stateGuards";
 import {
   createWorkbenchStore,
   loadBackendWorkbenchStore,
@@ -18,7 +19,14 @@ import {
 } from "../domain/store";
 import type { WorkbenchStore } from "../domain/store";
 import type { ActionDefinition, ActionPayload, DataRow, RoutePath } from "../domain/types";
-import { ConfirmModal, DetailDrawer, SideNav, TraceDrawer } from "../ui";
+import {
+  BackendUnavailableState,
+  ConfirmModal,
+  DetailDrawer,
+  SideNav,
+  StatusStepper,
+  TraceDrawer,
+} from "../ui";
 import { WorkbenchPage } from "../pages/WorkbenchPage";
 
 interface RowDetail {
@@ -32,10 +40,12 @@ interface PendingConfirmation {
 }
 
 export function AppShell() {
+  const shouldSyncBackend = shouldAttemptBackendSync(window.location.search);
   const [activePath, setActivePath] = useState<RoutePath>(() =>
     resolveRoute(window.location.pathname),
   );
   const [store, setStore] = useState(createWorkbenchStore);
+  const [backendChecked, setBackendChecked] = useState(!shouldSyncBackend);
   const [confirmAction, setConfirmAction] = useState<PendingConfirmation | null>(null);
   const [traceOpen, setTraceOpen] = useState(false);
   const [rowDetail, setRowDetail] = useState<RowDetail | null>(null);
@@ -44,7 +54,17 @@ export function AppShell() {
   const [sideNavNodes, setSideNavNodes] = useState<MenuNode[]>(() => getSideNavNodes());
 
   useEffect(() => {
-    if (!shouldAttemptBackendSync(window.location.search)) {
+    if (!shouldSyncBackend) {
+      setStore((current) => ({
+        ...current,
+        lastMessage:
+          "后端同步已关闭，当前不会展示 mock/fallback 业务成功态。请启用后端后刷新。",
+        dataSource: {
+          ...current.dataSource,
+          mode: "backend_unavailable",
+          backendAvailable: false,
+        },
+      }));
       return undefined;
     }
 
@@ -63,13 +83,19 @@ export function AppShell() {
               ? `${nextStore.lastMessage} ${navigationResult.fallbackMessage}`
               : nextStore.lastMessage,
           });
+          setBackendChecked(true);
+        }
+      },
+      () => {
+        if (mounted) {
+          setBackendChecked(true);
         }
       },
     );
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [shouldSyncBackend]);
 
   useEffect(() => {
     const canonicalLocation = canonicalLocationForPathname(window.location.pathname);
@@ -163,7 +189,12 @@ export function AppShell() {
           >
             菜单
           </button>
+          <div className="topbarSystem">
+            <span>系统</span>
+            <strong>数据收益分配系统 V1.2</strong>
+          </div>
           <div>
+            <span>当前项目</span>
             <strong>{store.snapshot.projectName}</strong>
             <span>{store.snapshot.scenarioName}</span>
           </div>
@@ -175,7 +206,11 @@ export function AppShell() {
             <span>操作员</span>
             <strong>{store.snapshot.operator}</strong>
           </div>
-          <button type="button" onClick={() => navigate("/dashboard")}>
+          <div>
+            <span>后端状态</span>
+            <strong>{store.dataSource.mode === "backend" ? "已连接" : "未连接"}</strong>
+          </div>
+          <button type="button" title={simulationDisclaimer} onClick={() => navigate("/dashboard")}>
             风险提示
           </button>
           <button type="button" onClick={() => navigate("/system/audit")}>
@@ -183,16 +218,28 @@ export function AppShell() {
           </button>
         </section>
 
+        <section className="globalStatusRail" aria-label="项目状态条">
+          <StatusStepper current={store.snapshot.status} />
+        </section>
+
         <p className="operationMessage">{store.lastMessage}</p>
 
-        <RoutePage
-          route={route}
-          snapshot={store.snapshot}
-          onAction={handleAction}
-          onNavigate={navigate}
-          onOpenDetail={(title, row) => setRowDetail({ title, row })}
-          onOpenTrace={() => setTraceOpen(true)}
-        />
+        {store.dataSource.mode === "backend" ? (
+          <RoutePage
+            route={route}
+            snapshot={store.snapshot}
+            onAction={handleAction}
+            onNavigate={navigate}
+            onOpenDetail={(title, row) => setRowDetail({ title, row })}
+            onOpenTrace={() => setTraceOpen(true)}
+          />
+        ) : (
+          <BackendUnavailableState
+            apiBaseUrl={store.snapshot.backend?.apiBaseUrl ?? "/api/v1"}
+            error={store.dataSource.lastError}
+            modeLabel={backendChecked ? "后端不可用" : "正在连接后端"}
+          />
+        )}
       </main>
 
       <DetailDrawer

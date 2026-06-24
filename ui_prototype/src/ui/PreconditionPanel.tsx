@@ -7,6 +7,20 @@ interface PreconditionPanelProps {
 }
 
 export function PreconditionPanel({ items, onNavigate }: PreconditionPanelProps) {
+  if (items.length === 0) {
+    return (
+      <div className="preconditionList">
+        <article className="precondition pending">
+          <div>
+            <strong>等待后端前置条件</strong>
+            <span>待处理</span>
+          </div>
+          <p>后端未返回 preconditions；前端不会自行判定业务条件。</p>
+        </article>
+      </div>
+    );
+  }
+
   return (
     <div className="preconditionList">
       {items.map((item) => (

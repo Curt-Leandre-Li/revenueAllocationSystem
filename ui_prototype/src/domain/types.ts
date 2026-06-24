@@ -43,9 +43,9 @@ export type RoutePath =
   | "/data/ingestion"
   | "/data/resources"
   | "/data/parties"
-  | "/measure/quality"
-  | "/measure/shuyuan"
-  | "/measure/utility"
+  | "/metering/quality"
+  | "/metering/shuyuan"
+  | "/metering/utility"
   | "/allocation/md-dshap"
   | "/allocation/simulation"
   | "/allocation/constraints"
@@ -128,6 +128,11 @@ export type DataRow = Record<string, string | number | boolean>;
 
 export type ActionPayload =
   | {
+      kind: "data-package-upload";
+      payload: unknown;
+      fileName: string;
+    }
+  | {
       kind: "resource-binding";
       resourceKey: string;
       providerName: string;
@@ -197,6 +202,12 @@ export type ActionPayload =
   | {
       kind: "parameter-restore";
       parameterCode: string;
+    }
+  | {
+      kind: "allocation-run";
+      totalRevenue?: number;
+      priorityAllocationAmount?: number;
+      allocationMode?: string;
     }
   | {
       kind: "none";
@@ -289,6 +300,7 @@ export interface PageWorkspaceData {
   preconditions: PreconditionItem[];
   rows: DataRow[];
   technicalDetails: DataRow;
+  chart?: BackendChartDto;
 }
 
 export interface AuditLogRecord {
@@ -424,4 +436,17 @@ export interface AppRoute {
   phase: Phase;
   responsibility: string;
   actionIds: ActionId[];
+}
+
+export interface BackendChartDto {
+  chart_id: string;
+  chart_type: string;
+  title: string;
+  source?: {
+    result_id?: string;
+    snapshot_id?: string;
+    generated_at?: string;
+  };
+  series: unknown[];
+  metadata?: Record<string, unknown>;
 }
