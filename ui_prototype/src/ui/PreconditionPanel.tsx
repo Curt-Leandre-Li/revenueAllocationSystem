@@ -1,5 +1,6 @@
 import { checkStatusLabels } from "../domain/status";
 import type { PreconditionItem, RoutePath } from "../domain/types";
+import { userFacingText } from "./displayText";
 
 interface PreconditionPanelProps {
   items: PreconditionItem[];
@@ -12,10 +13,10 @@ export function PreconditionPanel({ items, onNavigate }: PreconditionPanelProps)
       <div className="preconditionList">
         <article className="precondition pending">
           <div>
-            <strong>等待后端前置条件</strong>
+            <strong>等待前置条件</strong>
             <span>待处理</span>
           </div>
-          <p>后端未返回 preconditions；前端不会自行判定业务条件。</p>
+          <p>系统暂未返回前置条件；页面不会自行判定业务条件。</p>
         </article>
       </div>
     );
@@ -26,10 +27,10 @@ export function PreconditionPanel({ items, onNavigate }: PreconditionPanelProps)
       {items.map((item) => (
         <article className={`precondition ${item.status.toLowerCase()}`} key={item.name}>
           <div>
-            <strong>{item.name}</strong>
+            <strong>{userFacingText(item.name)}</strong>
             <span>{checkStatusLabels[item.status]}</span>
           </div>
-          <p>{item.message}</p>
+          <p>{userFacingText(item.message)}</p>
           {item.targetPath && onNavigate ? (
             <button type="button" onClick={() => onNavigate(item.targetPath!)}>
               前往处理

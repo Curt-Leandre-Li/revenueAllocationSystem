@@ -102,7 +102,7 @@ export function ModulePageScaffold({
         <aside className="sideRail">
           <ChartPanel
             title="可视化数据源"
-            description="图表只消费后端字段或 chart DTO。"
+            description="图表只展示系统已返回的可视化数据。"
             source={pageData.chart?.source?.snapshot_id ?? pageData.chart?.source?.result_id}
           />
 
@@ -110,7 +110,7 @@ export function ModulePageScaffold({
             <PreconditionPanel items={pageData.preconditions} onNavigate={onNavigate} />
           </SectionCard>
 
-          <SectionCard title="追溯入口" description="工程字段默认隐藏，只在技术详情中查看。">
+          <SectionCard title="追溯入口" description="详细字段默认折叠，只在详情中查看。">
             <button className="traceButton" type="button" onClick={onOpenTrace}>
               打开追溯抽屉
             </button>

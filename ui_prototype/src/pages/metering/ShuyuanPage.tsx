@@ -2,20 +2,21 @@ import { useState } from "react";
 import { actionRegistry } from "../../domain/actionRegistry";
 import {
   ActionButton,
-  ChartPanel,
+  ChartArea,
+  CompactPageHeader,
   DetailDrawer,
   DrawerSection,
   EmptyGuide,
   ExportFieldList,
-  MetricCard,
-  PageHeader,
-  PreconditionPanel,
-  WorkbenchCard,
+  ProductBarChart,
+  SummaryStrip,
 } from "../../ui";
 import {
   amountCell,
   cellText,
   hasBackendRows,
+  numberCell,
+  numericCellValue,
   pageMetrics,
   pageRows,
   weightCell,
@@ -24,84 +25,81 @@ import type { PageProps } from "../pageTypes";
 
 export function ShuyuanPage({ route, snapshot, onAction }: PageProps) {
   const [drawer, setDrawer] = useState<"" | "base" | "calls" | "detail" | "export">("");
-  const pageData = snapshot.pages["/metering/shuyuan"];
+  const pageData = snapshot.pages[route.path];
   const rows = pageRows(pageData);
   const firstRow = rows[0];
   const metrics = pageMetrics(pageData);
+  const metricMap = new Map(metrics.map((item) => [item.label, item]));
+  const summaryItems = [
+    metricMap.get("项目总计量金额") ?? { label: "数元统计总额", value: amountCell(firstRow, "metering_amount"), hint: "系统结果", tone: "neutral" as const },
+    metricMap.get("基准价") ?? { label: "基准价", value: weightCell(firstRow, "base_shuyuan_price"), hint: "系统字段", tone: "neutral" as const },
+    metricMap.get("调用量") ?? { label: "调用量", value: numberCell(firstRow, "call_count"), hint: "系统字段", tone: "neutral" as const },
+    metricMap.get("已计量资源") ?? { label: "已计量资源", value: cellText(pageData.technicalDetails, "metered_resource_count", "暂无"), hint: "系统摘要", tone: "neutral" as const },
+    metricMap.get("已计量主体") ?? { label: "已计量主体", value: cellText(pageData.technicalDetails, "metered_party_count", "暂无"), hint: "系统摘要", tone: "neutral" as const },
+  ];
+  const valueRankPoints = rows.map((row) => ({
+    label: cellText(row, "resource_name"),
+    value: amountCell(row, "metering_amount"),
+    numeric: numericCellValue(row.metering_amount),
+    meta: cellText(row, "party_name"),
+  }));
+  const callRankPoints = rows.map((row) => ({
+    label: cellText(row, "resource_name"),
+    value: numberCell(row, "call_count"),
+    numeric: numericCellValue(row.call_count),
+    meta: cellText(row, "party_name"),
+  }));
 
   return (
-    <div className="pageWorkspace phase2Page shuyuanPage">
-      <PageHeader
-        route={{
-          ...route,
-          label: "数元计量管理",
-          responsibility: "配置基础单价、调用次数和多维系数，执行资源级数元计量。",
-        }}
-        snapshot={snapshot}
+    <div className="pageWorkspace leanPage shuyuanPage">
+      <CompactPageHeader
+        title="数元计量"
+        description="查看基准价、调用量、计量结果和资源级明细。"
+        primaryAction={
+          <ActionButton action={actionRegistry["DU-009"]} onClick={(action) => onAction(action)} />
+        }
+        secondaryActions={
+          <button
+            className="actionButton secondary"
+            type="button"
+            onClick={() => {
+              onAction(actionRegistry["DU-010"]);
+              setDrawer("detail");
+            }}
+          >
+            查看明细
+          </button>
+        }
       />
 
-      <div className="metricGrid five">
-        {metrics.map((item) => (
-          <MetricCard item={item} key={item.label} />
-        ))}
-      </div>
+      <SummaryStrip items={summaryItems} />
 
-      <div className="phase2bTwoCol">
-        <WorkbenchCard
-          title="计量工作台"
-          description="base_price、coefficients、call_count 和 metering_amount 只展示后端返回值。"
-          actions={
-            <>
-              <button
-                className="actionButton secondary"
-                disabled
-                title="参数保存 payload 尚未完成接线；本阶段不做前端假保存。"
-                type="button"
-                onClick={() => setDrawer("base")}
-              >
-                配置基准数元
-              </button>
-              <button
-                className="actionButton secondary"
-                disabled
-                title="调用量保存 payload 尚未完成接线；本阶段不做前端默认调用量。"
-                type="button"
-                onClick={() => setDrawer("calls")}
-              >
-                录入调用量
-              </button>
-              <ActionButton action={actionRegistry["DU-009"]} onClick={(action) => onAction(action)} />
-              <ActionButton
-                action={actionRegistry["DU-010"]}
-                onClick={(action) => {
-                  onAction(action);
-                  setDrawer("detail");
-                }}
-              />
-              <button
-                className="actionButton secondary"
-                type="button"
-                onClick={() => {
-                  onAction(actionRegistry["REP-004"]);
-                  setDrawer("export");
-                }}
-              >
-                导出计量结果
-              </button>
-            </>
-          }
-        >
-          <PreconditionPanel items={pageData.preconditions} />
-        </WorkbenchCard>
+      <section className="resultChartGrid secondary">
+        <ChartArea title="数据价值排行" source={hasBackendRows(pageData) ? "rows" : undefined}>
+          <ProductBarChart points={valueRankPoints} unit="金额" />
+        </ChartArea>
+        <ChartArea title="调用量排行" source={hasBackendRows(pageData) ? "rows" : undefined}>
+          <ProductBarChart points={callRankPoints} unit="调用量" />
+        </ChartArea>
+      </section>
 
-        <ChartPanel
-          title="数元计量图"
-          description="资源级/参与方级金额和调用量排行需要后端 chart DTO。"
-          source={pageData.chart?.chart_id}
-        />
-      </div>
-
-      <WorkbenchCard title="资源级明细" description="按后端 detail 行展示，不从样本数推导调用量或金额。">
+      <section className="leanTableSection">
+        <div className="leanSectionHead">
+          <div>
+            <h2>计量明细</h2>
+            <p>按系统明细行展示，不从样本数推导调用量或金额。</p>
+          </div>
+          <button
+            className="textLinkButton"
+            type="button"
+            onClick={() => {
+              onAction(actionRegistry["REP-004"]);
+              setDrawer("export");
+            }}
+          >
+            导出计量结果
+          </button>
+        </div>
         {hasBackendRows(pageData) ? (
           <div className="tableWrap">
             <table className="dataTable phase2Table">
@@ -120,7 +118,7 @@ export function ShuyuanPage({ route, snapshot, onAction }: PageProps) {
                   <tr key={`${cellText(row, "resource_id", "resource")}-${index}`}>
                     <td>{cellText(row, "resource_name")}</td>
                     <td>{cellText(row, "party_name")}</td>
-                    <td>{cellText(row, "call_count")}</td>
+                    <td>{numberCell(row, "call_count")}</td>
                     <td>{weightCell(row, "base_shuyuan_price")}</td>
                     <td>{weightCell(row, "quality_coefficient")}</td>
                     <td>{amountCell(row, "metering_amount")}</td>
@@ -131,14 +129,14 @@ export function ShuyuanPage({ route, snapshot, onAction }: PageProps) {
           </div>
         ) : (
           <EmptyGuide
-            title="后端未返回数元计量结果"
+            title="暂无计量结果"
             description="请先完成质量评估并运行数元计量；页面不会使用样本数推导调用量或金额。"
           />
         )}
-      </WorkbenchCard>
+      </section>
 
       <DetailDrawer
-        footerNote="参数保存必须由后端校验；本阶段不提供本地默认参数。"
+        footerNote="参数保存必须由系统校验；本阶段不提供本地默认参数。"
         objectType="计量参数"
         open={drawer === "base"}
         size="md"
@@ -147,16 +145,16 @@ export function ShuyuanPage({ route, snapshot, onAction }: PageProps) {
         actions={[{ label: "关闭", onClick: () => setDrawer("") }]}
         onClose={() => setDrawer("")}
       >
-        <DrawerSection title="后端参数契约">
+        <DrawerSection title="暂未启用">
           <EmptyGuide
-            title="参数保存暂未接入页面 payload"
-            description="后端提供 /metering/shuyuan/parameters；Phase 1B 不用前端系数或公式结果替代。"
+            title="参数保存暂未启用"
+            description="不使用页面系数或公式结果替代系统校验。"
           />
         </DrawerSection>
       </DetailDrawer>
 
       <DetailDrawer
-        footerNote="调用量可以为 0，但调用量默认值必须来自后端 draft 或用户输入。"
+        footerNote="调用量可以为 0，但默认值必须来自系统草稿或用户输入。"
         objectType="调用量录入"
         open={drawer === "calls"}
         size="lg"
@@ -165,16 +163,16 @@ export function ShuyuanPage({ route, snapshot, onAction }: PageProps) {
         actions={[{ label: "关闭", onClick: () => setDrawer("") }]}
         onClose={() => setDrawer("")}
       >
-        <DrawerSection title="后端调用量契约">
+        <DrawerSection title="暂未启用">
           <EmptyGuide
-            title="调用量保存暂未接入页面 payload"
-            description="后端提供 /metering/shuyuan/call-counts；页面不再从 sample_count 生成默认调用量。"
+            title="调用量保存暂未启用"
+            description="页面不再从样本数生成默认调用量。"
           />
         </DrawerSection>
       </DetailDrawer>
 
       <DetailDrawer
-        footerNote="明细只展示后端业务字段；工程快照在审计模块查看。"
+        footerNote="明细只展示系统业务字段；工程快照在审计模块查看。"
         objectType="计量明细"
         open={drawer === "detail"}
         size="lg"
@@ -182,13 +180,12 @@ export function ShuyuanPage({ route, snapshot, onAction }: PageProps) {
         variant="detail"
         onClose={() => setDrawer("")}
       >
-        <DrawerSection title="后端明细">
+        <DrawerSection title="明细">
           {hasBackendRows(pageData) ? (
             <div className="tableWrap">
               <table className="dataTable phase2Table">
                 <thead>
                   <tr>
-                    <th>metering_id</th>
                     <th>资源</th>
                     <th>场景系数</th>
                     <th>技术系数</th>
@@ -200,7 +197,6 @@ export function ShuyuanPage({ route, snapshot, onAction }: PageProps) {
                 <tbody>
                   {rows.map((row, index) => (
                     <tr key={`${cellText(row, "metering_id", "metering")}-${index}`}>
-                      <td>{cellText(row, "metering_id")}</td>
                       <td>{cellText(row, "resource_name")}</td>
                       <td>{weightCell(row, "scenario_coefficient")}</td>
                       <td>{weightCell(row, "technology_coefficient")}</td>
@@ -213,16 +209,13 @@ export function ShuyuanPage({ route, snapshot, onAction }: PageProps) {
               </table>
             </div>
           ) : (
-            <EmptyGuide
-              title="后端未返回计量明细"
-              description="运行数元计量并刷新后显示后端 details。"
-            />
+            <EmptyGuide title="暂无计量明细" description="运行数元计量并刷新后显示系统明细。" />
           )}
         </DrawerSection>
       </DetailDrawer>
 
       <DetailDrawer
-        footerNote="导出计量结果会生成 report_record/export_file。"
+        footerNote="导出计量结果会生成报告记录和导出文件。"
         objectType="导出说明"
         open={drawer === "export"}
         size="md"
@@ -238,9 +231,9 @@ export function ShuyuanPage({ route, snapshot, onAction }: PageProps) {
             { key: "metering_amount", label: "计量金额" },
           ]}
         />
-        <DrawerSection title="当前后端结果">
-          <p>metering_id：{cellText(firstRow, "metering_id")}</p>
-          <p>evidence：{cellText(firstRow, "evidence")}</p>
+        <DrawerSection title="当前结果">
+          <p>计量记录：{cellText(firstRow, "metering_id")}</p>
+          <p>证据说明：{cellText(firstRow, "evidence")}</p>
         </DrawerSection>
       </DetailDrawer>
     </div>

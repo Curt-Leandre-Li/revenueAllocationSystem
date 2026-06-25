@@ -2,16 +2,18 @@ import { useState } from "react";
 import { actionRegistry } from "../../domain/actionRegistry";
 import {
   ActionButton,
+  ChartArea,
+  CompactPageHeader,
   DetailDrawer,
   DrawerSection,
   EmptyGuide,
-  MetricCard,
-  PageHeader,
-  RiskNotice,
-  WorkbenchCard,
+  ProductBarChart,
+  SummaryStrip,
 } from "../../ui";
+import { userFacingText } from "../../ui/displayText";
 import type { DataRow } from "../../domain/types";
 import type { PageProps } from "../pageTypes";
+import { numericCellValue } from "../backendPageData";
 
 const roleTabs = ["全部", "数据源主体", "运营方 / 技术服务方 / 中试基地", "专家方", "合同主体", "停用主体"];
 interface PartyListItem {
@@ -36,23 +38,23 @@ interface PartyDraft {
 
 function readCell(row: DataRow, key: string, fallback = "") {
   const value = row[key];
-  return value === undefined || value === null || value === "" ? fallback : String(value);
+  return value === undefined || value === null || value === "" ? fallback : userFacingText(value);
 }
 
 function partyFromRow(row: DataRow, index: number): PartyListItem {
-  const dataProvider = readCell(row, "is_data_provider", "后端未返回");
-  const mds = readCell(row, "include_in_md_dshap", "后端未返回");
-  const typeCode = readCell(row, "party_type_code", "后端未返回");
+  const dataProvider = readCell(row, "is_data_provider", "暂无");
+  const mds = readCell(row, "include_in_md_dshap", "暂无");
+  const typeCode = readCell(row, "party_type_code", "暂无");
   return {
-    partyId: readCell(row, "party_id", `backend_party_${index + 1}`),
-    name: readCell(row, "party_name", "后端未返回"),
+    partyId: readCell(row, "party_id", `party_${index + 1}`),
+    name: readCell(row, "party_name", "暂无"),
     type: readCell(row, "party_type", "未分类"),
     typeCode,
     dataProvider,
     mds,
-    resources: readCell(row, "linked_resource_count", "后端未返回"),
-    status: readCell(row, "status", "后端未返回"),
-    summary: readCell(row, "contribution_summary", "后端未返回"),
+    resources: readCell(row, "linked_resource_count", "暂无"),
+    status: readCell(row, "status", "暂无"),
+    summary: readCell(row, "contribution_summary", "暂无"),
   };
 }
 
@@ -69,43 +71,41 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
       : activeTab === "数据源主体"
         ? parties.filter((party) => party.dataProvider === "是")
         : activeTab === "停用主体"
-          ? parties.filter((party) => party.status === "停用")
+        ? parties.filter((party) => party.status === "停用")
           : parties.filter((party) => activeTab.includes(party.type) || party.status === "合同优先");
+  const summaryItems = [
+    partyMetrics.get("参与方") ?? { label: "参与方", value: "暂无", hint: "待生成", tone: "neutral" as const },
+    partyMetrics.get("数据源主体") ?? { label: "数据源主体", value: "暂无", hint: "系统摘要", tone: "neutral" as const },
+    { label: "非数据主体", value: "暂无", hint: "系统摘要", tone: "neutral" as const },
+    partyMetrics.get("进入权重池") ?? { label: "权重池主体", value: "暂无", hint: "系统摘要", tone: "neutral" as const },
+    { label: "停用主体", value: "暂无", hint: "系统摘要", tone: "neutral" as const },
+  ];
+  const resourceRankPoints = parties.map((party) => ({
+    label: party.name,
+    value: party.resources,
+    numeric: numericCellValue(party.resources),
+    meta: party.type,
+  }));
 
   return (
-    <div className="pageWorkspace phase2Page partiesPage">
-      <PageHeader
-        route={{
-          ...route,
-          label: "参与方管理",
-          responsibility: "维护数据源主体与非数据贡献主体，确认算法权重池边界。",
-        }}
-        snapshot={snapshot}
-      />
-
-      <div className="metricGrid five">
-        <MetricCard item={partyMetrics.get("参与方") ?? { label: "参与方", value: "后端未返回", hint: "需要 party summary DTO", tone: "neutral" }} />
-        <MetricCard item={partyMetrics.get("数据源主体") ?? { label: "数据源主体", value: "后端摘要待补", hint: "不在前端聚合", tone: "neutral" }} />
-        <MetricCard item={{ label: "非数据主体", value: "后端摘要待补", hint: "不在前端聚合", tone: "neutral" }} />
-        <MetricCard item={partyMetrics.get("进入权重池") ?? { label: "权重池主体", value: "后端摘要待补", hint: "需要 participant-pool DTO", tone: "neutral" }} />
-        <MetricCard item={{ label: "停用主体", value: "后端摘要待补", hint: "不在前端聚合", tone: "neutral" }} />
-      </div>
-
-      <RiskNotice compact />
-
-      <WorkbenchCard
-        title="角色分组"
-        description="非数据主体不进入 MD-DShap，优先通过合同、固定比例、上下限或优先分配处理。"
-        actions={
+    <div className="pageWorkspace leanPage partiesPage">
+      <CompactPageHeader
+        title="参与方"
+        description="维护参与主体、角色边界、关联资源和是否参与权重计算。"
+        primaryAction={
           <ActionButton
             action={actionRegistry["PARTY-002"]}
-            onClick={(action) => {
+            onClick={() => {
               setPartyDraft(newPartyDraft());
               setDrawer("form");
             }}
           />
         }
-      >
+      />
+
+      <SummaryStrip items={summaryItems} />
+
+      <section className="leanFilterBar">
         <div className="tabStrip">
           {roleTabs.map((tab) => (
             <button
@@ -118,13 +118,25 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
             </button>
           ))}
         </div>
-      </WorkbenchCard>
+      </section>
 
-      <div className="phase2bTwoCol">
-        <WorkbenchCard
-          title="主体列表"
-          description="主体边界决定资源归属和算法权重池范围。"
-        >
+      <section className="resultChartGrid secondary">
+        <ChartArea title="参与方类型分布" source={pageData.chart?.chart_id} />
+        <ChartArea title="资源关联排行" source={parties.length ? "rows" : undefined}>
+          <ProductBarChart points={resourceRankPoints} unit="关联资源" />
+        </ChartArea>
+      </section>
+
+      <section className="leanTableSection">
+        <div className="leanSectionHead">
+          <div>
+            <h2>主体列表</h2>
+            <p>主体边界决定资源归属和权重计算范围。</p>
+          </div>
+          <button className="textLinkButton" type="button" onClick={() => onNavigate("/allocation/md-dshap")}>
+            查看权重结果
+          </button>
+        </div>
           <div className="tableWrap">
             <table className="dataTable phase2Table">
               <thead>
@@ -162,14 +174,14 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
                           编辑
                         </button>
                         <button
-                          title="最后一个数据源主体、枚举合法性等规则由后端守卫返回。"
+                          title="状态规则由系统守卫返回。"
                           type="button"
                           onClick={() =>
                             onAction(actionRegistry["PARTY-005"], {
                               kind: "party-status",
                               partyId: party.partyId,
                               status: nextStatus,
-                              reason: "前端 Phase 2C 状态切换",
+                              reason: "状态切换",
                             })
                           }
                         >
@@ -201,33 +213,7 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
               </tbody>
             </table>
           </div>
-        </WorkbenchCard>
-
-        <WorkbenchCard
-          title="算法边界提示"
-          description="MD-DShap 只计算数据源主体权重，不输出付款指令。"
-          actions={
-            <button className="actionButton secondary" type="button" onClick={() => onNavigate("/allocation/md-dshap")}>
-              查看 MD-DShap 权重池
-            </button>
-          }
-        >
-          <div className="boundaryList">
-            <article>
-              <strong>数据提供方</strong>
-              <span>默认进入算法权重池</span>
-            </article>
-            <article>
-              <strong>运营方 / 技术服务方 / 中试基地</strong>
-              <span>默认按合同优先或固定比例处理</span>
-            </article>
-            <article>
-              <strong>专家方</strong>
-              <span>默认不进入 MD-DShap</span>
-            </article>
-          </div>
-        </WorkbenchCard>
-      </div>
+      </section>
 
       <DetailDrawer
         dirty
@@ -351,8 +337,8 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
       >
         <DrawerSection title="可关联资源">
           <EmptyGuide
-            title="后端未提供参与方中心资源关联 DTO"
-            description="当前只保留资源页的主体关系入口；参与方页不再展示 mock 资源列表或假保存。"
+            title="暂无可选资源"
+            description="当前请先在数据资源页维护主体关系；这里不会显示未生成的资源列表。"
           />
         </DrawerSection>
       </DetailDrawer>
@@ -368,8 +354,8 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
       >
         <DrawerSection title="贡献、效用和权重摘要">
           <EmptyGuide
-            title="后端未提供参与方贡献摘要 DTO"
-            description="贡献得分、效用值和权重摘要必须来自 contribution/utility/MD-DShap 后端结果；页面不再展示 mock 权重。"
+            title="暂无贡献摘要"
+            description="完成贡献与效用计算、权重计算后，可在这里查看参与方摘要。"
           />
         </DrawerSection>
       </DetailDrawer>
@@ -379,10 +365,10 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
 
 function newPartyDraft(): PartyDraft {
   return {
-    partyName: `前端联调参与方-${Date.now().toString().slice(-6)}`,
+    partyName: `新参与方草稿-${Date.now().toString().slice(-6)}`,
     partyType: "DATA_PROVIDER",
     includeInMdDshap: true,
-    description: "Phase 2C 前端真实后端写入校验",
+    description: "本地演示新增参与方草稿",
   };
 }
 

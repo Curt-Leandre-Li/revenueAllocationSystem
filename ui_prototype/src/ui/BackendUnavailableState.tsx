@@ -1,4 +1,5 @@
 import type { ApiError } from "../domain/api";
+import { userFacingText } from "./displayText";
 
 interface BackendUnavailableStateProps {
   apiBaseUrl: string;
@@ -9,32 +10,35 @@ interface BackendUnavailableStateProps {
 export function BackendUnavailableState({
   apiBaseUrl,
   error,
-  modeLabel = "后端未连接",
+  modeLabel = "系统未连接",
 }: BackendUnavailableStateProps) {
   return (
     <section className="backendUnavailable compact" aria-live="polite">
       <div className="backendUnavailableSummary">
-        <span className="stateEyebrow">{modeLabel}</span>
-        <h2>后端未启动或 API Base 配置错误</h2>
+        <span className="stateEyebrow">{userFacingText(modeLabel)}</span>
+        <h2>系统未连接或连接配置错误</h2>
         <p>
-          当前页面保留操作骨架，但不会使用 mock 或 fallback 伪造成业务成功。后端连接后会重新读取接口字段、按钮守卫和图表 DTO。
+          当前页面保留操作骨架，但不会伪造成业务成功。系统连接后会重新读取业务字段、按钮守卫和图表数据。
         </p>
       </div>
       <div className="backendUnavailableInline">
-        <span>API Base: {apiBaseUrl}</span>
-        <span>{error?.errorMessage ?? "正在连接后端"}</span>
+        <span>{userFacingText(error?.errorMessage ?? "正在连接系统")}</span>
       </div>
       <details className="backendUnavailableDetails">
-        <summary>查看错误详情</summary>
+        <summary>连接诊断</summary>
         <dl>
           <div>
+            <dt>连接地址</dt>
+            <dd>{apiBaseUrl}</dd>
+          </div>
+          <div>
             <dt>建议</dt>
-            <dd>{error?.repairSuggestion ?? "确认后端服务已启动，并检查 API Base URL。"}</dd>
+            <dd>{userFacingText(error?.repairSuggestion ?? "确认服务已启动，并检查连接地址。")}</dd>
           </div>
           {error?.detail ? (
             <div>
             <dt>详情</dt>
-            <dd>{error.detail}</dd>
+            <dd>{userFacingText(error.detail)}</dd>
             </div>
           ) : null}
         </dl>

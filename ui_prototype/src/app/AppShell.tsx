@@ -27,6 +27,7 @@ import {
   StatusStepper,
   TraceDrawer,
 } from "../ui";
+import { userFacingText } from "../ui/displayText";
 import { WorkbenchPage } from "../pages/WorkbenchPage";
 
 interface RowDetail {
@@ -58,7 +59,7 @@ export function AppShell() {
       setStore((current) => ({
         ...current,
         lastMessage:
-          "后端同步已关闭，当前不会展示 mock/fallback 业务成功态。请启用后端后刷新。",
+          "系统同步已关闭，当前不会伪造成业务成功。请启用系统连接后刷新。",
         dataSource: {
           ...current.dataSource,
           mode: "backend_unavailable",
@@ -71,7 +72,7 @@ export function AppShell() {
     let mounted = true;
     setStore((current) => ({
       ...current,
-      lastMessage: "正在读取后端工作区数据。",
+      lastMessage: "正在读取系统工作区数据。",
     }));
     void Promise.all([loadBackendWorkbenchStore(), loadBackendSideNavNodes()]).then(
       ([nextStore, navigationResult]) => {
@@ -123,6 +124,23 @@ export function AppShell() {
   const route = getRoute(activePath);
   const RoutePage = routeComponents[route.path] ?? WorkbenchPage;
   const pageData = store.snapshot.pages[route.path];
+  const dashboardTopbar = route.path === "/dashboard";
+  const topbarProjectName =
+    dashboardTopbar && store.dataSource.mode !== "backend"
+      ? "等待系统连接"
+      : store.snapshot.projectName;
+  const topbarScenarioName =
+    dashboardTopbar && store.dataSource.mode !== "backend"
+      ? "等待数据同步"
+      : store.snapshot.scenarioName;
+  const topbarOperator =
+    store.snapshot.operator === "local_operator"
+      ? "本地演示用户"
+      : store.snapshot.operator;
+  const leanWorkspace =
+    route.path === "/data/ingestion" ||
+    route.path === "/metering/quality" ||
+    route.path === "/allocation/simulation";
 
   function navigate(path: RoutePath) {
     const resolvedPath = resolveRoute(path);
@@ -153,7 +171,7 @@ export function AppShell() {
     if (isAsyncActionResult(result)) {
       setStore((current) => ({
         ...current,
-        lastMessage: `${action.label} 执行中，正在同步后端结果。`,
+        lastMessage: `${action.label} 执行中，正在同步系统结果。`,
       }));
       void result
         .then((nextStore) => setStore(nextStore))
@@ -180,8 +198,8 @@ export function AppShell() {
         onMobileOpenChange={setMobileNavOpen}
         onNavigate={navigate}
       />
-      <main className="workspace">
-        <section className="topbar" aria-label="项目状态栏">
+      <main className={`workspace${leanWorkspace ? " leanWorkspace" : ""}`}>
+        <section className={`topbar${dashboardTopbar ? " dashboardTopbar" : ""}`} aria-label="项目状态栏">
           <button
             className="mobileMenuButton"
             type="button"
@@ -195,8 +213,8 @@ export function AppShell() {
           </div>
           <div>
             <span>当前项目</span>
-            <strong>{store.snapshot.projectName}</strong>
-            <span>{store.snapshot.scenarioName}</span>
+            <strong>{topbarProjectName}</strong>
+            <span>{topbarScenarioName}</span>
           </div>
           <div>
             <span>当前状态</span>
@@ -204,17 +222,27 @@ export function AppShell() {
           </div>
           <div>
             <span>操作员</span>
-            <strong>{store.snapshot.operator}</strong>
+            <strong>{topbarOperator}</strong>
           </div>
           <div>
-            <span>后端状态</span>
+            <span>系统状态</span>
             <strong>{store.dataSource.mode === "backend" ? "已连接" : "未连接"}</strong>
           </div>
-          <button type="button" title={simulationDisclaimer} onClick={() => navigate("/dashboard")}>
-            风险提示
+          <button
+            className="topbarInfoButton dashboardInteractiveTip"
+            data-tooltip={simulationDisclaimer}
+            type="button"
+            title={simulationDisclaimer}
+          >
+            风险说明
           </button>
-          <button type="button" onClick={() => navigate("/system/audit")}>
-            审计追溯
+          <button
+            className="topbarInfoButton dashboardInteractiveTip"
+            data-tooltip="查看最近操作记录与审计追溯。"
+            type="button"
+            onClick={() => navigate("/system/audit")}
+          >
+            {dashboardTopbar ? "查看记录" : "审计追溯"}
           </button>
         </section>
 
@@ -222,13 +250,13 @@ export function AppShell() {
           <StatusStepper current={store.snapshot.status} />
         </section>
 
-        <p className="operationMessage">{store.lastMessage}</p>
+        <p className="operationMessage">{userFacingText(store.lastMessage)}</p>
 
         {store.dataSource.mode !== "backend" ? (
           <BackendUnavailableState
             apiBaseUrl={store.snapshot.backend?.apiBaseUrl ?? "http://127.0.0.1:8000/api/v1"}
             error={store.dataSource.lastError}
-            modeLabel={backendChecked ? "后端不可用" : "正在连接后端"}
+            modeLabel={backendChecked ? "系统未连接" : "正在连接系统"}
           />
         ) : null}
 

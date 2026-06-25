@@ -2,30 +2,30 @@ import { useState } from "react";
 import { actionRegistry } from "../../domain/actionRegistry";
 import {
   ActionButton,
-  ChartPanel,
+  ChartArea,
+  CompactPageHeader,
   DetailDrawer,
   DrawerSection,
   EmptyGuide,
   ExportFieldList,
-  MetricCard,
-  PageHeader,
-  PreconditionPanel,
-  RiskNotice,
-  SectionCard,
-  TechnicalDetails,
+  ProductBarChart,
+  ProductDonutChart,
+  ProgressiveDisclosure,
+  SummaryStrip,
   TraceDrawer,
-  WorkbenchCard,
 } from "../../ui";
 import {
   cellText,
   hasBackendRows,
+  numericCellValue,
   pageMetrics,
   pageRows,
+  percentCell,
   weightCell,
 } from "../backendPageData";
 import type { PageProps } from "../pageTypes";
 
-type DrawerName = "progress" | "trace" | "weights" | "complexity" | "audit" | "export" | "";
+type DrawerName = "params" | "trace" | "weights" | "audit" | "export" | "";
 
 export function MDDShapPage({ route, snapshot, onAction }: PageProps) {
   const [drawer, setDrawer] = useState<DrawerName>("");
@@ -33,10 +33,30 @@ export function MDDShapPage({ route, snapshot, onAction }: PageProps) {
   const [sampleRounds, setSampleRounds] = useState(512);
   const [epsilon, setEpsilon] = useState(0.0001);
   const [saveMarginalDetail, setSaveMarginalDetail] = useState(true);
-  const pageData = snapshot.pages["/allocation/md-dshap"];
+  const pageData = snapshot.pages[route.path];
   const rows = pageRows(pageData);
   const metrics = pageMetrics(pageData);
   const firstRow = rows[0];
+  const metricMap = new Map(metrics.map((item) => [item.label, item]));
+  const weightPoints = rows.map((row) => ({
+    label: cellText(row, "party_name"),
+    value: percentCell(row, "normalized_weight"),
+    numeric: numericCellValue(row.normalized_weight),
+    meta: cellText(row, "task_status"),
+  }));
+  const marginalPoints = rows.map((row) => ({
+    label: cellText(row, "party_name"),
+    value: weightCell(row, "marginal_contribution"),
+    numeric: numericCellValue(row.marginal_contribution),
+    meta: cellText(row, "task_status"),
+  }));
+  const summaryItems = [
+    metricMap.get("参与计算主体") ?? { label: "参与计算主体", value: cellText(pageData.technicalDetails, "participant_count", "暂无"), hint: "系统摘要", tone: "neutral" as const },
+    metricMap.get("权重结果") ?? { label: "权重结果", value: hasBackendRows(pageData) ? String(rows.length) : "暂无", hint: "系统结果", tone: "neutral" as const },
+    metricMap.get("最高权重主体") ?? { label: "最高权重主体", value: cellText(firstRow, "party_name"), hint: "系统字段", tone: "neutral" as const },
+    metricMap.get("任务状态") ?? { label: "任务状态", value: cellText(firstRow, "task_status"), hint: "系统字段", tone: "neutral" as const },
+    metricMap.get("审计快照") ?? { label: "审计快照", value: cellText(pageData.technicalDetails, "snapshot_count", "暂无"), hint: "系统摘要", tone: "neutral" as const },
+  ];
 
   function runCalculation() {
     onAction(actionRegistry["MDS-011"], {
@@ -49,298 +69,146 @@ export function MDDShapPage({ route, snapshot, onAction }: PageProps) {
   }
 
   return (
-    <div className="pageWorkspace phase2Page mdsPage">
-      <PageHeader
-        route={{
-          ...route,
-          label: "MD-DShap 算法权重计算管理页",
-          responsibility: "管理算法前置检查、参数、任务、权重结果、边际贡献和审计说明。",
-        }}
-        snapshot={snapshot}
+    <div className="pageWorkspace leanPage mdsPage">
+      <CompactPageHeader
+        title="分配权重"
+        description="查看用于收益分配模拟的权重结果和边际贡献说明。"
+        primaryAction={<ActionButton action={actionRegistry["MDS-011"]} onClick={runCalculation} />}
+        secondaryActions={
+          <button className="actionButton secondary" type="button" onClick={() => setDrawer("params")}>
+            计算参数
+          </button>
+        }
       />
 
-      <RiskNotice compact />
+      <SummaryStrip items={summaryItems} />
 
-      <div className="metricGrid four">
-        {metrics.map((item) => (
-          <MetricCard item={item} key={item.label} />
-        ))}
-      </div>
+      <section className="resultChartGrid secondary">
+        <ChartArea title="分配权重排行" source={hasBackendRows(pageData) ? "rows" : undefined}>
+          <ProductBarChart points={weightPoints} unit="权重" />
+        </ChartArea>
+        <ChartArea title="权重占比" source={hasBackendRows(pageData) ? "rows" : undefined}>
+          <ProductDonutChart points={weightPoints} />
+        </ChartArea>
+      </section>
 
-      <div className="mdsGrid">
-        <WorkbenchCard
-          title="算法模式"
-          description="MD-DShap 输出权重，不是最终付款指令。"
-          actions={
-            <>
-              <ActionButton action={actionRegistry["MDS-011"]} onClick={runCalculation} />
-              <ActionButton
-                action={actionRegistry["MDS-016"]}
-                disabledReason={hasBackendRows(pageData) ? "" : "尚无后端历史任务结果"}
-                onClick={(action) => onAction(action)}
-              />
-            </>
-          }
-        >
-          <div className="algorithmModeCard">
-            <strong>{cellText(firstRow, "algorithm_mode", "MD_DSHAP")}</strong>
-            <p>默认多维任务 Shapley 近似计算，权重由后端任务结果返回。</p>
-            <span>基础 Shapley 仅用于 baseline_check，不作为默认最终分配模式。</span>
+      <section className="resultChartGrid secondary">
+        <ChartArea title="边际贡献排行" source={hasBackendRows(pageData) ? "rows" : undefined}>
+          <ProductBarChart points={marginalPoints} unit="边际贡献" />
+        </ChartArea>
+        <ProgressiveDisclosure title="参数与审计" summary="默认折叠">
+          <div className="progressiveStack">
+            <dl className="businessDetail compact">
+              <div><dt>任务状态</dt><dd>{cellText(firstRow, "task_status")}</dd></div>
+              <div><dt>采样轮次</dt><dd>{cellText(firstRow, "sample_rounds")}</dd></div>
+              <div><dt>收敛阈值</dt><dd>{cellText(firstRow, "epsilon")}</dd></div>
+            </dl>
+            <button className="textLinkButton" type="button" onClick={() => setDrawer("trace")}>
+              查看边际贡献说明
+            </button>
           </div>
-        </WorkbenchCard>
+        </ProgressiveDisclosure>
+      </section>
 
-        <SectionCard title="前置条件检查" description="任一阻断项未通过时不应启动权重计算。">
-          <PreconditionPanel items={pageData.preconditions} />
-        </SectionCard>
-      </div>
+      <section className="leanTableSection">
+        <div className="leanSectionHead">
+          <div>
+            <h2>权重结果</h2>
+            <p>权重只做展示；合计与归一化校验由系统返回。</p>
+          </div>
+          <button
+            className="textLinkButton"
+            type="button"
+            onClick={() => {
+              onAction(actionRegistry["MDS-018"], { kind: "mds-audit-export" });
+              setDrawer("audit");
+            }}
+          >
+            算法审计
+          </button>
+        </div>
+        {hasBackendRows(pageData) ? (
+          <div className="tableWrap">
+            <table className="dataTable phase2Table">
+              <thead>
+                <tr>
+                  <th>参与方</th>
+                  <th>原始权重</th>
+                  <th>分配权重</th>
+                  <th>边际贡献</th>
+                  <th>任务状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, index) => (
+                  <tr key={`${cellText(row, "party_name", "party")}-${index}`}>
+                    <td>{cellText(row, "party_name")}</td>
+                    <td>{weightCell(row, "participant_weight")}</td>
+                    <td>{percentCell(row, "normalized_weight")}</td>
+                    <td>{weightCell(row, "marginal_contribution")}</td>
+                    <td>{cellText(row, "task_status")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyGuide
+            title="暂无权重结果"
+            description="请先完成效用计算并启动权重计算；页面不会计算权重合计或补造权重。"
+          />
+        )}
+      </section>
 
-      <div className="mdsGrid">
-        <WorkbenchCard
-          title="参数面板"
-          description="参数作为后端任务请求输入；结果仍以后端返回为准。"
-        >
+      <DetailDrawer
+        footerNote="参数作为计算请求输入；结果仍以系统返回为准。"
+        objectType="计算参数"
+        open={drawer === "params"}
+        size="md"
+        title="计算参数"
+        variant="form"
+        actions={[
+          { label: "关闭", onClick: () => setDrawer("") },
+          { label: "执行计算", type: "primary", onClick: () => { runCalculation(); setDrawer(""); } },
+        ]}
+        onClose={() => setDrawer("")}
+      >
+        <DrawerSection title="参数">
           <div className="paramGrid">
-            <label>
-              seed
-              <input value={seed} type="number" onChange={(event) => setSeed(Number(event.target.value))} />
-            </label>
-            <label>
-              sample_rounds
-              <input
-                value={sampleRounds}
-                type="number"
-                onChange={(event) => setSampleRounds(Number(event.target.value))}
-              />
-            </label>
-            <label>
-              epsilon
-              <input
-                step="0.0001"
-                value={epsilon}
-                type="number"
-                onChange={(event) => setEpsilon(Number(event.target.value))}
-              />
-            </label>
+            <label>seed<input value={seed} type="number" onChange={(event) => setSeed(Number(event.target.value))} /></label>
+            <label>sample rounds<input value={sampleRounds} type="number" onChange={(event) => setSampleRounds(Number(event.target.value))} /></label>
+            <label>epsilon<input step="0.0001" value={epsilon} type="number" onChange={(event) => setEpsilon(Number(event.target.value))} /></label>
             <label className="checkboxLine">
-              <input
-                checked={saveMarginalDetail}
-                type="checkbox"
-                onChange={(event) => setSaveMarginalDetail(event.target.checked)}
-              />
+              <input checked={saveMarginalDetail} type="checkbox" onChange={(event) => setSaveMarginalDetail(event.target.checked)} />
               保存边际贡献明细
             </label>
           </div>
-        </WorkbenchCard>
-
-        <ChartPanel
-          title="参与方权重图"
-          description="权重条形图和边际贡献热力表需要后端 chart DTO。"
-          source={pageData.chart?.chart_id}
-        />
-      </div>
-
-      <div className="mdsGrid">
-        <WorkbenchCard
-          title="计算进度"
-          description="任务状态、快照和算法版本只展示后端任务字段。"
-          actions={
-            <>
-              <ActionButton
-                action={actionRegistry["MDS-012"]}
-                onClick={(action) => {
-                  onAction(action);
-                  setDrawer("progress");
-                }}
-              />
-              <ActionButton
-                action={actionRegistry["MDS-013"]}
-                onClick={(action) => {
-                  onAction(action);
-                  setDrawer("trace");
-                }}
-              />
-              <ActionButton
-                action={actionRegistry["MDS-015"]}
-                onClick={(action) => {
-                  onAction(action);
-                  setDrawer("complexity");
-                }}
-              />
-            </>
-          }
-        >
-          <dl className="businessDetail compact">
-            <div>
-              <dt>task_status</dt>
-              <dd>{cellText(firstRow, "task_status")}</dd>
-            </div>
-            <div>
-              <dt>sample_rounds</dt>
-              <dd>{cellText(firstRow, "sample_rounds")}</dd>
-            </div>
-            <div>
-              <dt>epsilon</dt>
-              <dd>{cellText(firstRow, "epsilon")}</dd>
-            </div>
-          </dl>
-        </WorkbenchCard>
-
-        <WorkbenchCard
-          title="参与方权重表"
-          description="权重只做 6 位展示；合计与归一化校验由后端返回。"
-          actions={
-            <>
-              <ActionButton
-                action={actionRegistry["MDS-014"]}
-                onClick={(action) => {
-                  onAction(action);
-                  setDrawer("weights");
-                }}
-              />
-              <ActionButton
-                action={actionRegistry["MDS-017"]}
-                disabledReason="缺少纯权重结果导出契约"
-                onClick={(action) => {
-                  onAction(action);
-                  setDrawer("export");
-                }}
-              />
-              <ActionButton
-                action={actionRegistry["MDS-018"]}
-                onClick={(action) => {
-                  onAction(action, { kind: "mds-audit-export" });
-                  setDrawer("audit");
-                }}
-              />
-            </>
-          }
-        >
-          {hasBackendRows(pageData) ? (
-            <div className="tableWrap">
-              <table className="dataTable phase2Table">
-                <thead>
-                  <tr>
-                    <th>参与方</th>
-                    <th>participant_weight</th>
-                    <th>normalized_weight</th>
-                    <th>weight_diff</th>
-                    <th>任务状态</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row, index) => (
-                    <tr key={`${cellText(row, "party_name", "party")}-${index}`}>
-                      <td>{cellText(row, "party_name")}</td>
-                      <td>{weightCell(row, "participant_weight")}</td>
-                      <td>{weightCell(row, "normalized_weight")}</td>
-                      <td>{weightCell(row, "marginal_contribution")}</td>
-                      <td>{cellText(row, "task_status")}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <EmptyGuide
-              title="后端未返回 MD-DShap 权重结果"
-              description="请先完成效用计算并启动 MD-DShap；页面不会计算权重合计或补造权重。"
-            />
-          )}
-        </WorkbenchCard>
-      </div>
-
-      <section className="nonPaymentNotice">
-        <strong>算法边界</strong>
-        <p>MD-DShap 输出的是数据源主体权重，不是最终付款指令、真实财务结算或合同履约依据。</p>
-      </section>
+        </DrawerSection>
+      </DetailDrawer>
 
       <TraceDrawer
-        footerNote="进度 trace 仅用于说明模拟计算链路，不作为付款或结算依据。"
-        input={{
-          参与方集合: cellText(firstRow, "participant_set"),
-          任务集合: cellText(firstRow, "task_set"),
-        }}
-        objectType="算法任务"
-        open={drawer === "progress"}
-        output={{
-          任务状态: cellText(firstRow, "task_status"),
-          权重合计: "后端未返回 weight_sum",
-        }}
-        parameters={{
-          seed,
-          sample_rounds: sampleRounds,
-          epsilon,
-          save_marginal_detail: saveMarginalDetail ? "是" : "否",
-        }}
-        statusTag={cellText(firstRow, "task_status", "缺少后端任务")}
-        summary="展示后端任务字段；不在前端推导进度百分比、权重合计或快照状态。"
-        technicalDetails={pageData.technicalDetails}
-        title="计算进度"
-        onClose={() => setDrawer("")}
-      />
-
-      <TraceDrawer
-        footerNote="边际贡献 trace 必须来自后端 marginal-traces；无页面级 trace rows 时显示缺口。"
+        footerNote="边际贡献说明仅用于解释模拟计算链路，不作为付款或结算依据。"
+        input={{ 参与方集合: cellText(firstRow, "participant_set"), 任务集合: cellText(firstRow, "task_set") }}
         objectType="边际贡献"
         open={drawer === "trace"}
-        output={{
-          trace_rows: "后端页面 DTO 未返回",
-        }}
-        statusTag="等待后端 trace DTO"
-        summary="当前页面不再从权重结果重建边际贡献。"
+        output={{ 任务状态: cellText(firstRow, "task_status") }}
+        parameters={{ seed, sample_rounds: sampleRounds, epsilon, save_marginal_detail: saveMarginalDetail ? "是" : "否" }}
+        statusTag={cellText(firstRow, "task_status", "缺少数据")}
+        summary="展示系统任务字段；不在页面推导进度百分比、权重合计或快照状态。"
         technicalDetails={pageData.technicalDetails}
-        title="边际贡献明细"
+        title="边际贡献说明"
+        traceColumns={[
+          { key: "party_name", label: "参与方" },
+          { key: "normalized_weight", label: "分配权重" },
+          { key: "marginal_contribution", label: "边际贡献" },
+          { key: "task_status", label: "任务状态" },
+        ]}
+        traceRows={rows}
         onClose={() => setDrawer("")}
       />
 
       <DetailDrawer
-        footerNote="权重合计由后端校验；权重不是付款指令。"
-        objectType="权重结果"
-        open={drawer === "weights"}
-        size="lg"
-        statusTag={hasBackendRows(pageData) ? "后端结果" : "缺少数据"}
-        title="参与方权重"
-        variant="detail"
-        onClose={() => setDrawer("")}
-      >
-        <DrawerSection title="权重结果" description="页面显示 6 位小数，不做合计或归一化。">
-          {hasBackendRows(pageData) ? (
-            <ul className="plainList">
-              {rows.map((row, index) => (
-                <li key={`${cellText(row, "party_name", "party")}-${index}`}>
-                  {cellText(row, "party_name")}：{weightCell(row, "normalized_weight")}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <EmptyGuide
-              title="后端未返回权重结果"
-              description="启动 MD-DShap 后显示后端 task results。"
-            />
-          )}
-        </DrawerSection>
-      </DetailDrawer>
-
-      <DetailDrawer
-        footerNote="复杂度说明来自后端任务或审计 DTO；当前仅提示缺口。"
-        objectType="算法说明"
-        open={drawer === "complexity"}
-        size="md"
-        statusTag="后端 DTO 缺口"
-        title="复杂度优化说明"
-        variant="risk"
-        onClose={() => setDrawer("")}
-      >
-        <DrawerSection title="后端缺口">
-          <EmptyGuide
-            title="后端未返回复杂度说明 DTO"
-            description="需要算法审计 DTO 返回 sample_rounds、epsilon、算法版本、复杂度说明和快照引用。"
-          />
-        </DrawerSection>
-      </DetailDrawer>
-
-      <DetailDrawer
-        footerNote="缺少纯权重导出契约时不显示已生成文件。"
+        footerNote="缺少独立权重导出结果时不显示已生成文件。"
         objectType="导出说明"
         open={drawer === "export"}
         size="md"
@@ -349,20 +217,10 @@ export function MDDShapPage({ route, snapshot, onAction }: PageProps) {
         variant="export"
         onClose={() => setDrawer("")}
       >
-        <DrawerSection title="后端缺口">
-          <EmptyGuide
-            title="纯权重结果导出未接入"
-            description="请使用算法审计导出，或让后端补充权重结果导出契约及 report_id/checksum。"
-          />
+        <DrawerSection title="导出字段">
           <ExportFieldList
-            fields={[
-              "algorithm_mode",
-              "party_name",
-              "normalized_weight",
-              "participant_weight",
-              "weight_diff",
-            ]}
-            note="字段范围仅为契约说明，不代表已生成文件。"
+            fields={["algorithm_mode", "party_name", "normalized_weight", "participant_weight"]}
+            note="字段范围仅为说明，不代表已生成文件。"
           />
         </DrawerSection>
       </DetailDrawer>
@@ -372,14 +230,13 @@ export function MDDShapPage({ route, snapshot, onAction }: PageProps) {
         objectType="算法审计说明"
         open={drawer === "audit"}
         size="lg"
-        statusTag="后端导出"
-        technicalDetails={<TechnicalDetails details={pageData.technicalDetails} />}
+        statusTag="导出说明"
         title="算法审计说明"
         variant="export"
         onClose={() => setDrawer("")}
       >
         <DrawerSection title="审计内容">
-          <p>算法审计导出调用后端接口；report_id、checksum 和生成时间以报告记录为准。</p>
+          <p>算法审计导出后，报告编号、校验摘要和生成时间以报告记录为准。</p>
         </DrawerSection>
       </DetailDrawer>
     </div>

@@ -10,6 +10,7 @@ export * from "./EmptyGuide";
 export * from "./ExportFieldList";
 export * from "./MetricCard";
 export * from "./PageHeader";
+export * from "./PageShell";
 export * from "./PreconditionPanel";
 export * from "./RiskNotice";
 export * from "./SectionCard";

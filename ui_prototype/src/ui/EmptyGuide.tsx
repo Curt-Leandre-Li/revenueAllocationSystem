@@ -1,3 +1,5 @@
+import { userFacingText } from "./displayText";
+
 interface EmptyGuideProps {
   title: string;
   description: string;
@@ -8,11 +10,11 @@ interface EmptyGuideProps {
 export function EmptyGuide({ title, description, actionLabel, onAction }: EmptyGuideProps) {
   return (
     <div className="emptyGuide">
-      <strong>{title}</strong>
-      <p>{description}</p>
+      <strong>{userFacingText(title)}</strong>
+      <p>{userFacingText(description)}</p>
       {actionLabel && onAction ? (
         <button type="button" onClick={onAction}>
-          {actionLabel}
+          {userFacingText(actionLabel)}
         </button>
       ) : null}
     </div>

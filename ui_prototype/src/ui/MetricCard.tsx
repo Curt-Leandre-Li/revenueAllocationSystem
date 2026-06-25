@@ -1,4 +1,5 @@
 import type { MetricItem } from "../domain/types";
+import { userFacingText } from "./displayText";
 
 interface MetricCardProps {
   item: MetricItem;
@@ -7,9 +8,9 @@ interface MetricCardProps {
 export function MetricCard({ item }: MetricCardProps) {
   return (
     <article className={`metricCard ${item.tone ?? "neutral"}`}>
-      <span>{item.label}</span>
-      <strong>{item.value}</strong>
-      <small>{item.hint}</small>
+      <span>{userFacingText(item.label)}</span>
+      <strong>{userFacingText(item.value)}</strong>
+      <small>{userFacingText(item.hint)}</small>
     </article>
   );
 }

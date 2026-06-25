@@ -2,14 +2,15 @@ import { useState } from "react";
 import { actionRegistry } from "../../domain/actionRegistry";
 import {
   ActionButton,
+  CompactPageHeader,
   DetailDrawer,
   DrawerSection,
-  MetricCard,
-  PageHeader,
-  RiskNotice,
-  WorkbenchCard,
+  EmptyGuide,
+  ProgressiveDisclosure,
+  SummaryStrip,
 } from "../../ui";
 import type { DataRow } from "../../domain/types";
+import { pageMetrics, pageRows } from "../backendPageData";
 import type { PageProps } from "../pageTypes";
 
 interface AlgorithmDraft {
@@ -22,9 +23,10 @@ interface AlgorithmDraft {
 export function ParametersPage({ route, snapshot, onAction }: PageProps) {
   const [drawer, setDrawer] = useState<"" | "algorithm" | "risk" | "version">("");
   const pageData = snapshot.pages[route.path];
-  const parameterRows = pageData.rows;
+  const parameterRows = pageRows(pageData);
+  const metrics = pageMetrics(pageData);
   const metricValue = (label: string, fallback: string) =>
-    pageData.metrics.find((item) => item.label === label)?.value ?? fallback;
+    metrics.find((item) => item.label === label)?.value ?? fallback;
   const parameterByCode = new Map(
     parameterRows.map((item) => [readCell(item, "parameter_code", ""), item]),
   );
@@ -37,30 +39,41 @@ export function ParametersPage({ route, snapshot, onAction }: PageProps) {
   const [riskDraft, setRiskDraft] = useState(() => readCell(riskText, "current_value", ""));
 
   return (
-    <div className="pageWorkspace phase2Page parametersPage">
-      <PageHeader
-        route={{
-          ...route,
-          label: "参数配置",
-          responsibility: "维护质量权重、算法默认参数、风险文案、精度规则和参数版本。",
-        }}
-        snapshot={snapshot}
+    <div className="pageWorkspace phase2Page leanPage parametersPage">
+      <CompactPageHeader
+        title="参数配置"
+        description="维护计算参数、风险文案和版本记录；保存后只影响新的测算。"
+        primaryAction={
+          <ActionButton action={actionRegistry["PARAM-001"]} onClick={(action) => onAction(action)} />
+        }
+        secondaryActions={
+          <button
+            className="actionButton secondary"
+            type="button"
+            onClick={() => setDrawer("version")}
+          >
+            查看版本
+          </button>
+        }
       />
 
-      <div className="metricGrid four">
-        <MetricCard item={{ label: "参数版本", value: metricValue("参数版本", "暂不可用"), hint: "来自后端", tone: "neutral" }} />
-        <MetricCard item={{ label: "算法模式", value: metricValue("算法模式", "MD_DSHAP"), hint: "默认模式", tone: "success" }} />
-        <MetricCard item={{ label: "采样轮次", value: metricValue("采样轮次", "暂不可用"), hint: "必须 > 0", tone: sampleRounds ? "neutral" : "warning" }} />
-        <MetricCard item={{ label: "收敛阈值", value: metricValue("收敛阈值", "暂不可用"), hint: "必须 > 0", tone: epsilon ? "neutral" : "warning" }} />
-      </div>
+      <SummaryStrip
+        items={[
+          metrics[0] ?? { label: "参数版本", value: "暂无", hint: "待生成", tone: "neutral" },
+          metrics[1] ?? { label: "算法模式", value: "暂无", hint: "待生成", tone: "neutral" },
+          metrics[2] ?? { label: "采样轮次", value: "暂无", hint: "待生成", tone: "neutral" },
+          metrics[3] ?? { label: "收敛阈值", value: "暂无", hint: "待生成", tone: "neutral" },
+          { label: "生效范围", value: "新测算", hint: "不改历史", tone: "neutral" },
+        ]}
+      />
 
-      <RiskNotice compact />
-
-      <WorkbenchCard
-        title="参数组"
-        description="高风险参数修改需要二次确认；保存版本只影响新计算，不回改历史结果。"
-        actions={
-          <>
+      <section className="leanTableSection">
+        <div className="leanSectionHead">
+          <div>
+            <h2>参数组</h2>
+            <p>高风险参数修改需要确认；历史测算继续保留当时版本。</p>
+          </div>
+          <div className="rowAction">
             <button
               className="actionButton secondary"
               type="button"
@@ -69,7 +82,7 @@ export function ParametersPage({ route, snapshot, onAction }: PageProps) {
                 setDrawer("algorithm");
               }}
             >
-              MD-DShap 参数配置
+              配置默认值
             </button>
             <button
               className="actionButton secondary"
@@ -79,9 +92,8 @@ export function ParametersPage({ route, snapshot, onAction }: PageProps) {
                 setDrawer("risk");
               }}
             >
-              风险提示文案配置
+              配置风险文案
             </button>
-            <ActionButton action={actionRegistry["PARAM-001"]} onClick={(action) => onAction(action)} />
             <ActionButton
               action={actionRegistry["PARAM-002"]}
               onClick={(action) =>
@@ -91,37 +103,60 @@ export function ParametersPage({ route, snapshot, onAction }: PageProps) {
                 })
               }
             />
-          </>
-        }
-      >
+          </div>
+        </div>
+
         <div className="tableWrap">
           <table className="dataTable phase2Table">
-            <thead><tr><th>参数组</th><th>当前值</th><th>生效状态</th><th>操作</th></tr></thead>
+            <thead>
+              <tr>
+                <th>参数组</th>
+                <th>当前值</th>
+                <th>生效状态</th>
+                <th>更新时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
             <tbody>
               {parameterRows.length === 0 ? (
                 <tr>
-                  <td colSpan={4}>参数接口暂不可用；页面不会显示前端示例参数作为成功状态。</td>
+                  <td colSpan={5}>
+                    <EmptyGuide title="暂无参数" description="参数列表生成后会在此展示。" />
+                  </td>
                 </tr>
               ) : parameterRows.map((item) => (
                 <tr key={readCell(item, "parameter_code", readCell(item, "parameter_name", "parameter"))}>
                   <td><strong>{readCell(item, "parameter_name", "未命名参数")}</strong></td>
                   <td>{readCell(item, "current_value", "-")}</td>
-                  <td><span className={readCell(item, "status", "") === "可编辑" ? "tag success" : "tag"}>{readCell(item, "status", "-")}</span></td>
-                  <td><button type="button" onClick={() => setDrawer("version")}>查看版本</button></td>
+                  <td>
+                    <span className={readCell(item, "status", "") === "可编辑" ? "tag success" : "tag"}>
+                      {readCell(item, "status", "-")}
+                    </span>
+                  </td>
+                  <td>{readCell(item, "updated_at", "暂无")}</td>
+                  <td><button type="button" onClick={() => setDrawer("version")}>版本</button></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </WorkbenchCard>
+      </section>
+
+      <ProgressiveDisclosure title="参数详情" summary="默认折叠">
+        <dl className="businessDetail compact">
+          <div><dt>采样轮次</dt><dd>{readCell(sampleRounds, "current_value", "暂无")}</dd></div>
+          <div><dt>收敛阈值</dt><dd>{readCell(epsilon, "current_value", "暂无")}</dd></div>
+          <div><dt>风险文案</dt><dd>{readCell(riskText, "current_value", "暂无")}</dd></div>
+        </dl>
+      </ProgressiveDisclosure>
 
       <DetailDrawer
         dirty
-        footerNote="默认 algorithm_mode 必须为 MD_DSHAP；epsilon 和 sample_rounds 必须大于 0。"
+        footerNote="默认计算模式保持不变；采样轮次和收敛阈值必须大于 0。"
         objectType="算法参数"
         open={drawer === "algorithm"}
         size="md"
-        title="MD-DShap 参数配置"
+        title="默认参数配置"
         variant="form"
         actions={[
           { label: "取消", onClick: () => setDrawer("") },
@@ -188,7 +223,7 @@ export function ParametersPage({ route, snapshot, onAction }: PageProps) {
               />
             </label>
             <label>
-              baseline_check
+              基线校验
               <select
                 value={algorithmDraft.baselineEnabled ? "是" : "否"}
                 onChange={(event) =>
@@ -208,7 +243,7 @@ export function ParametersPage({ route, snapshot, onAction }: PageProps) {
 
       <DetailDrawer
         dirty
-        footerNote="风险提示文案会出现在报告、导出和算法结果说明中。"
+        footerNote="风险提示文案会出现在报告、导出和结果说明中。"
         objectType="风险文案"
         open={drawer === "risk"}
         size="md"
@@ -245,7 +280,7 @@ export function ParametersPage({ route, snapshot, onAction }: PageProps) {
       </DetailDrawer>
 
       <DetailDrawer
-        footerNote="参数版本只读展示；历史计算继续使用当时版本。"
+        footerNote="参数版本只读展示；历史测算继续使用当时版本。"
         objectType="参数版本"
         open={drawer === "version"}
         size="md"
@@ -255,9 +290,9 @@ export function ParametersPage({ route, snapshot, onAction }: PageProps) {
       >
         <DrawerSection title="版本说明">
           <dl className="businessDetail compact">
-            <div><dt>版本</dt><dd>{metricValue("参数版本", "暂不可用")}</dd></div>
-            <div><dt>生效范围</dt><dd>仅影响新计算</dd></div>
-            <div><dt>变更摘要</dt><dd>当前后端参数列表共 {parameterRows.length} 项</dd></div>
+            <div><dt>版本</dt><dd>{metricValue("参数版本", "暂无")}</dd></div>
+            <div><dt>生效范围</dt><dd>仅影响新测算</dd></div>
+            <div><dt>变更摘要</dt><dd>当前参数列表共 {parameterRows.length} 项</dd></div>
           </dl>
         </DrawerSection>
       </DetailDrawer>

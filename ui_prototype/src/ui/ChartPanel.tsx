@@ -1,5 +1,5 @@
-import { simulationDisclaimer } from "../domain/stateGuards";
 import type { ReactNode } from "react";
+import { userFacingText } from "./displayText";
 
 interface ChartPanelProps {
   title: string;
@@ -13,27 +13,28 @@ export function ChartPanel({
   title,
   description,
   source,
-  emptyReason = "后端暂未返回 chart DTO，本阶段不在前端拼接业务图表。",
+  emptyReason = "暂无",
   children,
 }: ChartPanelProps) {
+  const hasSource = Boolean(source);
+
   return (
-    <section className="chartPanel">
+    <section className={`chartPanel ${hasSource ? "chartPanelReady" : "chartPanelMissing"}`}>
       <div className="chartPanelHead">
         <div>
-          <h2>{title}</h2>
-          <p>{description}</p>
+          <h2>{userFacingText(title)}</h2>
+          <p>{userFacingText(description)}</p>
         </div>
-        <span>{source ?? "等待后端 DTO"}</span>
+        <span>{source ? "已生成" : "暂无"}</span>
       </div>
       <div className="chartPanelBody">
         {children ?? (
           <div className="chartEmpty">
-            <strong>图表未启用</strong>
-            <p>{emptyReason}</p>
+            <strong>{hasSource ? "待展示" : "暂无"}</strong>
+            <p>{userFacingText(emptyReason)}</p>
           </div>
         )}
       </div>
-      <p className="chartDisclaimer">{simulationDisclaimer}</p>
     </section>
   );
 }

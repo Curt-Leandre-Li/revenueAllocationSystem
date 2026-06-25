@@ -1,4 +1,5 @@
 import type { ActionDefinition } from "../domain/types";
+import { userFacingText } from "./displayText";
 
 interface ActionButtonProps {
   action: ActionDefinition;
@@ -11,13 +12,12 @@ export function ActionButton({ action, disabledReason, onClick }: ActionButtonPr
     <button
       className={`actionButton ${action.tone ?? "secondary"}`}
       disabled={Boolean(disabledReason)}
-      title={disabledReason || action.sideEffect}
+      title={userFacingText(disabledReason || action.sideEffect)}
       type="button"
       onClick={() => onClick(action)}
     >
-      <span>{action.id}</span>
-      {action.label}
-      {disabledReason ? <small>{disabledReason}</small> : null}
+      {userFacingText(action.label)}
+      {disabledReason ? <small>{userFacingText(disabledReason)}</small> : null}
     </button>
   );
 }

@@ -2,95 +2,91 @@ import { useState } from "react";
 import { actionRegistry } from "../../domain/actionRegistry";
 import {
   ActionButton,
-  ChartPanel,
+  ChartArea,
+  CompactPageHeader,
   DetailDrawer,
   DrawerSection,
   EmptyGuide,
-  MetricCard,
-  PageHeader,
-  PreconditionPanel,
+  ProductBarChart,
+  SummaryStrip,
   TraceDrawer,
-  WorkbenchCard,
 } from "../../ui";
 import {
   cellText,
   hasBackendRows,
+  numericCellValue,
   pageMetrics,
   pageRows,
+  percentCell,
   weightCell,
 } from "../backendPageData";
 import type { PageProps } from "../pageTypes";
 
 export function UtilityPage({ route, snapshot, onAction }: PageProps) {
   const [drawer, setDrawer] = useState<"" | "factor" | "function" | "trace">("");
-  const pageData = snapshot.pages["/metering/utility"];
+  const pageData = snapshot.pages[route.path];
   const rows = pageRows(pageData);
   const metrics = pageMetrics(pageData);
+  const firstRow = rows[0];
+  const metricMap = new Map(metrics.map((item) => [item.label, item]));
+  const summaryItems = [
+    metricMap.get("贡献记录") ?? { label: "贡献记录", value: cellText(pageData.technicalDetails, "trace_count", "暂无"), hint: "系统摘要", tone: "neutral" as const },
+    metricMap.get("最高贡献主体") ?? { label: "最高贡献主体", value: cellText(firstRow, "party_name"), hint: "系统字段", tone: "neutral" as const },
+    metricMap.get("最高效用值") ?? { label: "最高效用值", value: weightCell(firstRow, "utility_value"), hint: "系统字段", tone: "neutral" as const },
+    metricMap.get("trace 数量") ?? { label: "trace 数量", value: cellText(pageData.technicalDetails, "trace_count", "暂无"), hint: "系统摘要", tone: "neutral" as const },
+    metricMap.get("函数版本") ?? { label: "函数版本", value: cellText(firstRow, "utility_function_version"), hint: "系统字段", tone: "neutral" as const },
+  ];
+  const contributionPoints = rows.map((row) => ({
+    label: cellText(row, "party_name"),
+    value: percentCell(row, "normalized_contribution"),
+    numeric: numericCellValue(row.normalized_contribution),
+    meta: cellText(row, "trace_id"),
+  }));
+  const utilityPoints = rows.map((row) => ({
+    label: cellText(row, "party_name"),
+    value: weightCell(row, "utility_value"),
+    numeric: numericCellValue(row.utility_value),
+    meta: cellText(row, "trace_id"),
+  }));
 
   return (
-    <div className="pageWorkspace phase2Page utilityPage">
-      <PageHeader
-        route={{
-          ...route,
-          label: "贡献度与效用计算",
-          responsibility: "计算贡献度、归一化贡献和效用值，为 MD-DShap 提供输入。",
-        }}
-        snapshot={snapshot}
+    <div className="pageWorkspace leanPage utilityPage">
+      <CompactPageHeader
+        title="贡献与效用"
+        description="查看参与方贡献、效用结果和计算追溯。"
+        primaryAction={<ActionButton action={actionRegistry["UTIL-006"]} onClick={(action) => onAction(action)} />}
+        secondaryActions={
+          <button
+            className="actionButton secondary"
+            type="button"
+            onClick={() => {
+              onAction(actionRegistry["UTIL-009"]);
+              setDrawer("trace");
+            }}
+          >
+            查看轨迹
+          </button>
+        }
       />
 
-      <div className="metricGrid four">
-        {metrics.map((item) => (
-          <MetricCard item={item} key={item.label} />
-        ))}
-      </div>
+      <SummaryStrip items={summaryItems} />
 
-      <div className="phase2bTwoCol">
-        <WorkbenchCard
-          title="贡献与效用工作台"
-          description="贡献度、归一化贡献和效用值全部来自后端计算结果。"
-          actions={
-            <>
-              <button
-                className="actionButton secondary"
-                disabled
-                title="贡献因子保存 payload 尚未完成接线；本阶段不做前端假保存。"
-                type="button"
-                onClick={() => setDrawer("factor")}
-              >
-                配置贡献因子
-              </button>
-              <ActionButton action={actionRegistry["UTIL-006"]} onClick={(action) => onAction(action)} />
-              <button
-                className="actionButton secondary"
-                disabled
-                title="效用函数保存 payload 尚未完成接线；本阶段不写前端默认函数。"
-                type="button"
-                onClick={() => setDrawer("function")}
-              >
-                配置效用函数
-              </button>
-              <ActionButton action={actionRegistry["UTIL-008"]} onClick={(action) => onAction(action)} />
-              <ActionButton
-                action={actionRegistry["UTIL-009"]}
-                onClick={(action) => {
-                  onAction(action);
-                  setDrawer("trace");
-                }}
-              />
-            </>
-          }
-        >
-          <PreconditionPanel items={pageData.preconditions} />
-        </WorkbenchCard>
+      <section className="resultChartGrid secondary">
+        <ChartArea title="贡献度排行" source={hasBackendRows(pageData) ? "rows" : undefined}>
+          <ProductBarChart points={contributionPoints} unit="贡献度" />
+        </ChartArea>
+        <ChartArea title="效用值排行" source={hasBackendRows(pageData) ? "rows" : undefined}>
+          <ProductBarChart points={utilityPoints} unit="效用值" />
+        </ChartArea>
+      </section>
 
-        <ChartPanel
-          title="贡献度与效用图"
-          description="贡献排行、效用排行和 trace 摘要需要后端 chart DTO。"
-          source={pageData.chart?.chart_id}
-        />
-      </div>
-
-      <WorkbenchCard title="参与方效用表" description="表格只展示后端 utility trace 行。">
+      <section className="leanTableSection">
+        <div className="leanSectionHead">
+          <div>
+            <h2>贡献与效用表</h2>
+            <p>表格只展示系统返回的效用轨迹行。</p>
+          </div>
+        </div>
         {hasBackendRows(pageData) ? (
           <div className="tableWrap">
             <table className="dataTable phase2Table">
@@ -108,7 +104,7 @@ export function UtilityPage({ route, snapshot, onAction }: PageProps) {
                 {rows.map((row, index) => (
                   <tr key={`${cellText(row, "trace_id", "trace")}-${index}`}>
                     <td><strong>{cellText(row, "party_name")}</strong></td>
-                    <td>{weightCell(row, "normalized_contribution")}</td>
+                    <td>{percentCell(row, "normalized_contribution")}</td>
                     <td>{weightCell(row, "quality_factor")}</td>
                     <td>{weightCell(row, "usage_factor")}</td>
                     <td>{weightCell(row, "scenario_factor")}</td>
@@ -120,14 +116,14 @@ export function UtilityPage({ route, snapshot, onAction }: PageProps) {
           </div>
         ) : (
           <EmptyGuide
-            title="后端未返回效用 trace"
+            title="暂无效用轨迹"
             description="请先完成数元计量、贡献度计算和效用计算；页面不会写死贡献度或效用值。"
           />
         )}
-      </WorkbenchCard>
+      </section>
 
       <DetailDrawer
-        footerNote="贡献因子由后端保存并校验；总贡献为 0 等规则由后端返回。"
+        footerNote="贡献因子由系统保存并校验；总贡献为 0 等规则由系统返回。"
         objectType="贡献因子"
         open={drawer === "factor"}
         size="md"
@@ -136,16 +132,13 @@ export function UtilityPage({ route, snapshot, onAction }: PageProps) {
         actions={[{ label: "关闭", onClick: () => setDrawer("") }]}
         onClose={() => setDrawer("")}
       >
-        <DrawerSection title="后端贡献因子契约">
-          <EmptyGuide
-            title="贡献因子保存暂未接入页面 payload"
-            description="后端提供 /metering/utility/contribution-factors；Phase 1B 不提供前端默认因子。"
-          />
+        <DrawerSection title="暂未启用">
+          <EmptyGuide title="贡献因子保存暂未启用" description="不提供页面默认因子。" />
         </DrawerSection>
       </DetailDrawer>
 
       <DetailDrawer
-        footerNote="效用函数来源必须由后端或参数快照披露。"
+        footerNote="效用函数来源必须由系统或参数快照披露。"
         objectType="效用函数"
         open={drawer === "function"}
         size="md"
@@ -154,23 +147,20 @@ export function UtilityPage({ route, snapshot, onAction }: PageProps) {
         actions={[{ label: "关闭", onClick: () => setDrawer("") }]}
         onClose={() => setDrawer("")}
       >
-        <DrawerSection title="后端效用函数契约">
-          <EmptyGuide
-            title="效用函数保存暂未接入页面 payload"
-            description="后端提供 /metering/utility/function；页面不写入本地默认函数或模拟成功。"
-          />
+        <DrawerSection title="暂未启用">
+          <EmptyGuide title="效用函数保存暂未启用" description="页面不写入本地默认函数或模拟成功。" />
         </DrawerSection>
       </DetailDrawer>
 
       <TraceDrawer
-        footerNote="效用 trace 写入 utility_trace；工程编号在技术详情中折叠。"
+        footerNote="效用轨迹用于说明计算过程，工程编号在技术详情中折叠。"
         objectType="效用轨迹"
         open={drawer === "trace"}
         output={{
-          轨迹状态: hasBackendRows(pageData) ? "后端已返回" : "后端未返回",
+          轨迹状态: hasBackendRows(pageData) ? "已返回" : "暂无",
         }}
-        statusTag={hasBackendRows(pageData) ? "后端结果" : "缺少数据"}
-        summary="只展示后端 utility trace；不在前端重建贡献度、归一化贡献或效用值。"
+        statusTag={hasBackendRows(pageData) ? "系统结果" : "缺少数据"}
+        summary="只展示系统效用轨迹；不在页面重建贡献度、归一化贡献或效用值。"
         technicalDetails={pageData.technicalDetails}
         title="效用计算过程"
         traceColumns={[

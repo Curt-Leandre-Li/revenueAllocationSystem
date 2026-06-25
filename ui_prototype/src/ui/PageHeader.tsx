@@ -1,5 +1,5 @@
-import { projectStatusLabels } from "../domain/status";
 import type { AppRoute, WorkbenchSnapshot } from "../domain/types";
+import { userFacingText } from "./displayText";
 
 interface PageHeaderProps {
   route: AppRoute;
@@ -7,17 +7,12 @@ interface PageHeaderProps {
 }
 
 export function PageHeader({ route, snapshot }: PageHeaderProps) {
+  void snapshot;
   return (
-    <header className="pageHeader">
+    <header className="pageHeader compactPageHeader">
       <div>
-        <p className="breadcrumb">数据收益分配系统 / {route.label}</p>
-        <h1>{route.label}</h1>
-        <p className="pageSummary">{route.responsibility}</p>
-      </div>
-      <div className="projectContext">
-        <span>{snapshot.projectName}</span>
-        <strong>{projectStatusLabels[snapshot.status]}</strong>
-        <small>{snapshot.scenarioName}</small>
+        <h1>{userFacingText(route.label)}</h1>
+        <p className="pageSummary">{userFacingText(route.responsibility)}</p>
       </div>
     </header>
   );

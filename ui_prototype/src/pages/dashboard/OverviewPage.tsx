@@ -1,362 +1,463 @@
-import { useEffect } from "react";
-import { actionRegistry } from "../../domain/actionRegistry";
-import { projectStatusLabels } from "../../domain/status";
-import type { AuditLogRecord, ReportRecord, SnapshotRecord } from "../../domain/types";
-import {
-  ActionButton,
-  MetricCard,
-  PageHeader,
-  RiskNotice,
-  SectionCard,
-  StatusStepper,
-  WorkbenchCard,
-} from "../../ui";
+import { useState } from "react";
+import type { DataRow } from "../../domain/types";
+import { userFacingText } from "../../ui/displayText";
 import type { PageProps } from "../pageTypes";
 
-const processSteps = [
-  "数据接入",
-  "资源识别",
-  "参与方维护",
-  "质量评估",
-  "数元计量",
-  "效用计算",
-  "MD-DShap",
-  "收益分配",
-  "报告审计",
-];
-
-const homeSections = [
-  { id: "overview", label: "项目总览" },
-  { id: "process", label: "流程入口" },
-  { id: "risk", label: "风险提示" },
-  { id: "one-click", label: "一键计算" },
-];
-
-function RecentReportList({ reports }: { reports: ReportRecord[] }) {
-  if (reports.length === 0) {
-    return (
-      <div className="compactList">
-        <article>
-          <strong>暂无报告记录</strong>
-          <span>完成收益分配模拟后可生成报告</span>
-          <small>等待生成</small>
-        </article>
-      </div>
-    );
-  }
-  return (
-    <div className="compactList">
-      {reports.slice(0, 3).map((report) => (
-        <article key={`${report.name}-${report.createdAt}`}>
-          <strong>{report.name}</strong>
-          <span>{report.type} / {report.status}</span>
-          <small>{report.createdAt}</small>
-        </article>
-      ))}
-    </div>
-  );
+interface CoreMetric {
+  label: string;
+  value: string;
+  route: PageProps["route"]["path"];
+  tooltip: string;
 }
 
-function RecentAuditList({ auditLogs }: { auditLogs: AuditLogRecord[] }) {
-  if (auditLogs.length === 0) {
-    return (
-      <div className="compactList">
-        <article>
-          <strong>暂无审计日志</strong>
-          <span>执行数据接入、计算或导出后生成</span>
-          <small>等待操作</small>
-        </article>
-      </div>
-    );
-  }
-  return (
-    <div className="compactList">
-      {auditLogs.slice(0, 4).map((log) => (
-        <article key={`${log.operation}-${log.createdAt}`}>
-          <strong>{log.operation}</strong>
-          <span>{log.summary}</span>
-          <small>{log.createdAt} / {log.operator}</small>
-        </article>
-      ))}
-    </div>
-  );
+interface ChartPoint {
+  label: string;
+  displayLabel: string;
+  value: string;
+  numeric: number;
+  amount?: string;
+  status?: string;
 }
 
-function SnapshotTimeline({ snapshots }: { snapshots: SnapshotRecord[] }) {
-  return (
-    <div className="timelineList">
-      {snapshots.slice(0, 5).map((snapshot) => (
-        <div key={`${snapshot.name}-${snapshot.createdAt}`}>
-          <span />
-          <strong>{snapshot.name}</strong>
-          <small>{snapshot.status} / {snapshot.createdAt}</small>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export function OverviewPage({
-  route,
-  snapshot,
-  onAction,
-  onNavigate,
-}: PageProps) {
+export function OverviewPage({ route, snapshot, onNavigate }: PageProps) {
+  const [activeParty, setActiveParty] = useState("");
   const pageData = snapshot.pages[route.path];
-  const pageMetrics = new Map(pageData.metrics.map((item) => [item.label, item]));
-  const backendDisconnected = snapshot.backend?.connected === false;
-  const reportReady = pageMetrics.get("报告状态")?.value ?? "后端未返回";
-  useEffect(() => {
-    function scrollToHash() {
-      const sectionId = window.location.hash.replace("#", "");
-      if (!sectionId) {
-        return;
-      }
-      window.setTimeout(() => {
-        document.getElementById(sectionId)?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      }, 50);
-    }
-
-    scrollToHash();
-    window.addEventListener("hashchange", scrollToHash);
-    return () => window.removeEventListener("hashchange", scrollToHash);
-  }, []);
-
-  const metricItems = [
+  const dashboardMetrics = new Map(pageData.metrics.map((item) => [item.label, item.value]));
+  const shuyuanPage = snapshot.pages["/metering/shuyuan"];
+  const allocationPage = snapshot.pages["/allocation/simulation"];
+  const mdsPage = snapshot.pages["/allocation/md-dshap"];
+  const firstAllocation = allocationPage.rows[0];
+  const shuyuanTotal = metricValue(shuyuanPage.metrics, "项目总计量金额");
+  const reportCount = dashboardMetrics.get("报告状态");
+  const coreMetrics: CoreMetric[] = [
     {
-      label: "数据包",
-      value: pageMetrics.get("数据包")?.value ?? "后端未返回",
-      hint: pageMetrics.get("数据包")?.hint ?? "来自 dashboard 聚合字段",
-      tone: "neutral" as const,
+      label: "数据资源数",
+      value: formatDisplayValue(dashboardMetrics.get("数据资源"), "number"),
+      route: "/data/resources",
+      tooltip: "当前项目已识别的数据资源数量。",
     },
     {
-      label: "数据资源",
-      value: pageMetrics.get("数据资源")?.value ?? "后端未返回",
-      hint: pageMetrics.get("数据资源")?.hint ?? "来自 dashboard 聚合字段",
-      tone: "success" as const,
+      label: "参与方数量",
+      value: formatDisplayValue(dashboardMetrics.get("参与方"), "number"),
+      route: "/data/parties",
+      tooltip: "当前项目维护的参与主体数量。",
     },
     {
-      label: "参与方",
-      value: pageMetrics.get("参与方")?.value ?? "后端未返回",
-      hint: pageMetrics.get("参与方")?.hint ?? "来自 dashboard 聚合字段",
-      tone: "neutral" as const,
-    },
-    {
-      label: "算法权重池",
-      value: "后端未返回",
-      hint: "需要 participant-pool summary DTO",
-      tone: "warning" as const,
+      label: "数元统计总额",
+      value: formatDisplayValue(shuyuanTotal, "amount"),
+      route: "/metering/shuyuan",
+      tooltip: "系统返回的数元计量结果总额。",
     },
     {
       label: "当前收益池",
-      value: "后端未返回",
-      hint: "需要 allocation summary DTO",
-      tone: "neutral" as const,
+      value: formatDisplayValue(firstAllocation?.data_provider_revenue_pool, "amount"),
+      route: "/allocation/simulation",
+      tooltip: "当前分配模拟结果中的数据源收益池。",
     },
     {
-      label: "报告状态",
-      value: reportReady,
-      hint: pageMetrics.get("报告状态")?.hint ?? "Markdown/CSV/JSON/JSONL",
-      tone: "success" as const,
+      label: "已生成报告数",
+      value: formatDisplayValue(reportCount, "number"),
+      route: "/reports",
+      tooltip: "当前项目已生成的报告记录数量。",
     },
   ];
+  const allocationPoints = allocationPage.rows
+    .map((row) => toChartPoint(row, ["party_name"], "post_constraint_amount", "amount"))
+    .filter(isChartPoint)
+    .slice(0, 6);
+  const allocationSharePoints = allocationPage.rows
+    .flatMap((row) => {
+      const point = toChartPoint(row, ["party_name"], "normalized_weight", "percent");
+      return point
+        ? {
+            ...point,
+            amount: formatDisplayValue(row.post_constraint_amount, "amount"),
+            status: cleanValue(row.scenario_status),
+          }
+        : [];
+    })
+    .slice(0, 6);
+  const shuyuanPoints = shuyuanPage.rows
+    .map((row) => toChartPoint(row, ["resource_name", "party_name"], "metering_amount", "amount"))
+    .filter(isChartPoint)
+    .slice(0, 6);
+  const weightPoints = mdsPage.rows
+    .map((row) => toChartPoint(row, ["party_name"], "normalized_weight", "percent"))
+    .filter(isChartPoint)
+    .slice(0, 6);
 
   return (
-    <div className="pageWorkspace phase2Page overviewPage">
-      <PageHeader
-        route={{
-          ...route,
-          label: "系统首页驾驶舱",
-          responsibility: "面向业务操作员的项目状态、流程进度、风险与产出总览。",
-        }}
-        snapshot={snapshot}
-      />
-
-      <nav className="inPageTabs" aria-label="系统首页内部区块">
-        {homeSections.map((item) => (
-          <a href={`#${item.id}`} key={item.id}>{item.label}</a>
+    <div className="pageWorkspace overviewPage dashboardResultsPage">
+      <section className="resultMetricRow" aria-label="核心指标">
+        {coreMetrics.map((item) => (
+          <button
+            className="resultMetricCard dashboardInteractiveTip"
+            data-tooltip={item.tooltip}
+            key={item.label}
+            type="button"
+            onClick={() => onNavigate(item.route)}
+          >
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+          </button>
         ))}
-      </nav>
+      </section>
 
-      <section className="homeSection" id="overview">
-        <div className="sectionHeading">
-          <span className="eyebrow">项目总览</span>
-          <h2>项目状态与核心指标</h2>
-        </div>
-
-        <div className="dashboardHero">
-        <section className="projectSnapshot">
-          <div>
-            <span className="eyebrow">当前项目</span>
-            <h2>{backendDisconnected ? "等待后端连接" : snapshot.projectName}</h2>
-            <p>{backendDisconnected ? "后端连接后显示项目与场景" : snapshot.scenarioName}</p>
+      <section className="resultChartGrid primary" aria-label="核心图表">
+        <article className="resultChartPanel sankeyPanel">
+          <div className="resultChartHead">
+            <h2>收益流向</h2>
           </div>
-          <div className="statusPill">{projectStatusLabels[snapshot.status]}</div>
-          <dl>
-            <div>
-              <dt>操作员</dt>
-              <dd>{snapshot.operator}</dd>
-            </div>
-            <div>
-              <dt>最近同步</dt>
-              <dd>{backendDisconnected ? "未连接" : snapshot.updatedAt}</dd>
-            </div>
-            <div>
-              <dt>模拟边界</dt>
-              <dd>非法律结算</dd>
-            </div>
-          </dl>
-        </section>
+          <RevenueFlowChart
+            allocation={firstAllocation}
+            parties={allocationPoints}
+          />
+        </article>
 
-        <WorkbenchCard
-          title="下一步操作"
-          description="下一步操作和前置条件状态以后端 dashboard / disabled_actions 为准。"
-          actions={
-            <>
-              <ActionButton
-                action={actionRegistry["SYS-002"]}
-                onClick={(action) => onAction(action)}
-              />
-              <button
-                className="actionButton secondary"
-                type="button"
-                onClick={() => onNavigate("/data/ingestion")}
-              >
-                进入数据接入
-              </button>
-              <ActionButton
-                action={actionRegistry["SYS-004"]}
-                disabledReason={backendDisconnected ? "后端连接后可用" : undefined}
-                onClick={(action) => onAction(action)}
-              />
-              <button
-                className="actionButton secondary"
-                type="button"
-                onClick={() => onNavigate("/reports")}
-              >
-                查看报告
-              </button>
-            </>
-          }
-        >
-          <div className="nextActionBody">
-            <strong>{pageData.primaryTask || "等待后端返回下一步"}</strong>
-            <p>
-              计算会生成阶段快照、算法权重记录和审计日志；输出仅作模拟参考。
-            </p>
+        <article className="resultChartPanel">
+          <div className="resultChartHead">
+            <h2>参与方收益占比</h2>
           </div>
-        </WorkbenchCard>
-      </div>
+          <DonutChart
+            activeParty={activeParty}
+            points={allocationSharePoints}
+            onActiveParty={setActiveParty}
+          />
+        </article>
+      </section>
 
-      <StatusStepper current={snapshot.status} />
+      <section className="resultChartGrid secondary" aria-label="补充图表">
+        <article className="resultChartPanel">
+          <div className="resultChartHead">
+            <h2>数据价值排行</h2>
+          </div>
+          <BarRankChart
+            points={shuyuanPoints}
+            unit="金额"
+          />
+        </article>
 
-      <div className="metricGrid six">
-        {metricItems.map((item) => (
-          <MetricCard item={item} key={item.label} />
+        <article className="resultChartPanel optional">
+          <div className="resultChartHead">
+            <h2>分配权重排行</h2>
+          </div>
+          <BarRankChart
+            activeParty={activeParty}
+            points={weightPoints}
+            unit="权重"
+            onActiveParty={setActiveParty}
+          />
+        </article>
+      </section>
+
+      <p className="resultRiskLine">
+        本系统输出仅作为数据收益分配模拟与审计说明参考，不作为法律结算或付款依据。
+      </p>
+    </div>
+  );
+}
+
+function RevenueFlowChart({
+  allocation,
+  parties,
+}: {
+  allocation: DataRow | undefined;
+  parties: ChartPoint[];
+}) {
+  const total = readRow(allocation, "total_revenue");
+  const priority = readRow(allocation, "priority_allocation_amount");
+  const pool = readRow(allocation, "data_provider_revenue_pool");
+  const missingRevenueFlow = total === "暂无" || pool === "暂无";
+  const hasFlow = total !== "暂无" || priority !== "暂无" || pool !== "暂无" || parties.length > 0;
+
+  if (!hasFlow) {
+    return <EmptyChart />;
+  }
+
+  return (
+    <div className={`sankeyChart${missingRevenueFlow ? " missingFlow" : ""}`}>
+      <svg aria-hidden="true" viewBox="0 0 760 260" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="flowMain" x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0%" stopColor="#1d4ed8" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.22" />
+          </linearGradient>
+        </defs>
+        <path className="flowPath wide" d="M135 120 C250 120 290 70 398 70">
+          <title>合同优先 · {priority} · 合同优先</title>
+        </path>
+        <path className="flowPath" d="M135 120 C250 120 292 172 398 172">
+          <title>数据源收益池 · {pool} · 收益池</title>
+        </path>
+        {parties.slice(0, 3).map((item, index) => (
+          <path
+            className={`flowPath partyPath partyPath${index + 1}`}
+            d={[
+              "M485 172 C572 172 606 68 705 68",
+              "M485 172 C572 172 606 130 705 130",
+              "M485 172 C572 172 606 192 705 192",
+            ][index]}
+            key={`${item.label}-path`}
+          >
+            <title>{item.label} · {item.value} · 参与方</title>
+          </path>
         ))}
-      </div>
-      </section>
-
-      <section className="homeSection" id="process">
-        <div className="sectionHeading">
-          <span className="eyebrow">流程入口</span>
-          <h2>完整链路推进入口</h2>
+      </svg>
+      {missingRevenueFlow ? (
+        <div className="flowNotice">
+          总收益与收益池待生成，当前仅展示参与方分配结果。
         </div>
-        <WorkbenchCard
-          title="流程进度"
-          description="完整链路按数据、计量、权重、分配、报告顺序推进。"
-        >
-          <div className="processRail">
-            {processSteps.map((step, index) => (
-              <div
-                className={
-                  backendDisconnected
-                    ? "pending"
-                    : index < 6
-                      ? "done"
-                      : index === 6
-                        ? "current"
-                        : "pending"
-                }
-                key={step}
-              >
-                <span>{index + 1}</span>
-                <strong>{step}</strong>
-              </div>
-            ))}
+      ) : (
+        <>
+          <div
+            className="flowNode total dashboardInteractiveTip"
+            data-tooltip={`总收益 · ${total}`}
+            tabIndex={0}
+          >
+            <span>总收益</span>
+            <strong>{total}</strong>
           </div>
-        </WorkbenchCard>
-      </section>
+          <div
+            className="flowNode priority dashboardInteractiveTip"
+            data-tooltip={`合同优先 · ${priority}`}
+            tabIndex={0}
+          >
+            <span>合同优先</span>
+            <strong>{priority}</strong>
+          </div>
+          <div
+            className="flowNode pool dashboardInteractiveTip"
+            data-tooltip={`数据源收益池 · ${pool}`}
+            tabIndex={0}
+          >
+            <span>数据源收益池</span>
+            <strong>{pool}</strong>
+          </div>
+        </>
+      )}
+      {parties.slice(0, 3).map((item, index) => (
+        <div
+          className={`flowNode party party${index + 1} dashboardInteractiveTip`}
+          data-tooltip={`${item.label} · ${item.value} · 参与方`}
+          key={`${item.label}-${index}`}
+          tabIndex={0}
+        >
+          <span title={item.label}>{item.displayLabel}</span>
+          <strong>{item.value}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
 
-      <section className="homeSection" id="risk">
-        <div className="sectionHeading">
-          <span className="eyebrow">风险提示</span>
-          <h2>模拟参考边界</h2>
-        </div>
-        <div className="dashboardGrid">
-          <SectionCard title="风险提示" description="模拟参考边界在系统首页内直接展示。">
-            <RiskNotice />
-          </SectionCard>
-        </div>
-      </section>
+function DonutChart({
+  activeParty,
+  points,
+  onActiveParty,
+}: {
+  activeParty: string;
+  points: ChartPoint[];
+  onActiveParty: (party: string) => void;
+}) {
+  if (!points.length) {
+    return <EmptyChart />;
+  }
 
-      <section className="homeSection" id="one-click">
-        <div className="sectionHeading">
-          <span className="eyebrow">一键计算</span>
-          <h2>完整链路计算与结果摘要</h2>
-        </div>
-        <WorkbenchCard
-          title="一键计算"
-          description="启动前检查资源主体绑定、质量评估、效用输入和算法参与方集合。"
-          actions={
-            <ActionButton
-              action={actionRegistry["SYS-004"]}
-              disabledReason={backendDisconnected ? "后端连接后可用" : undefined}
-              onClick={(action) => onAction(action)}
+  let offset = 25;
+  return (
+    <div className="donutChart">
+      <div className="donutVisual">
+        <svg aria-label="参与方收益占比" viewBox="0 0 120 120">
+          <circle className="donutTrack" cx="60" cy="60" pathLength={100} r="42" />
+          {points.map((item, index) => {
+            const share = Math.max(0, Math.min(item.numeric * 100, 100));
+            const segment = (
+              <circle
+                className={`donutSegment segment${(index % 6) + 1}${activeParty === item.label ? " active" : ""}`}
+                cx="60"
+                cy="60"
+                key={`${item.label}-${index}`}
+                pathLength={100}
+                r="42"
+                strokeDasharray={`${share} ${100 - share}`}
+                strokeDashoffset={offset}
+              >
+                <title>
+                  {item.label} · {item.value}{item.amount && item.amount !== "暂无" ? ` · ${item.amount}` : ""}
+                </title>
+              </circle>
+            );
+            offset -= share;
+            return segment;
+          })}
+        </svg>
+        <div className="donutHitLayer">
+          {points.slice(0, 5).map((item, index) => (
+            <span
+              aria-label={`${item.label} ${item.value}`}
+              className={`donutHitButton hit${index + 1} dashboardInteractiveTip`}
+              data-tooltip={`${item.label} · ${item.value}${item.amount && item.amount !== "暂无" ? ` · ${item.amount}` : ""}`}
+              key={`${item.label}-hit-${index}`}
+              role="img"
+              tabIndex={0}
+              onMouseEnter={() => onActiveParty(item.label)}
+              onMouseLeave={() => onActiveParty("")}
             />
-          }
-        >
-          <div className="oneClickGrid">
-            <article>
-              <strong>前置条件检查</strong>
-              <span>后端状态守卫</span>
-              <p>是否可执行以 dashboard preconditions 和 disabled_actions 为准。</p>
-            </article>
-            <article>
-              <strong>失败节点</strong>
-              <span>后端未返回摘要</span>
-              <p>失败节点会写入运行日志摘要，并保留阶段快照。</p>
-            </article>
-            <article>
-              <strong>运行日志摘要</strong>
-              <span>local_operator</span>
-              <p>完整链路计算会生成审计日志、算法快照和报告记录。</p>
-            </article>
-            <article>
-              <strong>结果摘要</strong>
-              <span>{projectStatusLabels[snapshot.status]}</span>
-              <p>结果仅作为模拟参考，不构成法律结算或付款指令。</p>
-            </article>
+          ))}
+        </div>
+      </div>
+      <div className="donutLegend">
+        {points.slice(0, 5).map((item, index) => (
+          <div
+            className={`donutLegendItem dashboardInteractiveTip${activeParty === item.label ? " active" : ""}`}
+            data-tooltip={`${item.label} · ${item.value}${item.amount && item.amount !== "暂无" ? ` · ${item.amount}` : ""}`}
+            key={`${item.label}-${index}`}
+            tabIndex={0}
+            onMouseEnter={() => onActiveParty(item.label)}
+            onMouseLeave={() => onActiveParty("")}
+          >
+            <span className={`legendDot segment${(index % 6) + 1}`} />
+            <strong title={item.label}>{item.displayLabel}</strong>
+            <small>{item.value}</small>
           </div>
-        </WorkbenchCard>
-      </section>
-
-      <div className="dashboardGrid">
-        <SectionCard title="最近报告" description="报告记录包含字段范围和版本，不覆盖历史。">
-          <RecentReportList reports={[]} />
-        </SectionCard>
-
-        <SectionCard title="最近审计记录" description="关键操作生成审计日志。">
-          <RecentAuditList auditLogs={[]} />
-        </SectionCard>
-
-        <SectionCard title="快照轨迹" description="阶段性输入、参数和输出快照。">
-          <SnapshotTimeline snapshots={[]} />
-        </SectionCard>
+        ))}
       </div>
     </div>
   );
+}
+
+function BarRankChart({
+  activeParty = "",
+  points,
+  unit,
+  onActiveParty,
+}: {
+  activeParty?: string;
+  points: ChartPoint[];
+  unit: string;
+  onActiveParty?: (party: string) => void;
+}) {
+  if (!points.length) {
+    return <EmptyChart />;
+  }
+
+  const max = Math.max(...points.map((item) => item.numeric), 0);
+  return (
+    <div className="rankChart">
+      {points.map((item, index) => {
+        const width = max > 0 ? Math.max(6, (item.numeric / max) * 100) : 6;
+        return (
+          <div
+            className={`rankRow${activeParty === item.label ? " active" : ""}`}
+            data-tooltip={`${item.label} · ${item.value} · 第 ${index + 1} 名`}
+            key={`${item.label}-${index}`}
+            tabIndex={0}
+            onMouseEnter={() => onActiveParty?.(item.label)}
+            onMouseLeave={() => onActiveParty?.("")}
+          >
+            <span title={item.label}>{item.displayLabel}</span>
+            <div className="rankBarTrack">
+              <div className="rankBar" style={{ width: `${width}%` }} />
+            </div>
+            <strong>{item.value}</strong>
+          </div>
+        );
+      })}
+      <small>{unit}</small>
+    </div>
+  );
+}
+
+function EmptyChart() {
+  return <div className="resultChartEmpty">暂无</div>;
+}
+
+function metricValue(metrics: Array<{ label: string; value: string }>, label: string) {
+  return metrics.find((item) => item.label === label)?.value;
+}
+
+function readRow(row: DataRow | undefined, key: string) {
+  if (!row) {
+    return "暂无";
+  }
+  return formatDisplayValue(row[key], "amount");
+}
+
+function cleanValue(value: unknown) {
+  if (value === undefined || value === null || value === "" || value === "后端未返回" || value === "后端摘要待补") {
+    return "暂无";
+  }
+  return userFacingText(String(value));
+}
+
+type DisplayKind = "plain" | "number" | "amount" | "percent";
+
+function toChartPoint(row: DataRow, labelKeys: string[], valueKey: string, kind: DisplayKind): ChartPoint | null {
+  const rawValue = row[valueKey];
+  const numeric = numericValue(rawValue);
+  if (numeric === null) {
+    return null;
+  }
+  const label = firstText(row, labelKeys);
+  return {
+    label,
+    displayLabel: compactName(label),
+    value: formatDisplayValue(rawValue, kind),
+    numeric,
+  };
+}
+
+function firstText(row: DataRow, keys: string[]) {
+  for (const key of keys) {
+    const value = cleanValue(row[key]);
+    if (value !== "暂无") {
+      return value;
+    }
+  }
+  return "未命名";
+}
+
+function formatDisplayValue(value: unknown, kind: DisplayKind) {
+  const cleaned = cleanValue(value);
+  if (cleaned === "暂无") {
+    return cleaned;
+  }
+  const numeric = numericValue(cleaned);
+  if (numeric === null) {
+    return cleaned;
+  }
+  if (kind === "percent") {
+    return `${(numeric * 100).toLocaleString("zh-CN", {
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 2,
+    })}%`;
+  }
+  if (kind === "amount") {
+    return numeric.toLocaleString("zh-CN", {
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 2,
+    });
+  }
+  if (kind === "number") {
+    return numeric.toLocaleString("zh-CN", {
+      maximumFractionDigits: 2,
+    });
+  }
+  return cleaned;
+}
+
+function compactName(value: string) {
+  return value.length > 24 ? `${value.slice(0, 22)}...` : value;
+}
+
+function numericValue(value: unknown) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const parsed = Number(String(value).replace(/,/g, ""));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isChartPoint(value: ChartPoint | null): value is ChartPoint {
+  return value !== null;
 }

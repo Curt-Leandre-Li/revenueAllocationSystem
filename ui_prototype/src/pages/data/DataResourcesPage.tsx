@@ -3,21 +3,28 @@ import { actionRegistry } from "../../domain/actionRegistry";
 import type { DataRow } from "../../domain/types";
 import {
   ActionButton,
-  ChartPanel,
+  ChartArea,
+  CompactPageHeader,
   DetailDrawer,
   DrawerSection,
   EmptyGuide,
   ExportFieldList,
-  MetricCard,
-  PageHeader,
+  ProductBarChart,
+  SummaryStrip,
   TechnicalDetails,
-  WorkbenchCard,
 } from "../../ui";
-import { cellText, hasBackendRows, pageMetrics, pageRows } from "../backendPageData";
+import {
+  cellText,
+  hasBackendRows,
+  numberCell,
+  numericCellValue,
+  pageMetrics,
+  pageRows,
+} from "../backendPageData";
 import type { PageProps } from "../pageTypes";
 
 export function DataResourcesPage({ route, snapshot, onAction }: PageProps) {
-  const pageData = snapshot.pages["/data/resources"];
+  const pageData = snapshot.pages[route.path];
   const rows = pageRows(pageData);
   const metrics = pageMetrics(pageData);
   const [keyword, setKeyword] = useState("");
@@ -42,42 +49,35 @@ export function DataResourcesPage({ route, snapshot, onAction }: PageProps) {
     [rows, modality, keyword],
   );
   const selectedRow = detailIndex === null ? undefined : filteredRows[detailIndex];
+  const metricMap = new Map(metrics.map((item) => [item.label, item]));
+  const summaryItems = [
+    metricMap.get("数据资源") ?? { label: "数据资源", value: "暂无", hint: "待生成", tone: "neutral" as const },
+    metricMap.get("字段数量") ?? { label: "字段数量", value: cellText(pageData?.technicalDetails, "field_count_total", "暂无"), hint: "系统摘要", tone: "neutral" as const },
+    metricMap.get("样本数量") ?? { label: "样本数量", value: cellText(pageData?.technicalDetails, "sample_count_total", "暂无"), hint: "系统摘要", tone: "neutral" as const },
+    metricMap.get("关联主体") ?? { label: "关联主体", value: cellText(pageData?.technicalDetails, "provider_party_count", "暂无"), hint: "系统摘要", tone: "neutral" as const },
+    metricMap.get("敏感字段") ?? { label: "敏感字段", value: cellText(pageData?.technicalDetails, "sensitive_field_count", "暂无"), hint: "系统摘要", tone: "neutral" as const },
+  ];
+  const missingRatePoints = rows.map((row) => ({
+    label: cellText(row, "resource_name"),
+    value: cellText(row, "missing_rate"),
+    numeric: numericCellValue(row.missing_rate),
+    meta: cellText(row, "modality"),
+  }));
 
   return (
-    <div className="pageWorkspace phase2Page resourcesPage">
-      <PageHeader
-        route={{
-          ...route,
-          label: "资源盘点和主体归属确认工作台",
-          responsibility: "盘点资源、筛选风险、确认主体归属，并控制是否进入后续计算。",
-        }}
-        snapshot={snapshot}
+    <div className="pageWorkspace leanPage resourcesPage">
+      <CompactPageHeader
+        title="数据资源"
+        description="查看资源列表、字段数量、样本数量、缺失率和关联主体。"
       />
 
-      <div className="metricGrid five">
-        {metrics.map((item) => (
-          <MetricCard item={item} key={item.label} />
-        ))}
-      </div>
+      <SummaryStrip items={summaryItems} />
 
-      <WorkbenchCard
-        title="资源筛选"
-        description="筛选只影响表格浏览，不生成业务摘要或前置条件结论。"
-        actions={
-          <ActionButton
-            action={actionRegistry["RES-007"]}
-            disabledReason="缺少资源摘要导出端点"
-            onClick={(action) => onAction(action)}
-          />
-        }
-      >
+      <section className="leanFilterBar">
         <div className="filterBar">
           <label>
             资源/主体搜索
-            <input
-              value={keyword}
-              onChange={(event) => setKeyword(event.target.value)}
-            />
+            <input value={keyword} onChange={(event) => setKeyword(event.target.value)} />
           </label>
           <label>
             模态
@@ -87,119 +87,121 @@ export function DataResourcesPage({ route, snapshot, onAction }: PageProps) {
               ))}
             </select>
           </label>
+          <ActionButton
+            action={actionRegistry["RES-007"]}
+            disabledReason="暂未启用"
+            onClick={(action) => onAction(action)}
+          />
         </div>
-      </WorkbenchCard>
+      </section>
 
-      <div className="phase2bTwoCol">
-        <section className="resourceTableCard">
-          <div className="sectionHead">
+      <section className="resultChartGrid secondary">
+        <ChartArea title="资源类型分布" source={pageData.chart?.chart_id} />
+        <ChartArea title="缺失率排行" source={hasBackendRows(pageData) ? "rows" : undefined}>
+          <ProductBarChart points={missingRatePoints} unit="缺失率" />
+        </ChartArea>
+      </section>
+
+      <section className="leanTableSection">
+        <div className="leanSectionHead">
+          <div>
             <h2>资源列表</h2>
-            <p>字段数、样本数、缺失率、模态和关联主体只展示后端字段。</p>
+            <p>字段数、样本数、缺失率、模态和关联主体只展示系统字段。</p>
           </div>
-          {hasBackendRows(pageData) ? (
-            <div className="tableWrap">
-              <table className="dataTable phase2Table">
-                <thead>
-                  <tr>
-                    <th>资源名称</th>
-                    <th>模态</th>
-                    <th>字段数</th>
-                    <th>样本数</th>
-                    <th>缺失率</th>
-                    <th>是否进入后续计算</th>
-                    <th>关联主体</th>
-                    <th>操作</th>
+        </div>
+        {hasBackendRows(pageData) ? (
+          <div className="tableWrap">
+            <table className="dataTable phase2Table">
+              <thead>
+                <tr>
+                  <th>资源名称</th>
+                  <th>模态</th>
+                  <th>字段数</th>
+                  <th>样本数</th>
+                  <th>缺失率</th>
+                  <th>是否进入计算</th>
+                  <th>关联主体</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRows.map((row, index) => (
+                  <tr key={`${cellText(row, "resource_id", "resource")}-${index}`}>
+                    <td>
+                      <strong>{cellText(row, "resource_name")}</strong>
+                      <small className="cellHint">{cellText(row, "status")}</small>
+                    </td>
+                    <td>{cellText(row, "modality")}</td>
+                    <td>{numberCell(row, "field_count")}</td>
+                    <td>{numberCell(row, "sample_count")}</td>
+                    <td><span className="tag">{cellText(row, "missing_rate")}</span></td>
+                    <td>{cellText(row, "include_in_calculation")}</td>
+                    <td><span className="tag">{cellText(row, "provider_party")}</span></td>
+                    <td>
+                      <div className="tableActions">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onAction(actionRegistry["RES-002"], {
+                              kind: "resource-detail",
+                              resourceKey: cellText(row, "resource_id", ""),
+                            });
+                            setDetailIndex(index);
+                          }}
+                        >
+                          详情
+                        </button>
+                        <button
+                          disabled
+                          title="暂未启用"
+                          type="button"
+                          onClick={() => setBindingOpen(true)}
+                        >
+                          关联主体
+                        </button>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {filteredRows.map((row, index) => (
-                    <tr key={`${cellText(row, "resource_id", "resource")}-${index}`}>
-                      <td>
-                        <strong>{cellText(row, "resource_name")}</strong>
-                        <small className="cellHint">{cellText(row, "status")}</small>
-                      </td>
-                      <td>{cellText(row, "modality")}</td>
-                      <td>{cellText(row, "field_count")}</td>
-                      <td>{cellText(row, "sample_count")}</td>
-                      <td><span className="tag">{cellText(row, "missing_rate")}</span></td>
-                      <td>{cellText(row, "include_in_calculation")}</td>
-                      <td><span className="tag">{cellText(row, "provider_party")}</span></td>
-                      <td>
-                        <div className="tableActions">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onAction(actionRegistry["RES-002"], {
-                                kind: "resource-detail",
-                                resourceKey: cellText(row, "resource_id", ""),
-                              });
-                              setDetailIndex(index);
-                            }}
-                          >
-                            详情
-                          </button>
-                          <button
-                            disabled
-                            title="页面缺少 party relation 写入 DTO；本阶段不做前端假绑定。"
-                            type="button"
-                            onClick={() => setBindingOpen(true)}
-                          >
-                            关联主体
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <EmptyGuide
-              title="后端未返回资源列表"
-              description="请先选择演示数据或上传 JSON；页面不会展示内置资源样例。"
-            />
-          )}
-        </section>
-
-        <ChartPanel
-          title="资源图表"
-          description="模态分布、缺失率条形图和资源主体关系图需要后端 chart DTO。"
-          source={pageData.chart?.chart_id}
-        />
-      </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyGuide
+            title="暂无资源列表"
+            description="请先选择示例数据或上传 JSON；页面不会展示内置资源样例。"
+          />
+        )}
+      </section>
 
       <DetailDrawer
-        footerNote="详情抽屉只展示后端字段；不展示前端生成的统计或预览。"
+        footerNote="详情抽屉只展示系统字段；不展示页面生成的统计或预览。"
         objectType="数据资源"
         open={Boolean(selectedRow)}
         size="lg"
         statusTag={selectedRow ? cellText(selectedRow, "status") : undefined}
         subtitle={selectedRow ? cellText(selectedRow, "modality") : undefined}
-        technicalDetails={
-          selectedRow ? <TechnicalDetails details={selectedRow} /> : null
-        }
+        technicalDetails={selectedRow ? <TechnicalDetails details={selectedRow} /> : null}
         title="数据资源详情"
         variant="detail"
         onClose={() => setDetailIndex(null)}
       >
         {selectedRow ? (
-          <div className="resourceDetail">
-            <DrawerSection title="资源概览">
-              <dl className="businessDetail">
-                {resourceDetailFields.map((field) => (
-                  <div key={field.key}>
-                    <dt>{field.label}</dt>
-                    <dd>{cellText(selectedRow, field.key)}</dd>
-                  </div>
-                ))}
-              </dl>
-            </DrawerSection>
-          </div>
+          <DrawerSection title="资源概览">
+            <dl className="businessDetail">
+              {resourceDetailFields.map((field) => (
+                <div key={field.key}>
+                  <dt>{field.label}</dt>
+                  <dd>{cellText(selectedRow, field.key)}</dd>
+                </div>
+              ))}
+            </dl>
+          </DrawerSection>
         ) : null}
       </DetailDrawer>
 
       <DetailDrawer
-        footerNote="保存主体关系必须走后端接口并返回审计记录。"
+        footerNote="保存主体关系必须走系统接口并返回审计记录。"
         objectType="主体归属配置"
         open={bindingOpen}
         size="lg"
@@ -208,16 +210,16 @@ export function DataResourcesPage({ route, snapshot, onAction }: PageProps) {
         variant="form"
         onClose={() => setBindingOpen(false)}
       >
-        <DrawerSection title="后端缺口">
+        <DrawerSection title="暂未启用">
           <EmptyGuide
-            title="主体绑定 payload 未接入"
-            description="需要页面获得资源 ID、参与方 ID 和 split_ratio 输入后调用后端 party-relations；当前不做本地绑定成功。"
+            title="主体绑定暂未接入"
+            description="需要资源、参与方和分成比例输入后再提交；当前不做本地绑定成功。"
           />
         </DrawerSection>
       </DetailDrawer>
 
       <DetailDrawer
-        footerNote="缺少导出端点时不显示已生成文件。"
+        footerNote="缺少导出结果时不显示已生成文件。"
         objectType="导出说明"
         open={false}
         size="md"
@@ -237,7 +239,7 @@ export function DataResourcesPage({ route, snapshot, onAction }: PageProps) {
               "provider_party",
               "include_in_calculation",
             ]}
-            note="字段范围仅为契约说明；当前没有后端导出结果。"
+            note="字段范围仅为契约说明；当前没有系统导出结果。"
           />
         </DrawerSection>
       </DetailDrawer>
@@ -252,6 +254,6 @@ const resourceDetailFields: Array<{ key: keyof DataRow & string; label: string }
   { key: "sample_count", label: "样本数" },
   { key: "missing_rate", label: "缺失率" },
   { key: "sensitive_field_count", label: "涉敏字段" },
-  { key: "include_in_calculation", label: "是否进入后续计算" },
+  { key: "include_in_calculation", label: "是否进入计算" },
   { key: "provider_party", label: "关联主体" },
 ];
