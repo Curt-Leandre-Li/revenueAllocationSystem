@@ -75,6 +75,28 @@ Left navigation labels must not display Arabic numeric prefixes.
 
 Use `完整链路` for this process.
 
+## Quality Assessment Indicator Baseline
+
+Quality assessment uses the data asset quality assessment common indicator
+framework from the uploaded PDF. The default framework has 7 primary indicators:
+规范性、准确性、完整性、唯一性、一致性、时效性、可访问性.
+
+The 17 secondary indicators are: 命名规范性、数据长度规范性、数据精度规范性、
+数据格式规范性、元数据规范性、参考数据规范性、数据模型规范性、数据范围准确性、
+编码/代码准确性、数据元素完整性、数据记录完整性、数据唯一标识程度、数据冗余性、
+相同数据一致性、关联数据一致性、数据记录及时性、数据字段可访问性.
+
+Quality scores are weighted from secondary indicators to primary indicators and
+then to the total score. Primary weights sum to 1, and secondary weights under
+the same primary indicator sum to 1. Frontend pages display backend-returned
+`quality_score`, `quality_level`, `dimension_scores`, `quality_score_detail`,
+and `evidence_summary`; they must not recalculate the quality score.
+
+Optional indicators may be added for specific scenarios, such as 管理信息完整性、
+应用场景完整性、调用成功率、数据来源权威性、采集方式、流通交易情况、
+数据资产登记情况、投资收益率稳定性. Optional indicators do not replace the common
+indicator framework.
+
 ## P0/P1 Boundary
 
 P0 includes local operator mode, demo data / JSON upload, data ingestion,

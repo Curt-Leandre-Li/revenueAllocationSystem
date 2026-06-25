@@ -25,7 +25,7 @@
 
 | ID | 文件位置 | 类型 | 当前行为 | 违反点 | Phase 1 目标 |
 | --- | --- | --- | --- | --- | --- |
-| FC-001 | `ui_prototype/src/pages/measure/QualityPage.tsx:15` | 质量得分硬编码 | `dimensionScores` 写死完整性/准确性/时效性/可用性得分、权重和证据。 | 质量评分和权重不得在前端定义。 | 从 `GET /quality-assessments/{id}/details` 或 quality chart DTO 读取。 |
+| FC-001 | `ui_prototype/src/pages/measure/QualityPage.tsx:15` | 质量得分硬编码 | `dimensionScores` 写死少量一级指标得分、权重和证据，未覆盖规范性、准确性、完整性、唯一性、一致性、时效性、可访问性及 17 个二级指标。 | 质量评分和权重不得在前端定义。 | 从 `GET /quality-assessments/{id}/details` 或 quality chart DTO 读取。 |
 | FC-002 | `ui_prototype/src/pages/measure/QualityPage.tsx:37` | 质量总分硬编码 | 指标卡写死 `88.75`, `A`, `1.063200`, `v3`。 | 页面指标必须来自后端字段。 | 从 latest assessment DTO 显示 `quality_score`, `quality_level`, `quality_factor`, `version_no`。 |
 | FC-003 | `ui_prototype/src/pages/measure/QualityPage.tsx:87` | 质量进度条硬编码 | `style={{ width: "88.75%" }}`。 | 前端用硬编码表现业务得分。 | 后端返回 display percent 或 chart DTO；前端只渲染。 |
 | FC-004 | `ui_prototype/src/pages/measure/QualityPage.tsx:138` | 权重合计硬编码 | 显示“当前一级权重合计：1.000000”。 | 权重合计/校验应由后端完成。 | 后端返回权重校验结果，前端只显示。 |

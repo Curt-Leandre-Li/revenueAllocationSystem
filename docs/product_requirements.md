@@ -35,7 +35,10 @@ for agents.
 - FR-04: Maintain parties and distinguish data providers from non-data
   contribution parties.
 - FR-05: Link data resources to data providers.
-- FR-06: Configure and execute quality assessment.
+- FR-06: Configure and execute quality assessment using the 7 primary indicators
+  and 17 secondary indicators from the common data asset quality assessment
+  framework; frontend pages display backend results and do not recalculate
+  quality scores.
 - FR-07: Configure and execute shuyuan metering.
 - FR-08: Calculate contribution and utility values.
 - FR-09: Execute MD-DShap weight calculation with trace and audit snapshots.

@@ -19,7 +19,7 @@
 {
   "chart_id": "quality_dimension_scores",
   "chart_type": "bar",
-  "title": "质量维度得分",
+  "title": "7 个一级质量指标得分",
   "source": {
     "result_id": "assessment_xxx",
     "snapshot_id": "snapshot_xxx",
@@ -42,7 +42,7 @@
 | 数据接入管理 | 数据包状态分布、上传校验结果、字段/模态摘要 | data package / validation DTO |
 | 数据资源管理 | 资源模态分布、字段缺失率条形图、资源与主体关系视图 | resource list/detail DTO |
 | 参与方管理 | 主体类型分布、是否进入 MD-DShap 标记、参与方贡献结果摘要 | party DTO + 后端贡献摘要 DTO |
-| 质量评估管理 | 质量总分卡、维度雷达图或柱状图、二级指标得分表 | quality assessment/detail DTO |
+| 质量评估管理 | 质量总分卡、7 个一级指标柱状图或雷达图、17 个二级指标得分表 | quality assessment/detail DTO |
 | 数元计量管理 | 资源级/参与方级数元金额柱状图、调用量趋势或排行 | shuyuan metering/detail DTO |
 | 贡献度与效用计算 | 贡献度排行、效用值排行、trace 摘要 | contribution/utility/trace DTO |
 | MD-DShap 计算管理 | 参与方权重条形图、边际贡献热力表、算法复杂度说明卡 | md_dshap result/marginal_trace/audit DTO |
@@ -56,7 +56,7 @@
 - 流程进度：横向步骤条或紧凑流程图。
 - 状态分布：小型柱状图或环形图。
 - 缺失率、权重、金额对比：柱状图。
-- 质量维度：柱状图优先，雷达图只在维度数量稳定时使用。
+- 一级质量指标：柱状图优先，雷达图只在 7 个一级指标都由后端 DTO 返回时使用。
 - 收益流向：Sankey 或分段流向图；没有后端流向 DTO 时先用表格。
 - 边际贡献：表格优先，热力图只展示后端给出的矩阵。
 - 审计记录：时间线 + 表格筛选。
