@@ -19,7 +19,8 @@
 | **版本**            | **日期**   | **修改内容**                                                                                         | **状态**   |
 |---------------------|------------|------------------------------------------------------------------------------------------------------|------------|
 | V1.0                | 2026-06-17 | 基于 V1.2 需求规格说明书和系统详细功能设计生成数据库设计、ER 图、DDL、导出字段映射。                 | 已生成     |
-| V1.0-导航结构更新版 | 2026-06-17 | 按更新后的左侧导航结构重组菜单、路由、权限、模块映射和 ER 图分组；保持无关业务表与算法存储模型一致。 | 本次提交稿 |
+| V1.0-导航结构更新版 | 2026-06-17 | 按更新后的左侧导航结构重组菜单、路由、权限、模块映射和 ER 图分组；保持无关业务表与算法存储模型一致。 | 已提交 |
+| V1.1-资源质量评估版 | 2026-06-25 | 新增后端逐资源质量评估表、关系、索引、按钮副作用和导出字段映射。 | 本次提交稿 |
 
 # 1. 文档定位与更新边界
 
@@ -48,7 +49,7 @@
 | 2        | 数据管理       | 数据接入管理         | NAV_DATA_PACKAGE     | DATA            | /data/ingestion         | P0       | data_package, input_snapshot, upload_validation_result                            | CREATE, VIEW, DELETE_DISABLE         |
 | 2        | 数据管理       | 数据资源管理         | NAV_DATA_RESOURCE    | RES             | /data/resources         | P0       | data_resource, data_resource_field, data_resource_party_relation                  | VIEW, UPDATE, EXPORT                 |
 | 2        | 数据管理       | 参与方管理           | NAV_DATA_PARTY       | PARTY           | /data/parties           | P0       | party, data_resource_party_relation                                               | CREATE, UPDATE, DELETE_DISABLE, VIEW |
-| 3        | 数元贡献度计量 | 质量评估管理         | NAV_MEASURE_QUALITY  | QUAL            | /metering/quality       | P0       | quality_assessment, quality_score_detail, parameter_version                       | UPDATE, CALCULATE, VIEW              |
+| 3        | 数元贡献度计量 | 质量评估管理         | NAV_MEASURE_QUALITY  | QUAL            | /metering/quality       | P0       | quality_assessment, quality_score_detail, quality_resource_assessment, quality_resource_score_detail, parameter_version | UPDATE, CALCULATE, VIEW, EXPORT      |
 | 3        | 数元贡献度计量 | 数元计量管理         | NAV_MEASURE_SHUYUAN  | DU              | /metering/shuyuan       | P0       | shuyuan_metering, shuyuan_metering_detail                                         | UPDATE, CALCULATE, VIEW              |
 | 3        | 数元贡献度计量 | 贡献度与效用计算     | NAV_MEASURE_UTILITY  | UTIL            | /metering/utility       | P0       | contribution_record, utility_function_snapshot, utility_record, utility_trace     | UPDATE, CALCULATE, VIEW              |
 | 4        | 收益分配计算   | MD-DShap 计算管理    | NAV_ALLOC_MDS        | MDS             | /allocation/md-dshap    | P0       | md_dshap_task, md_dshap_result, md_dshap_marginal_trace, algorithm_audit_snapshot | CALCULATE, VIEW, EXPORT              |
@@ -65,7 +66,7 @@
 |----------------|----------------|-------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
 | 系统首页       | SYS            | 无二级页面；内部区块为项目总览、流程入口、风险提示、一键计算 | allocation_project, audit_log, snapshot_store, report_record, system_parameter                                                                                                                   | 项目状态聚合、流程状态条、一键计算管线、风险提示文案。                         |
 | 数据管理       | DATA/RES/PARTY | 数据接入管理 / 数据资源管理 / 参与方管理        | data_package, input_snapshot, upload_validation_result, data_resource, data_resource_field, data_resource_party_relation, party                                                                  | 导航合并为“数据管理”后，三个二级页面共享 project_id 和资源-主体关系。          |
-| 数元贡献度计量 | QUAL/DU/UTIL   | 质量评估管理 / 数元计量管理 / 贡献度与效用计算  | quality_assessment, quality_score_detail, shuyuan_metering, shuyuan_metering_detail, contribution_record, utility_function_snapshot, utility_record, utility_trace                               | 质量、计量、贡献和效用按顺序构成 MD-DShap 输入。                               |
+| 数元贡献度计量 | QUAL/DU/UTIL   | 质量评估管理 / 数元计量管理 / 贡献度与效用计算  | quality_assessment, quality_score_detail, quality_resource_assessment, quality_resource_score_detail, shuyuan_metering, shuyuan_metering_detail, contribution_record, utility_function_snapshot, utility_record, utility_trace                               | 质量、计量、贡献和效用按顺序构成 MD-DShap 输入。                               |
 | 收益分配计算   | MDS/ALLOC/CONS | MD-DShap 计算管理 / 收益分配模拟 / 合同约束管理 | md_dshap_task, md_dshap_result, md_dshap_marginal_trace, algorithm_audit_snapshot, allocation_scenario, allocation_priority_item, contract_constraint, allocation_result, constraint_apply_trace | 算法权重、收益池、合同优先和约束调整集中在收益分配计算域。                     |
 | 报告生成与导出 | REP            | 报告生成与导出                                  | report_record, export_file, snapshot_store                                                                                                                                                       | 保持 P0 Markdown/CSV/JSON/JSONL，PDF 为 P1。                                   |
 | 系统管理       | PARAM/USER/AUD | 参数配置 / 用户与权限管理（P1） / 审计日志管理  | system_parameter, parameter_version, user_account, role, permission, user_role, role_permission, audit_log, snapshot_store, nav_menu                                                             | 将参数、权限、审计集中到系统管理；审计日志从独立技术模块变为系统管理二级页面。 |
@@ -78,7 +79,7 @@
 |----------------|--------------------------------------|---------------------------------------------------------------------------------------|------------------------------------------------------|
 | 项目与首页     | 项目状态、流程进度、一键计算入口     | allocation_project, snapshot_store, audit_log                                         | 首页仅读取聚合状态，不重复计算业务结果。             |
 | 数据管理       | 数据包、资源、字段、参与方和主体关联 | data_package, data_resource, data_resource_field, party, data_resource_party_relation | 资源进入计算前必须关联数据源主体。                   |
-| 数元贡献度计量 | 质量、数元、贡献和效用               | quality_assessment, shuyuan_metering, contribution_record, utility_record             | 质量/计量/效用均版本化并可追溯。                     |
+| 数元贡献度计量 | 质量、逐资源质量、数元、贡献和效用   | quality_assessment, quality_resource_assessment, shuyuan_metering, contribution_record, utility_record | 质量/资源级质量/计量/效用均版本化并可追溯。                     |
 | 收益分配计算   | MD-DShap、收益池、合同优先和约束调整 | md_dshap_task, allocation_scenario, contract_constraint, allocation_result            | MD-DShap 只产生权重，分配结果仍受合同约束。          |
 | 报告生成与导出 | 报告记录、导出文件、字段清单         | report_record, export_file                                                            | 每次导出生成 report_id 和 checksum，不覆盖历史文件。 |
 | 系统管理       | 参数、用户权限、审计日志、菜单       | system_parameter, user_account, role, permission, nav_menu, audit_log                 | P0 不强制登录但仍保留权限设计；P1 启用 RBAC。        |
@@ -109,9 +110,11 @@
 | data_resource_field          | 资源字段表        | field_id             | resource_id                                                        | field_name、is_sensitive、missing_rate           | 支持字段统计与脱敏预览。                       |
 | party                        | 参与方表          | party_id             | project_id                                                         | party_type、include_in_md_dshap、status          | 参与方管理主表。                               |
 | data_resource_party_relation | 资源主体关系表    | relation_id          | resource_id、party_id                                              | split_ratio、is_primary_provider                 | 资源进入算法前必须关联数据源主体。             |
-| quality_metric_template      | 质量指标模板表    | metric_id            |                                                                    | metric_code、parent_metric_code、default_weight  | 质量指标权重模板。                             |
+| quality_metric_template      | 质量指标模板表    | metric_id            |                                                                    | metric_code、parent_metric_code、default_weight  | P0 默认 7 个一级指标和 17 个二级指标权重模板。 |
 | quality_assessment           | 质量评估表        | assessment_id        | project_id、package_id                                             | score、level、quality_factor                     | 质量评估管理主表。                             |
-| quality_score_detail         | 质量得分明细      | detail_id            | assessment_id                                                      | dimension_code、weight、score                    | 一级/二级指标得分。                            |
+| quality_score_detail         | 质量得分明细      | detail_id            | assessment_id                                                      | dimension_code、weight、score                    | 包级一级指标和二级指标得分、证据和问题摘要。   |
+| quality_resource_assessment  | 资源级质量评估表  | resource_assessment_id | assessment_id、resource_id、project_id、package_id                | resource_score、resource_level、resource_quality_factor | 每个数据资源一条资源级质量评估主结果。          |
+| quality_resource_score_detail | 资源级质量得分明细 | resource_detail_id    | resource_assessment_id、assessment_id、resource_id                 | dimension_code、weight、score、rule_code         | 资源级一级/二级指标得分、证据和规则编码。      |
 | shuyuan_metering             | 数元计量表        | metering_id          | project_id、assessment_id                                          | base_price、coefficients、total_amount           | 数元计量管理主表。                             |
 | shuyuan_metering_detail      | 数元计量明细      | detail_id            | metering_id、resource_id、party_id                                 | call_count、metering_amount                      | 资源级/参与方级计量明细。                      |
 | contribution_record          | 贡献度记录        | contribution_id      | project_id、party_id                                               | valid_units、weights、normalized_contribution    | 贡献度与效用计算输入。                         |
@@ -334,6 +337,34 @@
 | metric_level       | smallint      | Y        |        | 1=一级，2=二级。   |
 | status             | varchar(16)   | Y        |        | ENABLED/DISABLED。 |
 
+P0 默认初始化 7 个一级指标和 17 个二级指标。`metric_level=1` 表示一级指标，`metric_level=2` 表示二级指标；二级指标通过 `parent_metric_code` 关联所属一级指标。一级指标权重之和必须为 1，同一一级指标下的二级指标权重之和必须为 1。
+
+默认一级指标种子记录：
+
+| **metric_level** | **metric_code** | **metric_name** | **parent_metric_code** |
+|------------------|-----------------|-----------------|------------------------|
+| 1                | QUALITY_NORM    | 规范性          |                        |
+| 1                | QUALITY_ACC     | 准确性          |                        |
+| 1                | QUALITY_COMP    | 完整性          |                        |
+| 1                | QUALITY_UNIQ    | 唯一性          |                        |
+| 1                | QUALITY_CONS    | 一致性          |                        |
+| 1                | QUALITY_TIME    | 时效性          |                        |
+| 1                | QUALITY_ACCESS  | 可访问性        |                        |
+
+默认二级指标种子记录：
+
+| **所属一级指标** | **二级指标** |
+|------------------|--------------|
+| 规范性           | 命名规范性、数据长度规范性、数据精度规范性、数据格式规范性、元数据规范性、参考数据规范性、数据模型规范性 |
+| 准确性           | 数据范围准确性、编码/代码准确性 |
+| 完整性           | 数据元素完整性、数据记录完整性 |
+| 唯一性           | 数据唯一标识程度、数据冗余性 |
+| 一致性           | 相同数据一致性、关联数据一致性 |
+| 时效性           | 数据记录及时性 |
+| 可访问性         | 数据字段可访问性 |
+
+可选指标可根据具体场景扩展，例如管理信息完整性、应用场景完整性、调用成功率、数据来源权威性、采集方式、流通交易情况、数据资产登记情况、投资收益率稳定性等。可选指标不替代通用指标框架。
+
 ### quality_assessment
 
 | **字段**              | **类型**      | **必填** | **键** | **说明**                     |
@@ -362,6 +393,47 @@
 | score                 | numeric(8,4)  | Y        |        | 得分。             |
 | evidence_text         | text          | N        |        | 证据说明。         |
 
+`quality_score_detail` 用于保存一级指标和二级指标的得分、权重、证据、问题摘要和规则编码，并支持通过 `parent_dimension_code` 还原二级指标所属一级指标。如果当前 P0 schema 未包含全部字段，则问题摘要、规则编码和扩展证据作为 `evidence_text` 的结构化快照字段或结果快照字段说明，不在本轮修改 schema。
+
+
+### quality_resource_assessment
+
+| **字段**                   | **类型**      | **必填** | **键** | **说明**                                      |
+|----------------------------|---------------|----------|--------|-----------------------------------------------|
+| resource_assessment_id     | varchar(64)   | Y        | PK     | 资源级质量评估主键。                          |
+| assessment_id              | varchar(64)   | Y        | FK     | 所属包级质量评估。                            |
+| project_id                 | varchar(64)   | Y        | FK     | 所属项目。                                    |
+| package_id                 | varchar(64)   | Y        | FK     | 所属数据包。                                  |
+| resource_id                | varchar(64)   | Y        | FK     | 被评估数据资源。                              |
+| resource_score             | numeric(8,4)  | Y        |        | 资源级质量总分。                              |
+| resource_level             | varchar(32)   | Y        |        | 资源级质量等级。                              |
+| resource_quality_factor    | numeric(18,6) | Y        |        | 资源级质量系数，供资源级计量和效用计算读取。  |
+| resource_weight            | numeric(18,6) | Y        |        | 包级汇总时采用的资源权重。                    |
+| weight_strategy            | varchar(40)   | Y        |        | SAMPLE_COUNT/FIELD_COUNT/EQUAL/MANUAL。       |
+| status                     | varchar(32)   | Y        | IDX    | SUCCESS/PARTIAL_SUCCESS/FAILED。              |
+| error_detail_json          | jsonb         | N        |        | 资源级失败详情。                              |
+| evidence_summary           | text          | N        |        | 资源级证据摘要。                              |
+| version_no                 | int           | Y        | IDX    | 资源级评估版本。                              |
+| created_at                 | timestamp     | Y        |        | 创建时间。                                    |
+
+### quality_resource_score_detail
+
+| **字段**                   | **类型**      | **必填** | **键** | **说明**                              |
+|----------------------------|---------------|----------|--------|---------------------------------------|
+| resource_detail_id         | varchar(64)   | Y        | PK     | 资源级质量得分明细主键。              |
+| resource_assessment_id     | varchar(64)   | Y        | FK     | 资源级质量评估。                      |
+| assessment_id              | varchar(64)   | Y        | FK     | 冗余包级评估 ID，便于汇总查询。       |
+| resource_id                | varchar(64)   | Y        | FK     | 被评估数据资源。                      |
+| dimension_code             | varchar(64)   | Y        | IDX    | 指标编码。                            |
+| dimension_name             | varchar(100)  | Y        |        | 指标名称。                            |
+| parent_dimension_code      | varchar(64)   | N        |        | 上级指标。                            |
+| weight                     | numeric(18,6) | Y        |        | 当次资源级有效权重。                  |
+| score                      | numeric(8,4)  | Y        |        | 资源级指标得分。                      |
+| evidence_text              | text          | N        |        | 证据说明。                            |
+| rule_code                  | varchar(80)   | N        |        | 后端评分规则编码。                    |
+| issue_count                | int           | N        |        | 该指标识别的问题数量。                |
+| not_applicable_reason      | text          | N        |        | 模态不适用或跳过评分原因。            |
+
 ### shuyuan_metering
 
 | **字段**                | **类型**      | **必填** | **键** | **说明**                 |
@@ -378,6 +450,7 @@
 | total_amount            | numeric(18,2) | Y        |        | 项目级计量金额。         |
 | parameter_snapshot_id   | varchar(64)   | Y        | FK     | 计量参数快照。           |
 | version_no              | int           | Y        | IDX    | 计量版本。               |
+
 
 ### shuyuan_metering_detail
 
@@ -688,7 +761,10 @@
 | data_resource             | data_resource_party_relation | 1:N      | 一个资源可关联多个主体。             |
 | party                     | data_resource_party_relation | 1:N      | 一个参与方可关联多个资源。           |
 | data_package              | quality_assessment           | 1:N      | 同一数据包可多次评估并形成版本。     |
-| quality_assessment        | quality_score_detail         | 1:N      | 一次质量评估包含多维度得分明细。     |
+| quality_assessment        | quality_score_detail         | 1:N      | 一次质量评估包含包级多维度得分明细。 |
+| quality_assessment        | quality_resource_assessment  | 1:N      | 一次包级质量评估包含多个资源级评估结果。 |
+| data_resource             | quality_resource_assessment  | 1:N      | 一个数据资源可在不同质量评估版本中产生多条资源级结果。 |
+| quality_resource_assessment | quality_resource_score_detail | 1:N    | 一次资源级评估包含一级和二级指标明细。 |
 | quality_assessment        | shuyuan_metering             | 1:N      | 计量引用质量评估版本。               |
 | shuyuan_metering          | shuyuan_metering_detail      | 1:N      | 计量主表聚合明细。                   |
 | party                     | contribution_record          | 1:N      | 参与方产生贡献记录。                 |
@@ -731,6 +807,9 @@
 | data_resource                | idx_resource_package_modality    | package_id, modality                              | N        | 资源列表和模态筛选。               |
 | data_resource_party_relation | uk_resource_party                | resource_id, party_id                             | Y        | 同一资源-主体关系唯一。            |
 | quality_assessment           | idx_quality_project_version      | project_id, version_no                            | N        | 质量评估历史版本。                 |
+| quality_resource_assessment  | idx_quality_resource_version     | assessment_id, resource_id, version_no             | N        | 资源级质量评估版本查询。             |
+| quality_resource_assessment  | uk_quality_resource_assessment   | assessment_id, resource_id                         | Y        | 同一包级评估中每个资源一条主结果。   |
+| quality_resource_score_detail | idx_quality_resource_detail      | resource_assessment_id, dimension_code             | N        | 资源级指标明细查询。                 |
 | shuyuan_metering             | idx_metering_project_version     | project_id, version_no                            | N        | 数元计量历史版本。                 |
 | contribution_record          | idx_contribution_project_party   | project_id, party_id                              | N        | 贡献度结果查询。                   |
 | utility_record               | idx_utility_project_party_task   | project_id, party_id, task_key                    | N        | 效用值和任务维度查询。             |
@@ -777,7 +856,9 @@
 | 数据接入管理         | DATA-003 上传 JSON 输入文件    | data_package, input_snapshot, upload_validation_result                                                        | audit_log                 | 无数据 -\> 已接入         |
 | 数据资源管理         | RES-005 数据源主体关联         | data_resource_party_relation                                                                                  | audit_log                 | 已接入 -\> 可评估         |
 | 参与方管理           | PARTY-002/003/005              | party, data_resource_party_relation                                                                           | audit_log                 | 有效/停用                 |
-| 质量评估管理         | QUAL-003 启动质量评估          | quality_assessment, quality_score_detail                                                                      | audit_log, snapshot_store | 已接入 -\> 已评估         |
+| 质量评估管理         | QUAL-003 启动质量评估          | quality_assessment, quality_score_detail, quality_resource_assessment, quality_resource_score_detail            | audit_log, snapshot_store | 已接入 -\> 已评估         |
+| 质量评估管理         | QUAL-010 后端逐资源质量评估    | quality_resource_assessment, quality_resource_score_detail, quality_assessment, quality_score_detail            | audit_log, snapshot_store | 已接入 -\> 已评估         |
+| 质量评估管理         | QUAL-013 导出资源级质量结果    | report_record, export_file                                                                                     | audit_log, snapshot_store | 已评估 -\> 已导出         |
 | 数元计量管理         | DU-009 执行数元计量            | shuyuan_metering, shuyuan_metering_detail                                                                     | audit_log, snapshot_store | 已评估 -\> 已计量         |
 | 贡献度与效用计算     | UTIL-006/008 计算贡献度/效用值 | contribution_record, utility_record, utility_trace                                                            | audit_log, snapshot_store | 已计量 -\> 已计算效用     |
 | MD-DShap 计算管理    | MDS-011 启动计算               | md_dshap_task, md_dshap_result, md_dshap_marginal_trace, algorithm_audit_snapshot                             | audit_log, snapshot_store | 已计算效用 -\> 已计算权重 |
@@ -799,6 +880,8 @@ P0 仍以 Markdown、CSV、JSON、JSONL 为主，PDF 为 P1；每个导出文件
 | allocation_result.csv                | allocation_result, party, allocation_scenario                                            | CSV      | project_id, scenario_id, party_id, party_name, raw_weight, normalized_weight, amount, adjusted_amount, adjustment_reason                                                                                                                            |
 | source_level_allocation.csv          | allocation_result, party                                                                 | CSV      | project_id, scenario_id, party_id, party_name, party_type, is_data_provider, raw_weight, normalized_weight, pre_constraint_amount, post_constraint_amount, constraint_adjustment_reason                                                              |
 | quality_assessment_report.md         | quality_assessment, quality_score_detail                                                 | Markdown | project_id, package_id, assessment_id, total_score, quality_level, quality_factor, dimension_scores, evidence_summary, low_quality_warning                                                                                                           |
+| resource_quality_assessment_result.json | quality_resource_assessment, quality_resource_score_detail, data_resource | JSON | project_id, package_id, assessment_id, resource_assessment_id, resource_id, resource_name, modality, resource_score, resource_level, resource_quality_factor, metric_version, weights, scores, evidence, warnings, created_at |
+| resource_quality_assessment.csv         | quality_resource_assessment, quality_resource_score_detail, data_resource | CSV  | project_id, package_id, assessment_id, resource_assessment_id, resource_id, resource_name, modality, dimension_code, dimension_name, parent_dimension_code, weight, score, evidence_summary, rule_code, issue_count, created_at |
 | quality_assessment_result.json       | quality_assessment, quality_score_detail                                                 | JSON     | assessment_id, project_id, package_id, metric_version, weights, scores, quality_factor, evidence, warnings, created_at                                                                                                                               |
 | shuyuan_metering_statement.md        | shuyuan_metering, shuyuan_metering_detail                                                | Markdown | project_id, metering_id, base_shuyuan_price, scenario_coefficient, quality_coefficient, technology_coefficient, expert_coefficient, development_coefficient, call_count, metering_amount                                                            |
 | contribution_utility_result.csv      | contribution_record, utility_record, party                                               | CSV      | project_id, party_id, valid_units, usage_weight, coverage_weight, scarcity_weight, contribution_score, normalized_contribution, quality_factor, usage_factor, scenario_factor, utility_value                                                        |
