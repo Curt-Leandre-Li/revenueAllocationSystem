@@ -45,6 +45,7 @@ interface BackendWorkspaceData {
   mdMarginalTraces: Record<string, unknown>[];
   qualityLatest: Record<string, unknown> | null;
   qualityDetails: Record<string, unknown>[];
+  qualityResourceResults: Record<string, unknown> | null;
   shuyuanLatest: Record<string, unknown> | null;
   shuyuanDetails: Record<string, unknown>[];
   utilityLatest: Record<string, unknown> | null;
@@ -159,11 +160,17 @@ export async function loadBackendWorkspaceSnapshot(
     );
     const shuyuanMeteringId = stringValue(recordValue(shuyuanLatest).metering_id);
     const utilityId = stringValue(recordValue(utilityLatest).utility_id);
-    const [qualityDetailResult, shuyuanDetailResult, utilityTraceResult] =
+    const [qualityDetailResult, qualityResourceResult, shuyuanDetailResult, utilityTraceResult] =
       await Promise.all([
         qualityAssessmentId
           ? optionalBackendCall(
               () => dvasApi.getQualityAssessmentDetails(qualityAssessmentId),
+              null,
+            )
+          : Promise.resolve(null),
+        qualityAssessmentId
+          ? optionalBackendCall(
+              () => dvasApi.getQualityResourceResults(qualityAssessmentId),
               null,
             )
           : Promise.resolve(null),
@@ -199,6 +206,7 @@ export async function loadBackendWorkspaceSnapshot(
       mdMarginalTraces: mdMarginalTracesPage.items,
       qualityLatest: recordOrNull(qualityLatest),
       qualityDetails: arrayRecord(recordOrNull(qualityDetailResult)?.details),
+      qualityResourceResults: recordOrNull(qualityResourceResult),
       shuyuanLatest: recordOrNull(shuyuanLatest),
       shuyuanDetails: arrayRecord(recordOrNull(shuyuanDetailResult)?.details),
       utilityLatest: recordOrNull(utilityLatest),
@@ -570,36 +578,125 @@ function buildPartiesPage(data: BackendWorkspaceData): PageWorkspaceData {
 
 function buildQualityPage(data: BackendWorkspaceData): PageWorkspaceData {
   const latest = data.qualityLatest;
+  const resourceResult = recordValue(data.qualityResourceResults);
+  const resourceRows = arrayRecord(resourceResult.resources);
+  const averageResourceScore = stringValue(
+    resourceResult.average_resource_score ?? resourceResult.avg_resource_score,
+    latest ? "后端未返回" : "后端未返回",
+  );
+  const lowScoreResourceCount = stringValue(
+    resourceResult.low_score_resource_count,
+    latest ? "后端未返回" : "后端未返回",
+  );
+  const assessedResourceCount = stringValue(
+    resourceResult.assessed_resource_count,
+    latest ? "后端未返回" : "后端未返回",
+  );
+  const resourceQualityRows = resourceRows.map((item) => ({
+    assessment_id: stringValue(latest?.assessment_id),
+    resource_id: stringValue(item.resource_id),
+    resource_name: stringValue(item.resource_name),
+    owner_name: stringValue(item.owner_name ?? item.party_names_text),
+    provider_party: stringValue(item.provider_party ?? item.party_names_text),
+    resource_type: stringValue(item.resource_type ?? item.modality),
+    modality: stringValue(item.modality),
+    total_score: stringValue(item.total_score),
+    quality_level: stringValue(item.quality_level),
+    quality_factor: stringValue(item.quality_factor),
+    min_primary_metric: stringValue(item.min_primary_metric ?? item.lowest_dimension_name),
+    lowest_dimension_code: stringValue(item.lowest_dimension_code),
+    lowest_dimension_name: stringValue(item.lowest_dimension_name),
+    update_time: stringValue(item.update_time ?? item.updated_at),
+    updated_at: stringValue(item.updated_at),
+    evidence_summary: stringValue(item.evidence_summary),
+    average_resource_score: averageResourceScore,
+    avg_resource_score: averageResourceScore,
+    low_score_resource_count: lowScoreResourceCount,
+    assessed_resource_count: assessedResourceCount,
+    ...flattenDimensionScores(recordValue(item.dimension_scores)),
+  }));
+  const resourceDetailRows = arrayRecord(resourceResult.details).map((item) => ({
+    row_type: "resource_quality_detail",
+    detail_id: stringValue(item.detail_id),
+    assessment_id: stringValue(item.assessment_id ?? latest?.assessment_id),
+    resource_assessment_id: stringValue(item.resource_assessment_id),
+    resource_id: stringValue(item.resource_id),
+    resource_name: stringValue(item.resource_name),
+    quality_score: stringValue(latest?.quality_score),
+    quality_level: stringValue(latest?.quality_level),
+    quality_factor: stringValue(latest?.quality_factor),
+    version_no: stringValue(latest?.version_no),
+    primary_metric_count: stringValue(latest?.primary_metric_count),
+    secondary_metric_count: stringValue(latest?.secondary_metric_count),
+    average_resource_score: averageResourceScore,
+    avg_resource_score: averageResourceScore,
+    low_score_resource_count: lowScoreResourceCount,
+    assessed_resource_count: assessedResourceCount,
+    dimension_name: stringValue(item.dimension_name),
+    dimension_code: stringValue(item.dimension_code),
+    metric_name: stringValue(item.metric_name),
+    metric_code: stringValue(item.metric_code),
+    metric_level: stringValue(item.metric_level),
+    parent_metric_code: stringValue(item.parent_metric_code),
+    parent_dimension_code: stringValue(item.parent_dimension_code),
+    dimension_weight: stringValue(item.weight),
+    dimension_score: stringValue(item.score),
+    weighted_score: stringValue(item.weighted_score),
+    evidence: stringValue(item.evidence ?? item.evidence_text),
+    evidence_text: stringValue(item.evidence_text ?? item.evidence),
+    issue_summary: stringValue(item.issue_summary),
+    rule_code: stringValue(item.rule_code),
+    created_at: stringValue(item.created_at ?? latest?.created_at),
+  }));
+  const detailRows = data.qualityDetails.map((item) => ({
+    detail_id: stringValue(item.detail_id),
+    assessment_id: stringValue(latest?.assessment_id),
+    quality_score: stringValue(latest?.quality_score),
+    quality_level: stringValue(latest?.quality_level),
+    quality_factor: stringValue(latest?.quality_factor),
+    version_no: stringValue(latest?.version_no),
+    evidence_summary: stringValue(latest?.evidence_summary),
+    primary_metric_count: stringValue(latest?.primary_metric_count),
+    secondary_metric_count: stringValue(latest?.secondary_metric_count),
+    average_resource_score: averageResourceScore,
+    avg_resource_score: averageResourceScore,
+    low_score_resource_count: lowScoreResourceCount,
+    assessed_resource_count: assessedResourceCount,
+    dimension_name: stringValue(item.dimension_name),
+    dimension_code: stringValue(item.dimension_code),
+    metric_name: stringValue(item.metric_name),
+    metric_code: stringValue(item.metric_code),
+    metric_level: stringValue(item.metric_level),
+    parent_metric_code: stringValue(item.parent_metric_code),
+    dimension_weight: stringValue(item.weight),
+    dimension_score: stringValue(item.score),
+    weighted_score: stringValue(item.weighted_score),
+    evidence: stringValue(item.evidence),
+    issue_summary: stringValue(item.issue_summary),
+    rule_code: stringValue(item.rule_code),
+    created_at: stringValue(latest?.created_at),
+  }));
   return {
-    summary: "质量评估页面只展示后端 latest/detail 返回字段；无结果时显示空状态。",
+    summary: "质量评估页面只展示后端 latest/detail/resource-results 返回字段；无结果时显示空状态。",
     primaryTask: latest ? "查看后端质量评估结果。" : "完成数据接入后运行质量评估。",
     metrics: [
       metric("质量总分", stringValue(latest?.quality_score, "后端未返回"), "quality_score", latest ? "success" : "warning"),
       metric("质量等级", stringValue(latest?.quality_level, "后端未返回"), "quality_level", latest ? "success" : "warning"),
       metric("质量因子", stringValue(latest?.quality_factor, "后端未返回"), "quality_factor", latest ? "neutral" : "warning"),
       metric("评估版本", stringValue(latest?.version_no, "后端未返回"), "version_no", "neutral"),
-      metric("图表 DTO", "后端未提供", "不在前端推导维度图", "neutral"),
+      metric("资源级评分", assessedResourceCount, "resource-results", resourceRows.length ? "success" : "warning"),
     ],
     preconditions: toPreconditions(data.overview.preconditions),
-    rows: data.qualityDetails.map((item) => ({
-      assessment_id: stringValue(latest?.assessment_id),
-      quality_score: stringValue(latest?.quality_score),
-      quality_level: stringValue(latest?.quality_level),
-      quality_factor: stringValue(latest?.quality_factor),
-      version_no: stringValue(latest?.version_no),
-      evidence_summary: stringValue(latest?.evidence_summary),
-      dimension_name: stringValue(item.dimension_name),
-      dimension_code: stringValue(item.dimension_code),
-      dimension_weight: stringValue(item.weight),
-      dimension_score: stringValue(item.score),
-      evidence: stringValue(item.evidence),
-    })),
+    rows: [...detailRows, ...resourceQualityRows, ...resourceDetailRows],
     technicalDetails: {
       project_id: data.overview.projectId,
       assessment_id: stringValue(latest?.assessment_id),
       input_snapshot_id: stringValue(latest?.input_snapshot_id),
       output_snapshot_id: stringValue(latest?.output_snapshot_id),
       algorithm_version: stringValue(latest?.algorithm_version),
+      primary_metric_count: stringValue(latest?.primary_metric_count),
+      secondary_metric_count: stringValue(latest?.secondary_metric_count),
+      resource_result_count: String(resourceRows.length),
       menu_code: "NAV_MEASURE_QUALITY",
       module_code: "QUAL",
     },
@@ -898,6 +995,15 @@ function toPreconditions(items: BackendPreconditionDto[]): PreconditionItem[] {
       message: item.message,
     };
   });
+}
+
+function flattenDimensionScores(scores: Record<string, unknown>): DataRow {
+  return Object.fromEntries(
+    Object.entries(scores).flatMap(([key, value]) => [
+      [key, stringValue(value)],
+      [`${key}_score`, stringValue(value)],
+    ]),
+  );
 }
 
 function arrayRecord(value: unknown): Record<string, unknown>[] {

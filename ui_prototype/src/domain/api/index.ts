@@ -106,9 +106,13 @@ export const dvasApi = {
     }),
   getLatestQualityAssessment: () =>
     apiRequest<Record<string, unknown>>(endpoints.qualityLatest),
-  getQualityAssessmentDetails: (assessmentId: string) =>
-    apiRequest<Record<string, unknown>>(endpoints.qualityDetails(assessmentId)),
-  saveShuyuanParameters: (payload: Record<string, unknown>) =>
+    getQualityAssessmentDetails: (assessmentId: string) =>
+      apiRequest<Record<string, unknown>>(endpoints.qualityDetails(assessmentId)),
+    getQualityResourceResults: (assessmentId = "latest") =>
+      apiRequest<Record<string, unknown>>(endpoints.qualityResourceResults(assessmentId)),
+    getQualityResourceDetail: (resourceId: string, assessmentId = "latest") =>
+      apiRequest<Record<string, unknown>>(endpoints.qualityResourceDetail(resourceId, assessmentId)),
+    saveShuyuanParameters: (payload: Record<string, unknown>) =>
     apiRequest<Record<string, unknown>>(endpoints.shuyuanParameters, {
       method: "PUT",
       bodyJson: payload,

@@ -6,6 +6,38 @@ from .constants import AlgorithmMode, P0_CONFIG, ProjectStatus
 from .contracts import LOCAL_OPERATOR, SIMULATION_DISCLAIMER, utc_now
 
 
+QUALITY_PRIMARY_METRICS = [
+    ("QUALITY_NORM", "规范性", "QUALITY_WEIGHT_NORM", 0.15),
+    ("QUALITY_ACC", "准确性", "QUALITY_WEIGHT_ACC", 0.15),
+    ("QUALITY_COMP", "完整性", "QUALITY_WEIGHT_COMP", 0.15),
+    ("QUALITY_UNIQ", "唯一性", "QUALITY_WEIGHT_UNIQ", 0.15),
+    ("QUALITY_CONS", "一致性", "QUALITY_WEIGHT_CONS", 0.15),
+    ("QUALITY_TIME", "时效性", "QUALITY_WEIGHT_TIME", 0.10),
+    ("QUALITY_ACCESS", "可访问性", "QUALITY_WEIGHT_ACCESS", 0.15),
+]
+
+
+QUALITY_SECONDARY_METRICS = [
+    ("QUALITY_NAMING_NORM", "命名规范性", "QUALITY_NORM", "QUALITY_WEIGHT_NAMING_NORM", 0.15),
+    ("QUALITY_LENGTH_NORM", "数据长度规范性", "QUALITY_NORM", "QUALITY_WEIGHT_LENGTH_NORM", 0.15),
+    ("QUALITY_PRECISION_NORM", "数据精度规范性", "QUALITY_NORM", "QUALITY_WEIGHT_PRECISION_NORM", 0.15),
+    ("QUALITY_FORMAT_NORM", "数据格式规范性", "QUALITY_NORM", "QUALITY_WEIGHT_FORMAT_NORM", 0.15),
+    ("QUALITY_METADATA_NORM", "元数据规范性", "QUALITY_NORM", "QUALITY_WEIGHT_METADATA_NORM", 0.15),
+    ("QUALITY_REFERENCE_NORM", "参考数据规范性", "QUALITY_NORM", "QUALITY_WEIGHT_REFERENCE_NORM", 0.10),
+    ("QUALITY_MODEL_NORM", "数据模型规范性", "QUALITY_NORM", "QUALITY_WEIGHT_MODEL_NORM", 0.15),
+    ("QUALITY_RANGE_ACC", "数据范围准确性", "QUALITY_ACC", "QUALITY_WEIGHT_RANGE_ACC", 0.50),
+    ("QUALITY_CODE_ACC", "编码/代码准确性", "QUALITY_ACC", "QUALITY_WEIGHT_CODE_ACC", 0.50),
+    ("QUALITY_ELEMENT_COMP", "数据元素完整性", "QUALITY_COMP", "QUALITY_WEIGHT_ELEMENT_COMP", 0.50),
+    ("QUALITY_RECORD_COMP", "数据记录完整性", "QUALITY_COMP", "QUALITY_WEIGHT_RECORD_COMP", 0.50),
+    ("QUALITY_ID_UNIQ", "数据唯一标识程度", "QUALITY_UNIQ", "QUALITY_WEIGHT_ID_UNIQ", 0.50),
+    ("QUALITY_REDUNDANCY_UNIQ", "数据冗余性", "QUALITY_UNIQ", "QUALITY_WEIGHT_REDUNDANCY_UNIQ", 0.50),
+    ("QUALITY_SAME_CONS", "相同数据一致性", "QUALITY_CONS", "QUALITY_WEIGHT_SAME_CONS", 0.50),
+    ("QUALITY_RELATED_CONS", "关联数据一致性", "QUALITY_CONS", "QUALITY_WEIGHT_RELATED_CONS", 0.50),
+    ("QUALITY_RECORD_TIME", "数据记录及时性", "QUALITY_TIME", "QUALITY_WEIGHT_RECORD_TIME", 1.00),
+    ("QUALITY_FIELD_ACCESS", "数据字段可访问性", "QUALITY_ACCESS", "QUALITY_WEIGHT_FIELD_ACCESS", 1.00),
+]
+
+
 def default_system_parameters(now=None):
     now = now or utc_now()
     definitions = [
@@ -26,15 +58,21 @@ def default_system_parameters(now=None):
         ("DEFAULT_MD_DSHAP_EPSILON", "默认 MD-DShap 收敛阈值", "NUMBER", 0.000001, True),
         ("DEFAULT_MD_DSHAP_BASELINE_ENABLED", "默认 MD-DShap baseline_check", "BOOLEAN", True, True),
         ("DEFAULT_ALGORITHM_MODE", "默认算法模式", "ENUM", AlgorithmMode.MD_DSHAP.value, False),
-        ("QUALITY_WEIGHT_COMPLETENESS", "质量完整性权重", "NUMBER", 0.35, True),
-        ("QUALITY_WEIGHT_CONSISTENCY", "质量一致性权重", "NUMBER", 0.30, True),
-        ("QUALITY_WEIGHT_USABILITY", "质量可用性权重", "NUMBER", 0.35, True),
         ("DEFAULT_USAGE_WEIGHT", "默认使用权重", "NUMBER", 1.0, True),
         ("DEFAULT_COVERAGE_WEIGHT", "默认覆盖权重", "NUMBER", 1.0, True),
         ("DEFAULT_SCARCITY_WEIGHT", "默认稀缺权重", "NUMBER", 1.0, True),
+        ("LOW_QUALITY_RESOURCE_THRESHOLD", "低分数据资源阈值", "NUMBER", 70, True),
         ("AMOUNT_DISPLAY_PRECISION", "金额显示精度", "INTEGER", P0_CONFIG.amount_precision, False),
         ("WEIGHT_DISPLAY_PRECISION", "权重显示精度", "INTEGER", P0_CONFIG.weight_precision, False),
     ]
+    definitions.extend(
+        (parameter_code, f"{metric_name}一级质量指标权重", "NUMBER", default_weight, True)
+        for _, metric_name, parameter_code, default_weight in QUALITY_PRIMARY_METRICS
+    )
+    definitions.extend(
+        (parameter_code, f"{metric_name}二级质量指标权重", "NUMBER", default_weight, True)
+        for _, metric_name, _, parameter_code, default_weight in QUALITY_SECONDARY_METRICS
+    )
     return {
         code: {
             "parameter_code": code,
@@ -77,6 +115,8 @@ def initial_state():
         "parties": {},
         "quality_assessments": {},
         "quality_details": {},
+        "quality_resource_assessments": {},
+        "quality_resource_score_details": {},
         "shuyuan_meterings": {},
         "shuyuan_metering_details": {},
         "contribution_records": {},
@@ -106,6 +146,8 @@ class InMemoryRepository:
         self.state = copy.deepcopy(state) if state is not None else initial_state()
         self.state.setdefault("quality_assessments", {})
         self.state.setdefault("quality_details", {})
+        self.state.setdefault("quality_resource_assessments", {})
+        self.state.setdefault("quality_resource_score_details", {})
         self.state.setdefault("shuyuan_meterings", {})
         self.state.setdefault("shuyuan_metering_details", {})
         self.state.setdefault("contribution_records", {})
@@ -252,6 +294,60 @@ class InMemoryRepository:
 
     def get_quality_details(self, assessment_id):
         return copy.deepcopy(self.state["quality_details"].get(assessment_id, []))
+
+    def put_quality_resource_results(self, assessment_id, resource_assessments, score_details):
+        for key, item in list(self.state["quality_resource_assessments"].items()):
+            if item.get("assessment_id") == assessment_id:
+                del self.state["quality_resource_assessments"][key]
+        for key, item in list(self.state["quality_resource_score_details"].items()):
+            if item.get("assessment_id") == assessment_id:
+                del self.state["quality_resource_score_details"][key]
+        for resource_assessment in resource_assessments:
+            self.state["quality_resource_assessments"][
+                resource_assessment["resource_assessment_id"]
+            ] = copy.deepcopy(resource_assessment)
+        for detail in score_details:
+            self.state["quality_resource_score_details"][detail["detail_id"]] = copy.deepcopy(detail)
+        self.save()
+        return copy.deepcopy(resource_assessments), copy.deepcopy(score_details)
+
+    def list_quality_resource_assessments(self, assessment_id=None, package_id=None, project_id=None):
+        items = [
+            copy.deepcopy(item)
+            for item in self.state["quality_resource_assessments"].values()
+        ]
+        if assessment_id:
+            items = [item for item in items if item["assessment_id"] == assessment_id]
+        if package_id:
+            items = [item for item in items if item["package_id"] == package_id]
+        if project_id:
+            items = [item for item in items if item["project_id"] == project_id]
+        return sorted(items, key=lambda item: (item["created_at"], item["resource_id"]))
+
+    def list_quality_resource_score_details(
+        self,
+        assessment_id=None,
+        resource_assessment_id=None,
+        resource_id=None,
+    ):
+        items = [
+            copy.deepcopy(item)
+            for item in self.state["quality_resource_score_details"].values()
+        ]
+        if assessment_id:
+            items = [item for item in items if item["assessment_id"] == assessment_id]
+        if resource_assessment_id:
+            items = [
+                item
+                for item in items
+                if item["resource_assessment_id"] == resource_assessment_id
+            ]
+        if resource_id:
+            items = [item for item in items if item["resource_id"] == resource_id]
+        return sorted(
+            items,
+            key=lambda item: (item["resource_id"], item["metric_level"], item["dimension_code"]),
+        )
 
     def put_shuyuan_metering(self, metering, details):
         self.state["shuyuan_meterings"][metering["metering_id"]] = copy.deepcopy(metering)

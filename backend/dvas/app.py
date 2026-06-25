@@ -200,6 +200,14 @@ class DvasApplication:
             return self.quality_service.run(body)
         if method == "GET" and segments == ["quality-assessments", "latest"]:
             return self.quality_service.latest()
+        if method == "GET" and segments == ["metering", "quality", "resource-results"]:
+            return self.quality_service.resource_results(body)
+        if (
+            method == "GET"
+            and len(segments) == 4
+            and segments[:3] == ["metering", "quality", "resource-results"]
+        ):
+            return self.quality_service.resource_result_detail(segments[3], body)
         if (
             method == "GET"
             and len(segments) == 3
@@ -207,6 +215,15 @@ class DvasApplication:
             and segments[2] == "details"
         ):
             return self.quality_service.details(segments[1])
+        if (
+            method == "GET"
+            and len(segments) == 3
+            and segments[0] == "quality-assessments"
+            and segments[2] == "resource-results"
+        ):
+            return self.quality_service.resource_results(
+                {**body, "assessment_id": segments[1]}
+            )
         if method == "POST" and segments == ["shuyuan-meterings", "run"]:
             return self.shuyuan_service.run(body)
         if method == "PUT" and segments == ["metering", "shuyuan", "parameters"]:

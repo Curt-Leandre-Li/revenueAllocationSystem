@@ -27,9 +27,13 @@ export const endpoints = {
   qualityEvaluate: "/metering/quality/evaluate",
   qualityWeights: "/metering/quality/weights",
   qualityLatest: "/quality-assessments/latest",
-  qualityDetails: (assessmentId: string) =>
-    `/quality-assessments/${encodeURIComponent(assessmentId)}/details`,
-  shuyuanParameters: "/metering/shuyuan/parameters",
+    qualityDetails: (assessmentId: string) =>
+      `/quality-assessments/${encodeURIComponent(assessmentId)}/details`,
+    qualityResourceResults: (assessmentId = "latest") =>
+      `/metering/quality/resource-results?assessment_id=${encodeURIComponent(assessmentId)}`,
+    qualityResourceDetail: (resourceId: string, assessmentId = "latest") =>
+      `/metering/quality/resource-results/${encodeURIComponent(resourceId)}?assessment_id=${encodeURIComponent(assessmentId)}`,
+    shuyuanParameters: "/metering/shuyuan/parameters",
   shuyuanCallCounts: "/metering/shuyuan/call-counts",
   shuyuanCalculate: "/metering/shuyuan/calculate",
   shuyuanLatest: "/shuyuan-meterings/latest",

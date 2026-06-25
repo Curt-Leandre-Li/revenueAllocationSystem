@@ -21,7 +21,11 @@ from backend.dvas.persistence_mapping import (
     runtime_to_sql_enum,
     sql_to_runtime_enum,
 )
-from backend.dvas.repository import InMemoryRepository
+from backend.dvas.repository import (
+    InMemoryRepository,
+    QUALITY_PRIMARY_METRICS,
+    QUALITY_SECONDARY_METRICS,
+)
 
 
 class DvasApiContractTests(unittest.TestCase):
@@ -128,6 +132,71 @@ class DvasApiContractTests(unittest.TestCase):
         self.assertTrue(logs, operation_type)
         return logs[-1]
 
+    def current_quality_weight_items(self):
+        weights = self.assert_ok(self.request("GET", "/api/v1/metering/quality/weights"))
+        return [
+            {"metric_code": item["metric_code"], "weight": item["weight"]}
+            for item in weights["items"]
+        ]
+
+    def upload_ten_resource_quality_sample(self):
+        provider_names = ["示例医院A", "示例医院B", "示例区域筛查平台"]
+        resources = []
+        for index in range(10):
+            resources.append(
+                {
+                    "resource_name": f"资源级质量评分样本{index + 1:02d}",
+                    "provider_party_name": provider_names[index % len(provider_names)],
+                    "modality": ["CLINICAL_TABLE", "LAB_TABLE", "FOLLOWUP_TABLE"][index % 3],
+                    "field_count": 12 + index * 3,
+                    "sample_count": 1200 + index * 850,
+                    "missing_rate": round(index * 0.006, 4),
+                    "include_in_calculation": True,
+                }
+            )
+        return self.assert_ok(
+            self.request(
+                "POST",
+                "/api/v1/data-packages/upload",
+                {
+                    "package_name": "资源级质量评分十资源样本",
+                    "resources": resources,
+                    "parties": [
+                        {
+                            "party_name": "示例医院A",
+                            "party_type": "DATA_PROVIDER",
+                            "include_in_md_dshap": True,
+                        },
+                        {
+                            "party_name": "示例医院B",
+                            "party_type": "DATA_PROVIDER",
+                            "include_in_md_dshap": True,
+                        },
+                        {
+                            "party_name": "示例区域筛查平台",
+                            "party_type": "DATA_PROVIDER",
+                            "include_in_md_dshap": True,
+                        },
+                        {
+                            "party_name": "示例运营服务方",
+                            "party_type": "OPERATOR",
+                            "include_in_md_dshap": False,
+                        },
+                        {
+                            "party_name": "示例技术服务方",
+                            "party_type": "TECH_SERVICE",
+                            "include_in_md_dshap": False,
+                        },
+                        {
+                            "party_name": "示例专家评审方",
+                            "party_type": "EXPERT",
+                            "include_in_md_dshap": False,
+                        },
+                    ],
+                },
+            )
+        )
+
     def test_backend_canonical_enums_map_to_sql_schema_values(self):
         mapped_runtime = assert_runtime_enums_mapped()
         mapped_sql = assert_sql_enums_mapped()
@@ -201,17 +270,13 @@ class DvasApiContractTests(unittest.TestCase):
             self.request(
                 "PUT",
                 "/api/v1/metering/quality/weights",
-                {
-                    "items": [
-                        {"dimension_code": "completeness", "weight": 0.4},
-                        {"dimension_code": "consistency", "weight": 0.25},
-                        {"dimension_code": "usability", "weight": 0.35},
-                    ]
-                },
+                {"items": self.current_quality_weight_items()},
             )
         )
-        self.assertEqual(3, len(quality_weights["updated_parameters"]))
-        self.assertEqual(0.4, self.repository.get_system_parameter("QUALITY_WEIGHT_COMPLETENESS")["current_value"])
+        self.assertEqual(7, quality_weights["primary_metric_count"])
+        self.assertEqual(17, quality_weights["secondary_metric_count"])
+        self.assertEqual(24, len(quality_weights["updated_parameters"]))
+        self.assertEqual(0.15, self.repository.get_system_parameter("QUALITY_WEIGHT_NORM")["current_value"])
 
         shuyuan_params = self.assert_ok(
             self.request("PUT", "/api/v1/metering/shuyuan/parameters", {"base_price": 3.5})
@@ -537,6 +602,9 @@ class DvasApiContractTests(unittest.TestCase):
         self.assertIn("/dashboard/actions/quick-run", path_lines)
         self.assertIn("/data-resources/{resource_id}/party-relations", path_lines)
         self.assertIn("/quality-assessments/{assessment_id}/details", path_lines)
+        self.assertIn("/quality-assessments/{assessment_id}/resource-results", path_lines)
+        self.assertIn("/metering/quality/resource-results", path_lines)
+        self.assertIn("/metering/quality/resource-results/{resource_id}", path_lines)
         self.assertIn("/shuyuan-meterings/{metering_id}/details", path_lines)
         self.assertIn("/utilities/{utility_id}/trace", path_lines)
         self.assertIn("/md-dshap/tasks", path_lines)
@@ -721,9 +789,40 @@ class DvasApiContractTests(unittest.TestCase):
         self.assertEqual("ASSESSED", assessment["project_status"])
         self.assertTrue(assessment["assessment"]["assessment_id"].startswith("assessment_"))
         self.assertGreater(assessment["assessment"]["quality_score"], 0)
-        self.assertEqual("DVAS_QUALITY_SKELETON_V0", assessment["assessment"]["algorithm_version"])
+        self.assertEqual("DVAS_QUALITY_7P17S_V1", assessment["assessment"]["algorithm_version"])
         self.assertTrue(assessment["assessment"]["output_snapshot_id"].startswith("snapshot_"))
-        self.assertGreaterEqual(len(assessment["details"]), 3)
+        self.assertEqual(7, assessment["assessment"]["primary_metric_count"])
+        self.assertEqual(17, assessment["assessment"]["secondary_metric_count"])
+        self.assertEqual(24, len(assessment["details"]))
+        self.assertEqual(assessment["details"], assessment["assessment"]["quality_score_detail"])
+        self.assertEqual(assessment["details"], assessment["quality_score_detail"])
+        primary_details = [item for item in assessment["details"] if item["metric_level"] == 1]
+        secondary_details = [item for item in assessment["details"] if item["metric_level"] == 2]
+        self.assertEqual(7, len(primary_details))
+        self.assertEqual(17, len(secondary_details))
+        self.assertEqual(
+            {metric_name for _, metric_name, _, _ in QUALITY_PRIMARY_METRICS},
+            {item["metric_name"] for item in primary_details},
+        )
+        self.assertEqual(
+            {metric_name for _, metric_name, _, _, _ in QUALITY_SECONDARY_METRICS},
+            {item["metric_name"] for item in secondary_details},
+        )
+        self.assertNotIn("可用性", {item["metric_name"] for item in primary_details})
+        self.assertEqual(
+            round(sum(item["weighted_score"] for item in primary_details), 2),
+            assessment["assessment"]["quality_score"],
+        )
+        for parent_metric_code, _, _, _ in QUALITY_PRIMARY_METRICS:
+            child_weight_sum = round(
+                sum(
+                    item["weight"]
+                    for item in secondary_details
+                    if item["parent_metric_code"] == parent_metric_code
+                ),
+                6,
+            )
+            self.assertEqual(1.0, child_weight_sum)
 
         latest = self.assert_ok(self.request("GET", "/api/v1/quality-assessments/latest"))
         self.assertEqual(assessment["assessment"]["assessment_id"], latest["assessment_id"])
@@ -736,6 +835,129 @@ class DvasApiContractTests(unittest.TestCase):
         )
         self.assertEqual(assessment["assessment"]["assessment_id"], details["assessment_id"])
         self.assertEqual(assessment["details"], details["details"])
+
+    def test_quality_resource_results_generate_resource_scores_and_heatmap(self):
+        uploaded = self.upload_ten_resource_quality_sample()
+        package_id = uploaded["package"]["package_id"]
+        assessment = self.assert_ok(
+            self.request("POST", "/api/v1/quality-assessments/run", {"package_id": package_id})
+        )
+
+        resource_results = self.assert_ok(
+            self.request(
+                "GET",
+                "/api/v1/metering/quality/resource-results?assessment_id=latest",
+            )
+        )
+
+        self.assertEqual(assessment["assessment"]["assessment_id"], resource_results["assessment_id"])
+        self.assertEqual(10, resource_results["assessed_resource_count"])
+        self.assertIsInstance(resource_results["average_resource_score"], (int, float))
+        self.assertIsInstance(resource_results["low_score_resource_count"], int)
+        self.assertEqual(0, resource_results["low_score_resource_count"])
+        self.assertEqual(7, len(resource_results["dimensions"]))
+        self.assertEqual(10, len(resource_results["resources"]))
+        self.assertEqual(10, len(resource_results["heatmap"]["rows"]))
+        self.assertEqual(10, len(resource_results["heatmap"]["values"]))
+        self.assertEqual(
+            len(resource_results["resources"]),
+            len(resource_results["heatmap"]["rows"]),
+        )
+        for values in resource_results["heatmap"]["values"]:
+            self.assertEqual(7, len(values))
+            self.assertTrue(all(isinstance(value, (int, float)) for value in values))
+
+        for resource in resource_results["resources"]:
+            self.assertGreaterEqual(resource["total_score"], 0)
+            self.assertLessEqual(resource["total_score"], 100)
+            self.assertTrue(resource["lowest_dimension_code"])
+            self.assertTrue(resource["lowest_dimension_name"])
+            self.assertEqual(7, len(resource["dimension_scores"]))
+            self.assertEqual(
+                {metric_code for metric_code, _, _, _ in QUALITY_PRIMARY_METRICS},
+                set(resource["dimension_scores"]),
+            )
+
+        stored_assessments = self.repository.list_quality_resource_assessments(
+            assessment_id=resource_results["assessment_id"]
+        )
+        stored_details = self.repository.list_quality_resource_score_details(
+            assessment_id=resource_results["assessment_id"]
+        )
+        self.assertEqual(10, len(stored_assessments))
+        self.assertEqual(10 * 24, len(stored_details))
+
+        selected_resource = resource_results["resources"][0]
+        resource_detail = self.assert_ok(
+            self.request(
+                "GET",
+                (
+                    "/api/v1/metering/quality/resource-results/"
+                    f"{selected_resource['resource_id']}?assessment_id=latest"
+                ),
+            )
+        )
+        self.assertEqual(resource_results["assessment_id"], resource_detail["assessment_id"])
+        self.assertEqual(selected_resource["resource_id"], resource_detail["resource_id"])
+        self.assertEqual(selected_resource["resource_id"], resource_detail["resource"]["resource_id"])
+        self.assertEqual(7, resource_detail["primary_metric_count"])
+        self.assertEqual(17, resource_detail["secondary_metric_count"])
+        self.assertEqual(24, len(resource_detail["details"]))
+        self.assertEqual(
+            {metric_code for metric_code, _, _, _ in QUALITY_PRIMARY_METRICS},
+            {item["metric_code"] for item in resource_detail["primary_details"]},
+        )
+        self.assertEqual(
+            {metric_code for metric_code, _, _, _, _ in QUALITY_SECONDARY_METRICS},
+            {item["metric_code"] for item in resource_detail["secondary_details"]},
+        )
+        for detail in resource_detail["details"]:
+            self.assertIn("score", detail)
+            self.assertIn("weight", detail)
+            self.assertIn("evidence_text", detail)
+
+    def test_quality_resource_results_backfills_once_for_existing_assessment(self):
+        uploaded = self.upload_ten_resource_quality_sample()
+        quality = self.assert_ok(
+            self.request(
+                "POST",
+                "/api/v1/quality-assessments/run",
+                {"package_id": uploaded["package"]["package_id"]},
+            )
+        )
+        assessment_id = quality["assessment"]["assessment_id"]
+        self.repository.state["quality_resource_assessments"] = {}
+        self.repository.state["quality_resource_score_details"] = {}
+
+        first = self.assert_ok(
+            self.request(
+                "GET",
+                f"/api/v1/metering/quality/resource-results?assessment_id={assessment_id}",
+            )
+        )
+        stored_count_after_first = len(
+            self.repository.list_quality_resource_assessments(assessment_id=assessment_id)
+        )
+        detail_count_after_first = len(
+            self.repository.list_quality_resource_score_details(assessment_id=assessment_id)
+        )
+        second = self.assert_ok(
+            self.request(
+                "GET",
+                f"/api/v1/quality-assessments/{assessment_id}/resource-results",
+            )
+        )
+
+        self.assertEqual(10, first["assessed_resource_count"])
+        self.assertEqual(first["resources"], second["resources"])
+        self.assertEqual(
+            stored_count_after_first,
+            len(self.repository.list_quality_resource_assessments(assessment_id=assessment_id)),
+        )
+        self.assertEqual(
+            detail_count_after_first,
+            len(self.repository.list_quality_resource_score_details(assessment_id=assessment_id)),
+        )
 
     def test_quality_assessment_requires_ingested_package(self):
         response = self.request("POST", "/api/v1/quality-assessments/run", {})
@@ -1598,6 +1820,8 @@ class DvasApiContractTests(unittest.TestCase):
             "/data/resources:",
             "/data/parties:",
             "/metering/quality/evaluate:",
+            "/metering/quality/resource-results:",
+            "/metering/quality/resource-results/{resource_id}:",
             "/metering/shuyuan/calculate:",
             "/metering/utility/calculate:",
             "/allocation/md-dshap/tasks:",

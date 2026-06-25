@@ -24,6 +24,7 @@ from .contracts import (
     utc_now,
 )
 from .demo_data import get_demo_case
+from .repository import QUALITY_PRIMARY_METRICS, QUALITY_SECONDARY_METRICS
 from .state_machine import ProjectStateMachine
 
 
@@ -255,6 +256,31 @@ class NavigationService:
 
 
 class SystemParameterService:
+    QUALITY_METRIC_ROWS = [
+        {
+            "metric_code": metric_code,
+            "metric_name": metric_name,
+            "metric_level": 1,
+            "parent_metric_code": None,
+            "parameter_code": parameter_code,
+            "default_weight": default_weight,
+        }
+        for metric_code, metric_name, parameter_code, default_weight in QUALITY_PRIMARY_METRICS
+    ] + [
+        {
+            "metric_code": metric_code,
+            "metric_name": metric_name,
+            "metric_level": 2,
+            "parent_metric_code": parent_metric_code,
+            "parameter_code": parameter_code,
+            "default_weight": default_weight,
+        }
+        for metric_code, metric_name, parent_metric_code, parameter_code, default_weight in QUALITY_SECONDARY_METRICS
+    ]
+    QUALITY_WEIGHT_PARAMS = {
+        row["metric_code"]: row["parameter_code"] for row in QUALITY_METRIC_ROWS
+    }
+    QUALITY_METRIC_BY_CODE = {row["metric_code"]: row for row in QUALITY_METRIC_ROWS}
     POSITIVE_NUMBER_CODES = {
         "DEFAULT_SHUYUAN_BASE_PRICE",
         "DEFAULT_SCENARIO_COEFFICIENT",
@@ -262,18 +288,10 @@ class SystemParameterService:
         "DEFAULT_EXPERT_COEFFICIENT",
         "DEFAULT_DEVELOPMENT_COEFFICIENT",
         "DEFAULT_MD_DSHAP_EPSILON",
-        "QUALITY_WEIGHT_COMPLETENESS",
-        "QUALITY_WEIGHT_CONSISTENCY",
-        "QUALITY_WEIGHT_USABILITY",
         "DEFAULT_USAGE_WEIGHT",
         "DEFAULT_COVERAGE_WEIGHT",
         "DEFAULT_SCARCITY_WEIGHT",
-    }
-    QUALITY_WEIGHT_PARAMS = {
-        "completeness": "QUALITY_WEIGHT_COMPLETENESS",
-        "consistency": "QUALITY_WEIGHT_CONSISTENCY",
-        "usability": "QUALITY_WEIGHT_USABILITY",
-    }
+    } | set(QUALITY_WEIGHT_PARAMS.values())
     SHUYUAN_PARAM_CODES = {
         "base_price": "DEFAULT_SHUYUAN_BASE_PRICE",
         "scenario_coefficient": "DEFAULT_SCENARIO_COEFFICIENT",
@@ -305,13 +323,19 @@ class SystemParameterService:
     def quality_weights(self):
         return {
             "project_status": self.repository.get_project()["project_status"],
+            "primary_metric_count": len(QUALITY_PRIMARY_METRICS),
+            "secondary_metric_count": len(QUALITY_SECONDARY_METRICS),
             "items": [
                 {
-                    "dimension_code": dimension_code,
-                    "parameter_code": parameter_code,
-                    "weight": self._parameter(parameter_code)["current_value"],
+                    "metric_code": row["metric_code"],
+                    "dimension_code": row["metric_code"],
+                    "metric_name": row["metric_name"],
+                    "metric_level": row["metric_level"],
+                    "parent_metric_code": row["parent_metric_code"],
+                    "parameter_code": row["parameter_code"],
+                    "weight": self._parameter(row["parameter_code"])["current_value"],
                 }
-                for dimension_code, parameter_code in self.QUALITY_WEIGHT_PARAMS.items()
+                for row in self.QUALITY_METRIC_ROWS
             ],
         }
 
@@ -326,20 +350,20 @@ class SystemParameterService:
         seen = set()
         pending_updates = []
         for index, item in enumerate(items):
-            dimension_code = item.get("dimension_code")
-            if dimension_code not in self.QUALITY_WEIGHT_PARAMS:
+            metric_code = item.get("metric_code") or item.get("dimension_code")
+            if metric_code not in self.QUALITY_WEIGHT_PARAMS:
                 raise ApiError(
                     "DVAS_FACTOR_INVALID",
-                    "质量权重维度不支持",
-                    field_errors=[{"field": f"items[{index}].dimension_code", "reason": "不支持的质量维度"}],
+                    "质量权重指标不支持",
+                    field_errors=[{"field": f"items[{index}].metric_code", "reason": "不支持的质量指标"}],
                 )
-            if dimension_code in seen:
+            if metric_code in seen:
                 raise ApiError(
                     "DVAS_FACTOR_INVALID",
-                    "质量权重维度重复",
-                    field_errors=[{"field": f"items[{index}].dimension_code", "reason": "质量维度不能重复"}],
+                    "质量权重指标重复",
+                    field_errors=[{"field": f"items[{index}].metric_code", "reason": "质量指标不能重复"}],
                 )
-            seen.add(dimension_code)
+            seen.add(metric_code)
             try:
                 weight = float(item.get("weight"))
             except (TypeError, ValueError) as exc:
@@ -354,23 +378,44 @@ class SystemParameterService:
                     "质量权重不合法",
                     field_errors=[{"field": f"items[{index}].weight", "reason": "weight 必须大于等于 0"}],
                 )
-            pending_updates.append((dimension_code, weight))
+            pending_updates.append((metric_code, weight))
         missing = set(self.QUALITY_WEIGHT_PARAMS) - seen
         if missing:
             raise ApiError(
                 "DVAS_FACTOR_INVALID",
-                "质量权重维度不完整",
-                field_errors=[{"field": "items", "reason": f"缺少维度: {', '.join(sorted(missing))}"}],
+                "质量权重指标不完整",
+                field_errors=[{"field": "items", "reason": f"缺少指标: {', '.join(sorted(missing))}"}],
             )
-        if abs(sum(weight for _, weight in pending_updates) - 1.0) > P0_CONFIG.weight_normalization_tolerance:
+        pending_by_code = dict(pending_updates)
+        primary_sum = sum(
+            pending_by_code[metric_code] for metric_code, _, _, _ in QUALITY_PRIMARY_METRICS
+        )
+        if abs(primary_sum - 1.0) > P0_CONFIG.weight_normalization_tolerance:
             raise ApiError(
                 "DVAS_FACTOR_INVALID",
                 "质量权重不合法",
-                field_errors=[{"field": "items", "reason": "质量权重之和必须为 1.000000"}],
+                field_errors=[{"field": "items", "reason": "一级质量指标权重之和必须为 1.000000"}],
             )
+        for parent_metric_code, parent_name, _, _ in QUALITY_PRIMARY_METRICS:
+            child_sum = sum(
+                pending_by_code[metric_code]
+                for metric_code, _, child_parent_code, _, _ in QUALITY_SECONDARY_METRICS
+                if child_parent_code == parent_metric_code
+            )
+            if abs(child_sum - 1.0) > P0_CONFIG.weight_normalization_tolerance:
+                raise ApiError(
+                    "DVAS_FACTOR_INVALID",
+                    "质量权重不合法",
+                    field_errors=[
+                        {
+                            "field": "items",
+                            "reason": f"{parent_name}下二级质量指标权重之和必须为 1.000000",
+                        }
+                    ],
+                )
         updated = [
-            self.update(self.QUALITY_WEIGHT_PARAMS[dimension_code], {"current_value": weight})
-            for dimension_code, weight in pending_updates
+            self.update(self.QUALITY_WEIGHT_PARAMS[metric_code], {"current_value": weight})
+            for metric_code, weight in pending_updates
         ]
         return {**self.quality_weights(), "updated_parameters": updated}
 
@@ -1478,6 +1523,9 @@ class DataIngestionService:
                 "modality": resource_payload.get("modality", "TABULAR"),
                 "field_count": int(resource_payload.get("field_count", 0)),
                 "sample_count": int(resource_payload.get("sample_count", 0)),
+                "missing_rate": float(resource_payload.get("missing_rate", 0) or 0),
+                "sensitive_field_count": int(resource_payload.get("sensitive_field_count", 0) or 0),
+                "include_in_calculation": bool(resource_payload.get("include_in_calculation", True)),
                 "party_id": party["party_id"] if party else None,
                 "provider_party_name": resource_payload["provider_party_name"],
                 "status": "ACTIVE",
@@ -1738,6 +1786,8 @@ class PartyService:
 
 
 class QualityAssessmentService:
+    ALGORITHM_VERSION = "DVAS_QUALITY_7P17S_V1"
+
     def __init__(self, repository):
         self.repository = repository
 
@@ -1762,34 +1812,44 @@ class QualityAssessmentService:
 
         now = utc_now()
         version_no = len(self.repository.list_quality_assessments()) + 1
-        quality_score = min(98.0, 78.0 + len(resources) * 3.5)
-        quality_level = "A" if quality_score >= 85 else "B"
-        details = [
-            self._detail("完整性", "completeness", 0.35, quality_score + 1.0),
-            self._detail("一致性", "consistency", 0.30, quality_score - 2.0),
-            self._detail("可用性", "usability", 0.35, quality_score),
-        ]
+        assessment_id = self.repository.next_id("assessment")
+        details, dimension_scores, quality_score = self._evaluate_quality(resources)
+        quality_level = self._quality_level(quality_score)
+        evidence_summary = (
+            "质量评估按 7 个一级指标和 17 个二级指标逐级加权生成，"
+            f"本次覆盖 {len(resources)} 个数据资源。"
+        )
         snapshot_id = self.repository.next_id("snapshot")
+        snapshot_content = {
+            "details": details,
+            "quality_score_detail": details,
+            "dimension_scores": dimension_scores,
+            "quality_score": round(quality_score, 2),
+            "evidence_summary": evidence_summary,
+        }
         output_snapshot = {
             "snapshot_id": snapshot_id,
             "project_id": project["project_id"],
             "snapshot_type": "RESULT",
-            "content_json": {"details": details, "quality_score": round(quality_score, 2)},
-            "checksum": stable_checksum({"details": details, "quality_score": round(quality_score, 2)}),
+            "content_json": snapshot_content,
+            "checksum": stable_checksum(snapshot_content),
             "created_by": LOCAL_OPERATOR,
             "created_at": now,
         }
         assessment = {
-            "assessment_id": self.repository.next_id("assessment"),
+            "assessment_id": assessment_id,
             "project_id": project["project_id"],
             "package_id": package_id,
             "version_no": version_no,
             "quality_score": round(quality_score, 2),
             "quality_level": quality_level,
             "quality_factor": round(quality_score / 100, 4),
-            "dimension_scores": {detail["dimension_code"]: detail["score"] for detail in details},
-            "evidence_summary": "BE-04 质量评估骨架基于资源数量和字段统计生成演示评分。",
-            "algorithm_version": "DVAS_QUALITY_SKELETON_V0",
+            "dimension_scores": dimension_scores,
+            "quality_score_detail": details,
+            "primary_metric_count": len(QUALITY_PRIMARY_METRICS),
+            "secondary_metric_count": len(QUALITY_SECONDARY_METRICS),
+            "evidence_summary": evidence_summary,
+            "algorithm_version": self.ALGORITHM_VERSION,
             "input_snapshot_id": package.get("input_snapshot_id"),
             "parameter_snapshot_id": None,
             "output_snapshot_id": snapshot_id,
@@ -1797,8 +1857,35 @@ class QualityAssessmentService:
             "created_at": now,
             "simulation_disclaimer": SIMULATION_DISCLAIMER,
         }
+        resource_assessments, resource_score_details = self.evaluate_resources(
+            resources,
+            assessment,
+            now=now,
+        )
+        resource_results = self._resource_result_payload(
+            assessment,
+            resource_assessments,
+            resource_score_details,
+        )
+        assessment.update(
+            {
+                "assessed_resource_count": resource_results["assessed_resource_count"],
+                "average_resource_score": resource_results["average_resource_score"],
+                "avg_resource_score": resource_results["average_resource_score"],
+                "low_score_resource_count": resource_results["low_score_resource_count"],
+                "low_score_threshold": resource_results["low_score_threshold"],
+            }
+        )
+        snapshot_content["resource_quality"] = resource_results
+        output_snapshot["content_json"] = snapshot_content
+        output_snapshot["checksum"] = stable_checksum(snapshot_content)
         self.repository.put_snapshot(output_snapshot)
         self.repository.put_quality_assessment(assessment, details)
+        self.repository.put_quality_resource_results(
+            assessment["assessment_id"],
+            resource_assessments,
+            resource_score_details,
+        )
         updated_project = self.repository.update_project(project_status=ProjectStatus.ASSESSED.value)
         write_audit(
             self.repository,
@@ -1810,13 +1897,22 @@ class QualityAssessmentService:
             status="SUCCESS",
             input_snapshot_id=assessment["input_snapshot_id"],
             result_snapshot_id=snapshot_id,
-            after_value_json={"assessment": assessment, "details": details},
+            after_value_json={
+                "assessment": assessment,
+                "details": details,
+                "resource_results": resource_results,
+            },
         )
         return {
             "project_id": updated_project["project_id"],
             "project_status": updated_project["project_status"],
             "assessment": assessment,
             "details": details,
+            "quality_score_detail": details,
+            "dimension_scores": dimension_scores,
+            "evidence_summary": evidence_summary,
+            "resource_quality": resource_results,
+            "resource_results": resource_results,
         }
 
     def latest(self):
@@ -1831,15 +1927,499 @@ class QualityAssessmentService:
             raise ApiError("DVAS_NOT_FOUND", "质量评估结果不存在", status=404)
         return {"assessment_id": assessment_id, "assessment": assessment, "details": self.repository.get_quality_details(assessment_id)}
 
-    def _detail(self, dimension_name, dimension_code, weight, score):
+    def resource_results(self, payload):
+        assessment_id = payload.get("assessment_id") or "latest"
+        if assessment_id == "latest":
+            assessment = self.latest()
+        else:
+            assessment = self.repository.get_quality_assessment(assessment_id)
+            if not assessment:
+                raise ApiError("DVAS_NOT_FOUND", "质量评估结果不存在", status=404)
+        if payload.get("project_id") and payload["project_id"] != assessment["project_id"]:
+            raise ApiError("DVAS_NOT_FOUND", "质量评估结果不存在", status=404)
+        resources = self._assessable_resources(assessment["package_id"])
+        resource_assessments = self.repository.list_quality_resource_assessments(
+            assessment_id=assessment["assessment_id"]
+        )
+        expected_resource_ids = {resource["resource_id"] for resource in resources}
+        actual_resource_ids = {item["resource_id"] for item in resource_assessments}
+        if expected_resource_ids != actual_resource_ids:
+            resource_assessments, resource_score_details = self._backfill_resource_quality(
+                assessment,
+                resources,
+            )
+        else:
+            resource_score_details = self.repository.list_quality_resource_score_details(
+                assessment_id=assessment["assessment_id"]
+            )
+        return self._resource_result_payload(
+            assessment,
+            resource_assessments,
+            resource_score_details,
+        )
+
+    def evaluate_resources(self, resources, assessment, now=None):
+        now = now or utc_now()
+        resource_assessments = []
+        all_details = []
+        for resource in self._assessable_resource_items(resources):
+            resource_assessment_id = self.repository.next_id("quality_resource")
+            secondary_scores = self._resource_secondary_scores(resource)
+            secondary_by_parent = {}
+            metric_scores = {}
+            for metric_code, metric_name, parent_metric_code, parameter_code, default_weight in QUALITY_SECONDARY_METRICS:
+                weight = self._weight(parameter_code, default_weight)
+                score = secondary_scores[metric_code]
+                metric_scores[metric_code] = score
+                secondary_by_parent.setdefault(parent_metric_code, []).append(
+                    self._resource_detail(
+                        resource_assessment_id=resource_assessment_id,
+                        assessment=assessment,
+                        resource=resource,
+                        metric_code=metric_code,
+                        metric_name=metric_name,
+                        metric_level=2,
+                        parent_metric_code=parent_metric_code,
+                        weight=weight,
+                        score=score,
+                        weighted_score=score * weight,
+                        created_at=now,
+                    )
+                )
+
+            details = []
+            dimension_scores = {}
+            total_score = 0.0
+            for metric_code, metric_name, parameter_code, default_weight in QUALITY_PRIMARY_METRICS:
+                weight = self._weight(parameter_code, default_weight)
+                child_details = secondary_by_parent.get(metric_code, [])
+                primary_score = round(sum(detail["weighted_score"] for detail in child_details), 2)
+                dimension_scores[metric_code] = primary_score
+                details.append(
+                    self._resource_detail(
+                        resource_assessment_id=resource_assessment_id,
+                        assessment=assessment,
+                        resource=resource,
+                        metric_code=metric_code,
+                        metric_name=metric_name,
+                        metric_level=1,
+                        parent_metric_code=None,
+                        weight=weight,
+                        score=primary_score,
+                        weighted_score=primary_score * weight,
+                        created_at=now,
+                    )
+                )
+                details.extend(child_details)
+                total_score += primary_score * weight
+
+            total_score = round(self._bounded_score(total_score), 2)
+            lowest_dimension_code, lowest_dimension_name = self._lowest_dimension(dimension_scores)
+            party_names = self._party_names_for_resource(resource)
+            resource_assessment = {
+                "resource_assessment_id": resource_assessment_id,
+                "assessment_id": assessment["assessment_id"],
+                "project_id": assessment["project_id"],
+                "package_id": assessment["package_id"],
+                "resource_id": resource["resource_id"],
+                "resource_name": resource["resource_name"],
+                "party_names": party_names,
+                "party_names_text": "、".join(party_names),
+                "modality": resource.get("modality", "TABULAR"),
+                "total_score": total_score,
+                "quality_level": self._quality_level(total_score),
+                "quality_factor": round(total_score / 100, 4),
+                "lowest_dimension_code": lowest_dimension_code,
+                "lowest_dimension_name": lowest_dimension_name,
+                "min_primary_metric": lowest_dimension_name,
+                "dimension_scores": dimension_scores,
+                "metric_scores": metric_scores,
+                "evidence_summary": (
+                    f"{resource['resource_name']} 基于字段数、样本量、缺失率、状态和主体关系"
+                    "生成逐数据资源质量评分。"
+                ),
+                "version_no": assessment["version_no"],
+                "status": "ASSESSED",
+                "created_at": now,
+                "updated_at": now,
+            }
+            resource_assessments.append(resource_assessment)
+            all_details.extend(details)
+        return resource_assessments, all_details
+
+    def _backfill_resource_quality(self, assessment, resources):
+        now = utc_now()
+        resource_assessments, resource_score_details = self.evaluate_resources(
+            resources,
+            assessment,
+            now=now,
+        )
+        self.repository.put_quality_resource_results(
+            assessment["assessment_id"],
+            resource_assessments,
+            resource_score_details,
+        )
+        return resource_assessments, resource_score_details
+
+    def _resource_result_payload(self, assessment, resource_assessments, resource_score_details):
+        dimensions = [
+            {
+                "dimension_code": metric_code,
+                "dimension_name": metric_name,
+                "weight": round(self._weight(parameter_code, default_weight), 6),
+            }
+            for metric_code, metric_name, parameter_code, default_weight in QUALITY_PRIMARY_METRICS
+        ]
+        resources = []
+        for item in sorted(resource_assessments, key=lambda row: row["resource_id"]):
+            dimension_scores = {
+                dimension["dimension_code"]: round(
+                    float(item.get("dimension_scores", {}).get(dimension["dimension_code"], 0)),
+                    2,
+                )
+                for dimension in dimensions
+            }
+            row = {
+                **item,
+                "dimension_scores": dimension_scores,
+                "owner_name": item.get("party_names_text", ""),
+                "provider_party": item.get("party_names_text", ""),
+                "resource_type": item.get("modality", ""),
+                "update_time": item.get("updated_at", ""),
+            }
+            resources.append(row)
+        scores = [float(item["total_score"]) for item in resources]
+        low_score_threshold = float(
+            parameter_current_value(self.repository, "LOW_QUALITY_RESOURCE_THRESHOLD", 70)
+        )
+        average_resource_score = round(sum(scores) / len(scores), 1) if scores else 0
+        heatmap_rows = [
+            {
+                "resource_id": item["resource_id"],
+                "resource_name": item["resource_name"],
+            }
+            for item in resources
+        ]
+        heatmap_columns = [
+            {
+                "dimension_code": dimension["dimension_code"],
+                "dimension_name": dimension["dimension_name"],
+            }
+            for dimension in dimensions
+        ]
+        heatmap_values = [
+            [
+                float(item["dimension_scores"][dimension["dimension_code"]])
+                for dimension in dimensions
+            ]
+            for item in resources
+        ]
+        return {
+            "project_id": assessment["project_id"],
+            "package_id": assessment["package_id"],
+            "assessment_id": assessment["assessment_id"],
+            "package_score": assessment["quality_score"],
+            "package_level": assessment["quality_level"],
+            "assessed_resource_count": len(resources),
+            "average_resource_score": average_resource_score,
+            "avg_resource_score": average_resource_score,
+            "low_score_resource_count": sum(
+                1 for score in scores if score < low_score_threshold
+            ),
+            "low_score_threshold": low_score_threshold,
+            "dimensions": dimensions,
+            "resources": resources,
+            "resource_scores": resources,
+            "details": resource_score_details,
+            "heatmap": {
+                "rows": heatmap_rows,
+                "columns": heatmap_columns,
+                "values": heatmap_values,
+            },
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+        }
+
+    def resource_result_detail(self, resource_id, payload):
+        results = self.resource_results(payload)
+        resource = next(
+            (
+                item
+                for item in results["resources"]
+                if item["resource_id"] == resource_id
+            ),
+            None,
+        )
+        if not resource:
+            raise ApiError("DVAS_NOT_FOUND", "资源级质量评估结果不存在", status=404)
+        details = [
+            item
+            for item in results["details"]
+            if item.get("resource_id") == resource_id
+        ]
+        primary_order = {
+            metric_code: index
+            for index, (metric_code, _, _, _) in enumerate(QUALITY_PRIMARY_METRICS)
+        }
+        secondary_order = {
+            metric_code: index
+            for index, (metric_code, _, _, _, _) in enumerate(QUALITY_SECONDARY_METRICS)
+        }
+        primary_details = sorted(
+            [item for item in details if item.get("metric_level") == 1],
+            key=lambda item: primary_order.get(item.get("metric_code"), 999),
+        )
+        secondary_details = sorted(
+            [item for item in details if item.get("metric_level") == 2],
+            key=lambda item: secondary_order.get(item.get("metric_code"), 999),
+        )
+        return {
+            "project_id": results["project_id"],
+            "package_id": results["package_id"],
+            "assessment_id": results["assessment_id"],
+            "resource_id": resource_id,
+            "resource": resource,
+            "primary_details": primary_details,
+            "secondary_details": secondary_details,
+            "details": [*primary_details, *secondary_details],
+            "primary_metric_count": len(primary_details),
+            "secondary_metric_count": len(secondary_details),
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+        }
+
+    def _assessable_resources(self, package_id):
+        return self._assessable_resource_items(self.repository.list_data_resources(package_id))
+
+    def _assessable_resource_items(self, resources):
+        return [
+            resource
+            for resource in resources
+            if resource.get("status") == "ACTIVE"
+            and resource.get("include_in_calculation", True) is not False
+        ]
+
+    def _resource_secondary_scores(self, resource):
+        field_count = self._number_value(resource.get("field_count"), 0)
+        sample_count = self._number_value(resource.get("sample_count"), 0)
+        missing_rate = self._missing_rate(resource.get("missing_rate", 0))
+        name = str(resource.get("resource_name") or "")
+        modality = str(resource.get("modality") or "")
+        provider = str(resource.get("provider_party_name") or resource.get("party_id") or "")
+        active = resource.get("status") == "ACTIVE"
+        include = resource.get("include_in_calculation", True) is not False
+        field_factor = min(field_count, 50) / 50 * 6
+        sample_factor = min(sample_count, 30000) / 30000 * 7
+        small_sample_penalty = max(0, 1000 - sample_count) / 1000 * 5
+        missing_penalty = missing_rate * 100
+        name_bonus = 4 if name else -10
+        provider_bonus = 3 if provider else -6
+        modality_bonus = 2 if modality else -5
+        active_bonus = 3 if active else -25
+        include_bonus = 2 if include else -20
+        base_score = 80 + field_factor + sample_factor - small_sample_penalty
+        raw_scores = {
+            "QUALITY_NAMING_NORM": 84 + name_bonus + min(len(name), 24) * 0.12 + field_factor,
+            "QUALITY_LENGTH_NORM": base_score + (2 if 3 <= field_count <= 120 else -4),
+            "QUALITY_PRECISION_NORM": base_score + modality_bonus - missing_penalty * 0.15,
+            "QUALITY_FORMAT_NORM": base_score + modality_bonus,
+            "QUALITY_METADATA_NORM": 78 + name_bonus + provider_bonus + modality_bonus + field_factor,
+            "QUALITY_REFERENCE_NORM": 80 + provider_bonus + min(sample_count, 20000) / 20000 * 5,
+            "QUALITY_MODEL_NORM": 82 + field_factor + modality_bonus,
+            "QUALITY_RANGE_ACC": base_score + sample_factor - missing_penalty * 0.25,
+            "QUALITY_CODE_ACC": 84 + field_factor - missing_penalty * 0.2,
+            "QUALITY_ELEMENT_COMP": 95 + field_factor - missing_penalty * 1.1,
+            "QUALITY_RECORD_COMP": 94 + sample_factor - missing_penalty * 1.2 - small_sample_penalty,
+            "QUALITY_ID_UNIQ": 88 + min(sample_count, 20000) / 20000 * 4 - missing_penalty * 0.15,
+            "QUALITY_REDUNDANCY_UNIQ": 87 + min(field_count, 60) * 0.05 - missing_penalty * 0.1,
+            "QUALITY_SAME_CONS": 86 + field_factor + sample_factor - missing_penalty * 0.2,
+            "QUALITY_RELATED_CONS": 84 + provider_bonus + modality_bonus - missing_penalty * 0.2,
+            "QUALITY_RECORD_TIME": 86 + active_bonus + (2 if resource.get("updated_at") else -4) - small_sample_penalty,
+            "QUALITY_FIELD_ACCESS": 88 + active_bonus + include_bonus + min(field_count, 50) * 0.08,
+        }
+        return {metric_code: self._bounded_score(score) for metric_code, score in raw_scores.items()}
+
+    def _resource_detail(
+        self,
+        resource_assessment_id,
+        assessment,
+        resource,
+        metric_code,
+        metric_name,
+        metric_level,
+        parent_metric_code,
+        weight,
+        score,
+        weighted_score,
+        created_at,
+    ):
+        level_name = "一级指标" if metric_level == 1 else "二级指标"
+        evidence_text = (
+            f"{resource['resource_name']} 的{metric_name}{level_name}评分由资源字段数、"
+            "样本量、缺失率、接入状态和主体关系等元数据规则生成。"
+        )
+        return {
+            "detail_id": self.repository.next_id("quality_resource_detail"),
+            "resource_assessment_id": resource_assessment_id,
+            "assessment_id": assessment["assessment_id"],
+            "project_id": assessment["project_id"],
+            "package_id": assessment["package_id"],
+            "resource_id": resource["resource_id"],
+            "resource_name": resource["resource_name"],
+            "dimension_code": metric_code,
+            "dimension_name": metric_name,
+            "metric_code": metric_code,
+            "metric_name": metric_name,
+            "parent_dimension_code": parent_metric_code,
+            "parent_metric_code": parent_metric_code,
+            "metric_level": metric_level,
+            "weight": round(weight, 6),
+            "score": round(score, 2),
+            "weighted_score": round(weighted_score, 6),
+            "evidence_text": evidence_text,
+            "evidence": evidence_text,
+            "rule_code": f"QUAL_RESOURCE_RULE_{metric_code}",
+            "created_at": created_at,
+        }
+
+    def _lowest_dimension(self, dimension_scores):
+        primary_name_by_code = {
+            metric_code: metric_name
+            for metric_code, metric_name, _, _ in QUALITY_PRIMARY_METRICS
+        }
+        lowest_code = min(dimension_scores, key=dimension_scores.get)
+        return lowest_code, primary_name_by_code[lowest_code]
+
+    def _party_names_for_resource(self, resource):
+        if resource.get("provider_party_name"):
+            return [resource["provider_party_name"]]
+        if resource.get("party_id"):
+            party = self.repository.get_party(resource["party_id"])
+            if party:
+                return [party["party_name"]]
+        return []
+
+    def _number_value(self, value, default):
+        try:
+            if isinstance(value, str):
+                normalized = value.strip().rstrip("%")
+                if not normalized:
+                    return default
+                return float(normalized)
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _missing_rate(self, value):
+        numeric = self._number_value(value, 0.0)
+        if numeric > 1:
+            numeric = numeric / 100
+        return max(0.0, min(1.0, numeric))
+
+    def _evaluate_quality(self, resources):
+        secondary_scores = self._secondary_scores(resources)
+        secondary_by_parent = {}
+        for metric_code, metric_name, parent_metric_code, parameter_code, default_weight in QUALITY_SECONDARY_METRICS:
+            weight = self._weight(parameter_code, default_weight)
+            score = secondary_scores[metric_code]
+            secondary_by_parent.setdefault(parent_metric_code, []).append(
+                self._detail(
+                    metric_code=metric_code,
+                    metric_name=metric_name,
+                    metric_level=2,
+                    parent_metric_code=parent_metric_code,
+                    weight=weight,
+                    score=score,
+                    weighted_score=score * weight,
+                )
+            )
+
+        details = []
+        dimension_scores = {}
+        total_score = 0.0
+        for metric_code, metric_name, parameter_code, default_weight in QUALITY_PRIMARY_METRICS:
+            weight = self._weight(parameter_code, default_weight)
+            child_details = secondary_by_parent.get(metric_code, [])
+            primary_score = sum(detail["weighted_score"] for detail in child_details)
+            dimension_scores[metric_code] = round(primary_score, 2)
+            details.append(
+                self._detail(
+                    metric_code=metric_code,
+                    metric_name=metric_name,
+                    metric_level=1,
+                    parent_metric_code=None,
+                    weight=weight,
+                    score=primary_score,
+                    weighted_score=primary_score * weight,
+                )
+            )
+            details.extend(child_details)
+            total_score += primary_score * weight
+        return details, dimension_scores, total_score
+
+    def _secondary_scores(self, resources):
+        resource_count = len(resources)
+        total_fields = sum(int(resource.get("field_count") or 0) for resource in resources)
+        total_samples = sum(int(resource.get("sample_count") or 0) for resource in resources)
+        avg_missing_rate = 0.0
+        missing_rates = [float(resource.get("missing_rate") or 0) for resource in resources]
+        if missing_rates:
+            avg_missing_rate = sum(missing_rates) / len(missing_rates)
+        base_score = 80.0 + min(resource_count, 4) * 2.0 + min(total_fields, 30) * 0.15
+        completeness_score = base_score - avg_missing_rate * 100
+        timeliness_score = base_score - max(0, resource_count - 2) * 1.5
+        accessibility_score = base_score + min(total_samples / 10000, 3.0)
+        raw_scores = {
+            "QUALITY_NAMING_NORM": base_score + 1.0,
+            "QUALITY_LENGTH_NORM": base_score,
+            "QUALITY_PRECISION_NORM": base_score - 0.5,
+            "QUALITY_FORMAT_NORM": base_score + 0.5,
+            "QUALITY_METADATA_NORM": base_score - 1.0,
+            "QUALITY_REFERENCE_NORM": base_score - 1.5,
+            "QUALITY_MODEL_NORM": base_score - 0.8,
+            "QUALITY_RANGE_ACC": base_score + 0.8,
+            "QUALITY_CODE_ACC": base_score - 0.7,
+            "QUALITY_ELEMENT_COMP": completeness_score + 0.8,
+            "QUALITY_RECORD_COMP": completeness_score,
+            "QUALITY_ID_UNIQ": base_score + 0.6,
+            "QUALITY_REDUNDANCY_UNIQ": base_score - 1.2,
+            "QUALITY_SAME_CONS": base_score + 0.2,
+            "QUALITY_RELATED_CONS": base_score - 0.6,
+            "QUALITY_RECORD_TIME": timeliness_score,
+            "QUALITY_FIELD_ACCESS": accessibility_score,
+        }
+        return {metric_code: self._bounded_score(score) for metric_code, score in raw_scores.items()}
+
+    def _detail(self, metric_code, metric_name, metric_level, parent_metric_code, weight, score, weighted_score):
+        level_name = "一级指标" if metric_level == 1 else "二级指标"
         return {
             "detail_id": self.repository.next_id("quality_detail"),
-            "dimension_name": dimension_name,
-            "dimension_code": dimension_code,
-            "weight": weight,
+            "metric_code": metric_code,
+            "dimension_code": metric_code,
+            "metric_name": metric_name,
+            "dimension_name": metric_name,
+            "metric_level": metric_level,
+            "parent_metric_code": parent_metric_code,
+            "parent_dimension_code": parent_metric_code,
+            "weight": round(weight, 6),
             "score": round(score, 2),
-            "evidence": f"{dimension_name}演示评分由 BE-04 骨架生成。",
+            "weighted_score": round(weighted_score, 6),
+            "evidence": f"{metric_name}{level_name}评分由资源统计、参数权重和规则编码生成。",
+            "evidence_summary": f"{metric_name}{level_name}纳入质量评估通用指标框架。",
+            "issue_summary": "P0 演示数据未发现阻断性质量问题。",
+            "rule_code": f"QUAL_RULE_{metric_code}",
         }
+
+    def _weight(self, parameter_code, default_weight):
+        return float(parameter_current_value(self.repository, parameter_code, default_weight))
+
+    def _bounded_score(self, score):
+        return round(max(0.0, min(100.0, score)), 2)
+
+    def _quality_level(self, quality_score):
+        if quality_score >= 85:
+            return "A"
+        if quality_score >= 75:
+            return "B"
+        return "C"
 
 
 class ShuyuanMeteringService:
