@@ -1,6 +1,6 @@
 # 数据收益分配系统 V1.2 / P0 本地演示版
 
-DVAS, Data Value Allocation System, is a data revenue allocation simulation and audit-explanation system. P0 本地演示版用于展示数据接入、质量评估、数元计量、贡献与效用计算、MD-DShap 权重、收益分配模拟、报告导出和审计追溯的完整链路。
+DVAS, Data Value Allocation System, is a data revenue allocation simulation and audit-explanation system. P0 本地演示版用于展示数据接入、质量评估、数元计量、贡献与效用计算、非数据源主体合同优先分配、数据源主体 MD-DShap 权重分配、报告导出和审计追溯的完整链路。
 
 系统输出仅为模拟参考，非法律结算 / 非法定结算结果，不构成付款指令、合同履行、资产评估报告、正式审计报告或主管机关审批。
 
@@ -62,6 +62,12 @@ PYTHONDONTWRITEBYTECODE=1 python3.12 -m unittest backend.tests.test_api_contract
 - Markdown / CSV / JSON / JSONL 导出
 - 审计日志查询、详情和导出
 - 首页一键完整计算
+
+## 收益分配口径
+
+当前产品口径为：总收益 -> 非数据源主体合同优先分配 -> 合同优先分配受上限控制 -> 扣除合同优先后形成数据源主体可分配收益池 -> 数据源主体按 MD-DShap 归一化权重分配剩余收益池 -> 应用必要合同约束、尾差和报告说明。
+
+MD-DShap 只计算数据源主体之间的归一化权重，不直接分配总收益；非数据源主体不进入贡献度、效用、MD-DShap 权重池，通过合同优先分配或合同约束参与收益模拟说明。
 
 ## P1/P2 不包含范围
 

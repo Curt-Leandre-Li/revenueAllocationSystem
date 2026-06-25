@@ -51,6 +51,8 @@ interface BackendWorkspaceData {
   shuyuanDetails: Record<string, unknown>[];
   utilityLatest: Record<string, unknown> | null;
   utilityTrace: Record<string, unknown>[];
+  allocationSummary: Record<string, unknown>;
+  contractPriorityAllocations: Record<string, unknown>[];
   allocationResults: Record<string, unknown>[];
   currentAlgorithmTaskId: string;
   currentAllocationId: string;
@@ -186,6 +188,7 @@ export async function loadBackendWorkspaceSnapshot(
           ? optionalBackendCall(() => dvasApi.getUtilityTrace(utilityId), null)
           : Promise.resolve(null),
       ]);
+    const allocationResultPayload = recordValue(allocationResultsPage);
 
     const data: BackendWorkspaceData = {
       overview: mapDashboardSummaryDto({
@@ -214,6 +217,8 @@ export async function loadBackendWorkspaceSnapshot(
       shuyuanDetails: arrayRecord(recordOrNull(shuyuanDetailResult)?.details),
       utilityLatest: recordOrNull(utilityLatest),
       utilityTrace: arrayRecord(recordOrNull(utilityTraceResult)?.trace),
+      allocationSummary: recordValue(allocationResultPayload.summary),
+      contractPriorityAllocations: arrayRecord(allocationResultPayload.contract_priority_allocations),
       allocationResults: allocationResultsPage.items,
       currentAlgorithmTaskId,
       currentAllocationId,
@@ -567,6 +572,7 @@ function buildPartiesPage(data: BackendWorkspaceData): PageWorkspaceData {
       party_type: item.partyTypeLabel,
       is_data_provider: item.partyType === "DATA_PROVIDER" ? "是" : "否",
       include_in_md_dshap: item.includeInMdDshap ? "是" : "否",
+      processing_method: item.partyType === "DATA_PROVIDER" ? "贡献度 / 效用 / MD-DShap" : "合同优先 / 合同约束",
       linked_resource_count: "后端未返回",
       status: item.statusLabel,
       contribution_summary: "后端未返回",
@@ -805,7 +811,7 @@ function buildMDDShapPage(data: BackendWorkspaceData): PageWorkspaceData {
   const taskSet = Array.isArray(task.task_set) ? task.task_set : [];
   const participantSet = arrayRecord(task.participant_set);
   return {
-    summary: "MD-DShap 参与方池、任务和权重结果来自后端。",
+    summary: "MD-DShap 只计算数据源主体归一化权重；权重用于分配扣除合同优先后的数据源收益池。",
     primaryTask: data.mdTask ? "查看后端权重结果。" : "完成效用计算后启动 MD-DShap。",
     metrics: [
       metric("进入权重池主体数", participantPoolTotal || "待生成", "participant-pool total", participantPoolTotal ? "neutral" : "warning"),
@@ -887,21 +893,42 @@ function stringifyJson(value: unknown) {
 }
 
 function buildSimulationPage(data: BackendWorkspaceData): PageWorkspaceData {
+  const summary = data.allocationSummary;
+  const firstResult = data.allocationResults[0] ?? {};
+  const totalRevenue = stringValue(summary.total_revenue ?? firstResult.total_revenue);
+  const priorityAmount = stringValue(
+    summary.total_contract_priority_amount
+      ?? summary.priority_allocation_amount
+      ?? firstResult.total_contract_priority_amount
+      ?? firstResult.priority_allocation_amount,
+  );
+  const dataProviderPool = stringValue(
+    summary.data_provider_revenue_pool ?? firstResult.data_provider_revenue_pool,
+  );
   return {
-    summary: "收益分配模拟结果来自后端 allocation results。",
+    summary: "收益分配模拟结果来自后端：先扣非数据源主体合同优先分配，再形成数据源主体收益池。",
     primaryTask: data.allocationResults.length ? "查看模拟结果或锁定方案。" : "完成权重计算后执行收益分配模拟。",
     metrics: [
       metric("结果行", data.allocationResults.length, "后端 allocation results", data.allocationResults.length ? "success" : "warning"),
-      metric("收益池摘要", "后端未返回", "需要 allocation summary DTO", "warning"),
+      metric("总收益", totalRevenue || "后端未返回", "allocation summary DTO", totalRevenue ? "success" : "warning"),
+      metric("非数据合同优先", priorityAmount || "后端未返回", "contract priority summary", priorityAmount ? "success" : "warning"),
+      metric("数据源收益池", dataProviderPool || "后端未返回", "data_provider_revenue_pool", dataProviderPool ? "success" : "warning"),
       metric("锁定/导出", projectStatusLabel(data.overview.status), "项目状态", "neutral"),
     ],
     preconditions: toPreconditions(data.overview.preconditions),
     rows: data.allocationResults.map((item) => ({
-      total_revenue: stringValue(item.total_revenue, ""),
-      priority_allocation_amount: stringValue(item.priority_allocation_amount, ""),
-      data_provider_revenue_pool: stringValue(item.data_provider_revenue_pool, ""),
+      total_revenue: stringValue(item.total_revenue ?? summary.total_revenue, ""),
+      priority_allocation_amount: stringValue(
+        item.total_contract_priority_amount
+          ?? item.priority_allocation_amount
+          ?? summary.total_contract_priority_amount
+          ?? summary.priority_allocation_amount,
+        "",
+      ),
+      data_provider_revenue_pool: stringValue(item.data_provider_revenue_pool ?? summary.data_provider_revenue_pool, ""),
       allocation_mode: stringValue(item.allocation_mode, "MD-DShap 权重分配"),
       party_name: stringValue(item.party_name, "数据源主体"),
+      subject_track: stringValue(item.subject_track, "DATA_PROVIDER_POOL"),
       raw_weight: stringValue(item.raw_weight),
       normalized_weight: stringValue(item.normalized_weight),
       pre_constraint_amount: stringValue(item.pre_constraint_amount),
@@ -913,6 +940,10 @@ function buildSimulationPage(data: BackendWorkspaceData): PageWorkspaceData {
     technicalDetails: {
       project_id: data.overview.projectId,
       current_allocation_id: data.currentAllocationId,
+      total_revenue: totalRevenue,
+      priority_allocation_amount: priorityAmount,
+      data_provider_revenue_pool: dataProviderPool,
+      contract_priority_allocations_json: stringifyJson(data.contractPriorityAllocations),
       menu_code: "NAV_ALLOC_SIMULATION",
       module_code: "ALLOC",
     },

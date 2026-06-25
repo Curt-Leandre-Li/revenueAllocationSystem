@@ -47,7 +47,7 @@ export function ReportsPage({ route, snapshot, onAction }: PageProps) {
     <div className="pageWorkspace leanPage reportsPage">
       <CompactPageHeader
         title="报告导出"
-        description="生成说明报告，查看文件清单、生成时间和校验摘要。"
+        description="生成说明报告，披露先合同优先、后数据源收益池分配的模拟参考口径。"
         primaryAction={<ActionButton action={actionRegistry["REP-001"]} onClick={(action) => onAction(action)} />}
         secondaryActions={
           <button className="actionButton secondary" type="button" onClick={() => setDrawer("fields")}>
@@ -119,7 +119,7 @@ export function ReportsPage({ route, snapshot, onAction }: PageProps) {
       </section>
 
       <DetailDrawer
-        footerNote="导出前展示字段清单；导出文件必须包含模拟参考、非法律结算免责声明。"
+        footerNote="报告需说明：先根据合同约定向非数据源主体执行优先分配并受上限约束，扣除后形成数据源主体收益池，再按 MD-DShap 权重分配。"
         objectType="导出字段"
         open={drawer === "fields"}
         size="md"
@@ -133,6 +133,9 @@ export function ReportsPage({ route, snapshot, onAction }: PageProps) {
               { key: "project_name", label: "项目名称" },
               { key: "resource_name", label: "资源名称" },
               { key: "party_name", label: "参与方" },
+              { key: "subject_track", label: "主体轨道" },
+              { key: "contract_priority_allocations", label: "合同优先明细" },
+              { key: "data_provider_revenue_pool", label: "数据源收益池" },
               { key: "normalized_weight", label: "分配权重" },
               { key: "allocation_amount", label: "模拟分配金额" },
               { key: "disclaimer", label: "模拟参考声明" },

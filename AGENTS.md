@@ -99,10 +99,12 @@ The current complete chain is:
 -> 质量评估
 -> 数元计量
 -> 贡献度计算与效用计算
+-> 配置总收益
+-> 配置非数据源主体合同优先分配和上限
+-> 扣除合同优先分配，形成数据源主体可分配收益池
 -> MD-DShap 权重计算
--> 配置总收益、合同优先分配、数据源收益池
--> 合同约束调整
--> 收益分配模拟
+-> 使用 MD-DShap 归一化权重分配数据源主体收益池
+-> 应用合同约束和尾差处理
 -> 锁定参考方案或复制新版本重算
 -> 报告生成与导出
 -> 审计追溯
@@ -152,7 +154,7 @@ P1 may extend:
 - Basic Shapley is only a small-scale `baseline_check`; it is not the default
   final allocation mode.
 - MD-DShap outputs weights only. It must not be described as creating payment
-  instructions or final legal allocation.
+  instructions, final legal allocation, or direct total-revenue allocation.
 - DAUS / utility layer carries contribution, quality, usage, and scenario
   signals and provides `v(S,t)` or utility input for MD-DShap.
 - Non-data contribution parties do not enter the MD-DShap pool by default.

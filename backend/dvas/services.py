@@ -807,7 +807,10 @@ class DraftConfigurationService:
             normalized.append(
                 {
                     "party_id": party_id,
+                    "value_type": item.get("value_type", "AMOUNT"),
                     "priority_amount": self._amount(item.get("priority_amount", 0), f"items[{index}].priority_amount"),
+                    "priority_ratio": item.get("priority_ratio"),
+                    "cap_amount": item.get("cap_amount"),
                     "basis_text": item.get("basis_text") or "P0 本地草稿配置",
                     "priority_order": int(item.get("priority_order", index + 1)),
                 }
@@ -3482,6 +3485,8 @@ class ContractConstraintService:
 
 
 class AllocationService:
+    PRIORITY_CAP_TYPES = {"CAP_AMOUNT", "MAX_AMOUNT"}
+
     def __init__(self, repository):
         self.repository = repository
 
@@ -3497,6 +3502,9 @@ class AllocationService:
             {
                 "total_revenue": payload.get("total_revenue", 1000),
                 "priority_allocation_amount": payload.get("priority_allocation_amount", 0),
+                "priority_items": payload.get("priority_items")
+                or payload.get("allocation_priority_items")
+                or payload.get("contract_priority_allocations"),
                 "currency": payload.get("currency", "CNY"),
                 "allocation_mode": payload.get(
                     "allocation_mode",
@@ -3512,7 +3520,6 @@ class AllocationService:
         task = self._resolve_weight_task(payload.get("weight_task_id"), project)
         results = self._weight_results(task["task_id"])
         total_revenue = self._amount(payload, "total_revenue", required=True)
-        priority_amount = self._amount(payload, "priority_allocation_amount", default=0)
         allocation_mode = payload.get(
             "allocation_mode",
             AllocationMode.MD_DSHAP_WEIGHT_WITH_CONSTRAINTS.value,
@@ -3523,11 +3530,28 @@ class AllocationService:
                 "收益分配模式不支持",
                 field_errors=[{"field": "allocation_mode", "reason": "不支持的收益分配模式"}],
             )
+        constraints = self._active_constraints()
+        contract_priority_allocations = self._contract_priority_allocations(
+            payload,
+            total_revenue,
+            constraints,
+        )
+        priority_amount = round(
+            sum(item["actual_priority_amount"] for item in contract_priority_allocations),
+            2,
+        )
         if priority_amount > total_revenue:
             raise ApiError(
-                "DVAS_PRECONDITION_NOT_MET",
+                "DVAS_CONTRACT_PRIORITY_EXCEEDS_TOTAL_REVENUE",
                 "优先分配金额不能超过总收益",
                 field_errors=[{"field": "priority_allocation_amount", "reason": "优先分配金额不能超过总收益"}],
+            )
+        data_provider_revenue_pool = round(total_revenue - priority_amount, 2)
+        if data_provider_revenue_pool < 0:
+            raise ApiError(
+                "DVAS_DATA_PROVIDER_REVENUE_POOL_NEGATIVE",
+                "数据源主体收益池不能为负",
+                field_errors=[{"field": "data_provider_revenue_pool", "reason": "数据源主体收益池不能为负"}],
             )
         now = utc_now()
         allocation = {
@@ -3536,7 +3560,9 @@ class AllocationService:
             "total_revenue": total_revenue,
             "currency": payload.get("currency", "CNY"),
             "priority_allocation_amount": priority_amount,
-            "data_provider_revenue_pool": round(total_revenue - priority_amount, 2),
+            "total_contract_priority_amount": priority_amount,
+            "data_provider_revenue_pool": data_provider_revenue_pool,
+            "contract_priority_allocations": contract_priority_allocations,
             "allocation_mode": allocation_mode,
             "weight_task_id": task["task_id"],
             "status": "DRAFT",
@@ -3604,16 +3630,30 @@ class AllocationService:
             rounding_delta = rounding_delta_by_party.get(party_id, 0.0)
             if rounding_delta:
                 reason = f"{reason}；四舍五入差额调整"
+            pre_constraint_amount = round(pool * float(weight["normalized_weight"]), 2)
+            post_constraint_amount = rounded_amounts[party_id]
             results.append(
                 {
                     "result_id": self.repository.next_id("allocation_result"),
                     "allocation_id": allocation_id,
+                    "project_id": allocation["project_id"],
                     "party_id": party_id,
                     "party_name": weight["party_name"],
+                    "subject_track": "DATA_PROVIDER_POOL",
+                    "total_revenue": allocation["total_revenue"],
+                    "priority_allocation_amount": allocation["priority_allocation_amount"],
+                    "total_contract_priority_amount": allocation.get(
+                        "total_contract_priority_amount",
+                        allocation["priority_allocation_amount"],
+                    ),
+                    "data_provider_revenue_pool": allocation["data_provider_revenue_pool"],
+                    "currency": allocation["currency"],
+                    "allocation_mode": allocation["allocation_mode"],
                     "raw_weight": round(float(weight["participant_weight"]), 6),
                     "normalized_weight": round(float(weight["normalized_weight"]), 6),
-                    "pre_constraint_amount": round(pool * float(weight["normalized_weight"]), 2),
-                    "post_constraint_amount": rounded_amounts[party_id],
+                    "pre_constraint_amount": pre_constraint_amount,
+                    "post_constraint_amount": post_constraint_amount,
+                    "constraint_adjustment_amount": round(post_constraint_amount - pre_constraint_amount, 2),
                     "constraint_adjustment_reason": reason,
                     "rounding_delta": rounding_delta,
                     "version_no": next_version,
@@ -3656,9 +3696,14 @@ class AllocationService:
         return {
             "project_id": updated_project["project_id"],
             "project_status": updated_project["project_status"],
+            "summary": self._allocation_summary(updated_allocation),
             "allocation": updated_allocation,
+            "contract_priority_allocations": updated_allocation.get("contract_priority_allocations", []),
+            "data_provider_allocations": results,
             "results": results,
             "constraint_traces": traces,
+            "constraints": constraints,
+            "disclaimer": SIMULATION_DISCLAIMER,
         }
 
     def lock(self, allocation_id):
@@ -3697,8 +3742,19 @@ class AllocationService:
         }
 
     def results(self, allocation_id):
-        self._allocation(allocation_id)
-        return table_page(self.repository.list_allocation_results(allocation_id))
+        allocation = self._allocation(allocation_id)
+        rows = self.repository.list_allocation_results(allocation_id)
+        page = table_page(rows)
+        page.update(
+            {
+                "allocation": allocation,
+                "summary": self._allocation_summary(allocation),
+                "contract_priority_allocations": allocation.get("contract_priority_allocations", []),
+                "data_provider_allocations": rows,
+                "disclaimer": SIMULATION_DISCLAIMER,
+            }
+        )
+        return page
 
     def _allocation(self, allocation_id):
         allocation = self.repository.get_allocation_scenario(allocation_id)
@@ -3724,7 +3780,7 @@ class AllocationService:
         results = self.repository.list_md_dshap_results(task_id)
         if not results:
             raise ApiError(
-                "DVAS_PRECONDITION_NOT_MET",
+                "DVAS_NO_DATA_PROVIDER_WEIGHT_RESULT",
                 "MD-DShap 权重结果不存在",
                 field_errors=[{"field": "weight_task_id", "reason": "MD-DShap 权重结果不存在"}],
             )
@@ -3736,6 +3792,198 @@ class AllocationService:
                 field_errors=[{"field": "normalized_weight", "reason": "归一化权重之和必须为 1.000000"}],
             )
         return results
+
+    def _active_constraints(self):
+        return [
+            item
+            for item in self.repository.list_contract_constraints()
+            if item["status"] == "ACTIVE"
+        ]
+
+    def _allocation_summary(self, allocation):
+        return {
+            "total_revenue": allocation["total_revenue"],
+            "total_contract_priority_amount": allocation.get(
+                "total_contract_priority_amount",
+                allocation.get("priority_allocation_amount", 0),
+            ),
+            "priority_allocation_amount": allocation.get("priority_allocation_amount", 0),
+            "data_provider_revenue_pool": allocation["data_provider_revenue_pool"],
+            "currency": allocation.get("currency", "CNY"),
+        }
+
+    def _contract_priority_allocations(self, payload, total_revenue, constraints):
+        raw_items = self._priority_items(payload)
+        if raw_items is None:
+            raw_items = self._latest_priority_draft_items()
+        if raw_items is None:
+            legacy_amount = self._amount(payload, "priority_allocation_amount", default=0)
+            if legacy_amount <= 0:
+                return []
+            raw_items = [self._legacy_priority_item(legacy_amount)]
+
+        allocations = []
+        for index, item in enumerate(raw_items):
+            party_id = item.get("party_id")
+            party = self.repository.get_party(party_id) if party_id else None
+            if not party:
+                raise ApiError(
+                    "DVAS_NOT_FOUND",
+                    "合同优先分配主体不存在",
+                    status=404,
+                    field_errors=[{"field": f"priority_items[{index}].party_id", "reason": "参与方不存在"}],
+                )
+            if self._is_data_provider_party(party):
+                raise ApiError(
+                    "DVAS_PRECONDITION_NOT_MET",
+                    "合同优先分配仅适用于非数据源主体",
+                    field_errors=[
+                        {
+                            "field": f"priority_items[{index}].party_id",
+                            "reason": "数据源主体应进入数据源收益池分配，不应作为非数据源合同优先分配项",
+                        }
+                    ],
+                )
+            requested_amount = self._requested_priority_amount(item, total_revenue, index)
+            cap_amount = self._priority_cap_amount(item, party_id, requested_amount, constraints, index)
+            actual_amount = round(min(requested_amount, cap_amount), 2)
+            allocations.append(
+                {
+                    "party_id": party_id,
+                    "party_name": party["party_name"],
+                    "subject_track": "CONTRACT_PRIORITY",
+                    "value_type": item.get("value_type", "AMOUNT"),
+                    "requested_amount": requested_amount,
+                    "cap_amount": cap_amount,
+                    "actual_priority_amount": actual_amount,
+                    "basis_text": item.get("basis_text") or "合同优先分配",
+                    "priority": int(item.get("priority", item.get("priority_order", index + 1))),
+                    "status": "APPLIED",
+                    "simulation_disclaimer": SIMULATION_DISCLAIMER,
+                }
+            )
+        total_priority = round(sum(item["actual_priority_amount"] for item in allocations), 2)
+        if total_priority > total_revenue:
+            raise ApiError(
+                "DVAS_CONTRACT_PRIORITY_EXCEEDS_TOTAL_REVENUE",
+                "优先分配金额不能超过总收益",
+                field_errors=[{"field": "contract_priority_allocations", "reason": "合同优先分配合计不能超过总收益"}],
+            )
+        return sorted(allocations, key=lambda item: (item["priority"], item["party_id"]))
+
+    def _priority_items(self, payload):
+        for key in ("priority_items", "allocation_priority_items", "contract_priority_allocations"):
+            value = payload.get(key)
+            if value is not None:
+                if not isinstance(value, list):
+                    raise ApiError(
+                        "DVAS_REQUIRED_FIELD_MISSING",
+                        "合同优先分配项必须为数组",
+                        field_errors=[{"field": key, "reason": f"{key} 必须为数组"}],
+                    )
+                return value
+        return None
+
+    def _latest_priority_draft_items(self):
+        drafts = self.repository.list_business_drafts("ALLOCATION_PRIORITY_ITEMS")
+        if not drafts:
+            return None
+        latest = drafts[-1]
+        content = latest.get("content_json")
+        return content if isinstance(content, list) else None
+
+    def _legacy_priority_item(self, amount):
+        non_data_party = next(
+            (
+                party
+                for party in self.repository.list_parties()
+                if not self._is_data_provider_party(party)
+                and party.get("status") in {"ACTIVE", "ENABLED"}
+            ),
+            None,
+        )
+        if not non_data_party:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "缺少可执行合同优先分配的非数据源主体",
+                field_errors=[{"field": "priority_allocation_amount", "reason": "请先维护非数据源合同主体"}],
+            )
+        return {
+            "party_id": non_data_party["party_id"],
+            "value_type": "AMOUNT",
+            "priority_amount": amount,
+            "basis_text": "兼容旧版 priority_allocation_amount 输入",
+            "priority": 1,
+        }
+
+    def _requested_priority_amount(self, item, total_revenue, index):
+        value_type = item.get("value_type", "AMOUNT")
+        if value_type == "RATIO":
+            ratio = self._ratio(item.get("priority_ratio"), f"priority_items[{index}].priority_ratio")
+            return round(total_revenue * ratio, 2)
+        if value_type != "AMOUNT":
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "合同优先分配值类型不支持",
+                field_errors=[{"field": f"priority_items[{index}].value_type", "reason": "value_type 必须为 AMOUNT 或 RATIO"}],
+            )
+        return self._number(item.get("priority_amount", 0), f"priority_items[{index}].priority_amount")
+
+    def _priority_cap_amount(self, item, party_id, requested_amount, constraints, index):
+        if item.get("cap_amount") is not None:
+            cap_amount = self._number(item.get("cap_amount"), f"priority_items[{index}].cap_amount")
+        else:
+            caps = [
+                float(constraint["constraint_value"])
+                for constraint in constraints
+                if constraint["party_id"] == party_id
+                and constraint["constraint_type"] in self.PRIORITY_CAP_TYPES
+            ]
+            cap_amount = round(min(caps), 2) if caps else requested_amount
+        if cap_amount < 0:
+            raise ApiError(
+                "DVAS_CONTRACT_CAP_INVALID",
+                "合同优先分配上限不合法",
+                field_errors=[{"field": f"priority_items[{index}].cap_amount", "reason": "cap_amount 必须大于等于 0"}],
+            )
+        return round(cap_amount, 2)
+
+    def _ratio(self, raw_value, field):
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "合同优先分配比例不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须是数字"}],
+            ) from exc
+        if value < 0 or value > 1:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "合同优先分配比例不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须在 0 到 1 之间"}],
+            )
+        return round(value, 6)
+
+    def _number(self, raw_value, field):
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "合同优先分配金额不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须是数字"}],
+            ) from exc
+        if value < 0:
+            raise ApiError(
+                "DVAS_CONTRACT_CAP_INVALID" if field.endswith(".cap_amount") else "DVAS_FACTOR_INVALID",
+                "合同优先分配金额不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须大于等于 0"}],
+            )
+        return round(value, 2)
+
+    def _is_data_provider_party(self, party):
+        return bool(party.get("is_data_provider", party.get("party_type") == "DATA_PROVIDER"))
 
     def _apply_constraints(
         self,
@@ -4050,6 +4298,7 @@ class ReportService:
             "md_task": md_task,
             "md_results": self.repository.list_md_dshap_results(md_task["task_id"]) if md_task else [],
             "allocation": allocation,
+            "contract_priority_allocations": (allocation or {}).get("contract_priority_allocations", []),
             "allocation_results": allocation_results,
             "constraint_traces": constraint_traces,
             "snapshots": self.repository.list_snapshots(),
@@ -4328,9 +4577,17 @@ class ReportService:
                 "",
                 "## 收益分配模拟结果摘要",
                 f"- 模拟方案ID: {allocation.get('allocation_id', 'N/A')}",
+                "- 分配顺序: 总收益先按合同约定向非数据源主体执行优先分配并受上限约束；扣除后形成数据源主体收益池，再按 MD-DShap 权重对数据源主体分配。",
+                f"- 总收益: {self._amount_text(allocation.get('total_revenue'))}",
+                f"- 非数据源主体合同优先分配合计: {self._amount_text(allocation.get('priority_allocation_amount'))}",
                 f"- 数据源收益池: {self._amount_text(allocation.get('data_provider_revenue_pool'))}",
             ]
         )
+        for priority in context["contract_priority_allocations"]:
+            lines.append(
+                f"- 合同优先/{priority['party_name']}: requested={self._amount_text(priority['requested_amount'])}, "
+                f"cap={self._amount_text(priority['cap_amount'])}, actual={self._amount_text(priority['actual_priority_amount'])}"
+            )
         for result in context["allocation_results"]:
             lines.append(
                 f"- {result['party_name']}: {float(result['post_constraint_amount']):.2f}"
@@ -4533,11 +4790,19 @@ class ReportService:
                 "task": context["md_task"],
                 "results": context["md_results"],
             },
+            "allocation_summary": {
+                "total_revenue": allocation["total_revenue"] if allocation else None,
+                "total_contract_priority_amount": allocation.get("priority_allocation_amount") if allocation else None,
+                "data_provider_revenue_pool": allocation["data_provider_revenue_pool"] if allocation else None,
+                "currency": allocation.get("currency") if allocation else None,
+            },
+            "contract_priority_allocations": context["contract_priority_allocations"],
             "allocation_result": context["allocation_results"],
             "constraint_trace": context["constraint_traces"],
             "assumptions": [
                 "P0 本地演示使用确定性骨架公式和本地 JSON 状态。",
-                "MD-DShap 为权重层输出，收益分配模拟结果仅供审计说明参考。",
+                "非数据源主体先按合同优先和上限处理，扣除后形成数据源主体收益池。",
+                "MD-DShap 为数据源主体权重层输出，不直接处理非数据源合同主体或总收益金额。",
             ],
             "disclaimer": self.EXTENDED_DISCLAIMER,
         }

@@ -1359,12 +1359,44 @@ components:
           type: number
           minimum: 0
           default: 0
+          description: Legacy-compatible total priority amount; backend converts it to a non-data contract-priority item when needed.
+        priority_items:
+          type: array
+          description: Non-data-party contract-priority items applied before the data-provider revenue pool is formed.
+          items:
+            $ref: "#/components/schemas/AllocationPriorityItemInput"
         allocation_mode:
           type: string
           enum: [MD_DSHAP_WEIGHT_WITH_CONSTRAINTS, CONTRIBUTION, UTILITY, MANUAL]
           default: MD_DSHAP_WEIGHT_WITH_CONSTRAINTS
         weight_task_id:
           type: string
+    AllocationPriorityItemInput:
+      type: object
+      required: [party_id]
+      properties:
+        party_id:
+          type: string
+        value_type:
+          type: string
+          enum: [AMOUNT, RATIO]
+          default: AMOUNT
+        priority_amount:
+          type: number
+          minimum: 0
+        priority_ratio:
+          type: number
+          minimum: 0
+          maximum: 1
+        cap_amount:
+          type: number
+          minimum: 0
+          description: Optional contract cap; CAP_AMOUNT/MAX_AMOUNT constraints can express the same cap when the schema has no persisted field.
+        basis_text:
+          type: string
+        priority:
+          type: integer
+          minimum: 1
     SystemParameterUpdateRequest:
       type: object
       required: [current_value]

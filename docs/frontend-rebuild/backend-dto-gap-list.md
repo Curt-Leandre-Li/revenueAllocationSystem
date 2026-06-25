@@ -15,7 +15,7 @@
 | DTO-007 | 贡献度与效用计算 | utility chart DTO、contribution factor draft view 缺失 | 贡献排行、效用排行和贡献因子草稿不能展示 | 只展示 utility trace；配置入口禁用 |
 | DTO-008 | MD-DShap 计算管理 | `md_dshap_view` 缺少 `weight_sum`, `weight_validation_status`, `task_set_count`, `top_weight_party_name`, 页面级 complexity/audit display DTO | 不能展示权重合计、归一化校验、最高权重主体和复杂度说明 | 显示“暂无/待生成”，不计算权重合计、最高主体或复杂度 |
 | DTO-009 | MD-DShap 计算管理 | marginal trace 已接入 workspace page data，但缺少页面专用筛选/分页 DTO | 边际贡献抽屉只能展示当前任务已返回 trace，不能做后端分页筛选 | 抽屉仅做本地展示筛选，不从权重结果推导 trace |
-| DTO-010 | 收益分配模拟 | allocation summary DTO 缺少 `total_revenue`, `priority_allocation_amount`, `data_provider_revenue_pool` | 指标卡不能展示收益池 | 显示缺口；后端模拟仍接收用户输入 |
+| DTO-010 | 收益分配模拟 | allocation summary DTO 已补充 `summary.total_revenue`, `summary.total_contract_priority_amount`, `summary.data_provider_revenue_pool`, `contract_priority_allocations[]`, `data_provider_allocations[]` | 页面可展示合同优先、上限和数据源收益池 | 读取后端 DTO；不得在前端计算扣减、实际优先金额或数据源分配金额 |
 | DTO-011 | 收益分配模拟 | constraint apply trace / compare DTO 缺少 `constraint_adjustment_amount` 和应用轨迹 | 不能展示约束前后差额和轨迹 | 表格只展示后端 result rows；缺失字段显示“后端未返回” |
 | DTO-012 | 报告生成与导出 | report export view 缺少统一文件清单 DTO，`/reports` OpenAPI 仍是通用成功响应 | 不能稳定展示文件清单、`report_id`、`checksum`、生成时间和字段范围 | 只展示后端 reports rows；缺失字段显示“后端未返回”，不再使用 fallback 文件 |
 | DTO-013 | 审计日志管理 | audit detail view 的 `snapshot_refs` / snapshots 未接入页面 data | 快照抽屉不能展示真实快照 | 显示缺 DTO，不展示 mock 快照 |

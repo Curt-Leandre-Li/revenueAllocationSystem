@@ -64,10 +64,12 @@ Left navigation labels must not display Arabic numeric prefixes.
 -> 质量评估
 -> 数元计量
 -> 贡献度计算与效用计算
+-> 配置总收益
+-> 配置非数据源主体合同优先分配和上限
+-> 扣除合同优先分配，形成数据源主体可分配收益池
 -> MD-DShap 权重计算
--> 配置总收益、合同优先分配、数据源收益池
--> 合同约束调整
--> 收益分配模拟
+-> 使用 MD-DShap 归一化权重分配数据源主体收益池
+-> 应用合同约束和尾差处理
 -> 锁定参考方案或复制新版本重算
 -> 报告生成与导出
 -> 审计追溯
@@ -117,16 +119,32 @@ progress, historical report management, and stronger permission control.
 - MD-DShap is the default contribution weight strategy.
 - Basic Shapley is only a small-scale `baseline_check`.
 - MD-DShap outputs weights only and must not be described as a payment or legal
-  settlement instruction.
+  settlement instruction or as directly allocating total revenue.
 - DAUS / utility layer carries contribution, quality, usage, and scenario
   signals and provides `v(S,t)` or utility input.
 - Non-data contribution parties are handled through contract priority
-  allocation or constraints by default.
+  allocation or constraints by default. Their contract priority allocation is
+  calculated before the data-provider revenue pool is formed.
 - Single data-provider scenarios use weight 1 and disclose single-party
   simplified allocation.
 - Weights normalize to 1 and display with 6 decimals.
 - Recalculation creates new task/result/trace versions and never overwrites
   historical outputs.
+
+## Allocation Formula Baseline
+
+```text
+non_data_contract_amount_j = min(contract_requested_amount_j, contract_cap_amount_j)
+total_contract_priority_amount = sum(non_data_contract_amount_j)
+data_provider_revenue_pool = total_revenue - total_contract_priority_amount
+data_provider_amount_i = data_provider_revenue_pool × md_dshap_normalized_weight_i
+```
+
+Constraints:
+
+- `total_contract_priority_amount <= total_revenue`
+- `data_provider_revenue_pool >= 0`
+- `sum(md_dshap_normalized_weight_i) = 1`
 
 ## Reporting And Audit Baseline
 

@@ -425,6 +425,14 @@ class DvasApplication:
             return 422
         if code == "DVAS_PRECONDITION_NOT_MET":
             return 409
+        if code in {
+            "DVAS_CONTRACT_PRIORITY_EXCEEDS_TOTAL_REVENUE",
+            "DVAS_DATA_PROVIDER_REVENUE_POOL_NEGATIVE",
+            "DVAS_NO_DATA_PROVIDER_WEIGHT_RESULT",
+        }:
+            return 409
+        if code == "DVAS_CONTRACT_CAP_INVALID":
+            return 422
         if code == "DVAS_FACTOR_INVALID":
             return 422
         if code == "DVAS_UNMAPPED_ENUM_VALUE":

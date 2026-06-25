@@ -1285,9 +1285,158 @@ class DvasApiContractTests(unittest.TestCase):
         )
 
         self.assertFalse(response["success"])
+        self.assertEqual("DVAS_CONTRACT_PRIORITY_EXCEEDS_TOTAL_REVENUE", response["code"])
+        self.assertEqual(
+            [{"field": "contract_priority_allocations", "reason": "合同优先分配合计不能超过总收益"}],
+            response["field_errors"],
+        )
+
+    def test_non_data_contract_priority_is_capped_before_data_provider_pool(self):
+        self.run_demo_to_weights()
+        parties = self.assert_ok(self.request("GET", "/api/v1/parties"))["items"]
+        non_data_party = next(item for item in parties if item["party_type"] != "DATA_PROVIDER")
+
+        scenario = self.assert_ok(
+            self.request(
+                "POST",
+                "/api/v1/allocation-scenarios",
+                {
+                    "total_revenue": 1000,
+                    "priority_items": [
+                        {
+                            "party_id": non_data_party["party_id"],
+                            "value_type": "AMOUNT",
+                            "priority_amount": 300,
+                            "cap_amount": 120,
+                            "basis_text": "运营服务合同上限",
+                        }
+                    ],
+                },
+            )
+        )
+        simulated = self.assert_ok(
+            self.request("POST", f"/api/v1/allocation-scenarios/{scenario['allocation_id']}/simulate", {})
+        )
+
+        priority_rows = simulated["contract_priority_allocations"]
+        self.assertEqual(120.0, simulated["summary"]["total_contract_priority_amount"])
+        self.assertEqual(880.0, simulated["summary"]["data_provider_revenue_pool"])
+        self.assertEqual(1, len(priority_rows))
+        self.assertEqual(non_data_party["party_id"], priority_rows[0]["party_id"])
+        self.assertEqual(300.0, priority_rows[0]["requested_amount"])
+        self.assertEqual(120.0, priority_rows[0]["cap_amount"])
+        self.assertEqual(120.0, priority_rows[0]["actual_priority_amount"])
+        self.assertEqual("CONTRACT_PRIORITY", priority_rows[0]["subject_track"])
+        self.assertNotIn(non_data_party["party_id"], [item["party_id"] for item in simulated["results"]])
+        self.assertTrue(all(item["subject_track"] == "DATA_PROVIDER_POOL" for item in simulated["results"]))
+        self.assertEqual(
+            880.0,
+            round(sum(item["post_constraint_amount"] for item in simulated["results"]), 2),
+        )
+
+        result_page = self.assert_ok(
+            self.request("GET", f"/api/v1/allocation-scenarios/{scenario['allocation_id']}/results")
+        )
+        self.assertEqual(simulated["summary"], result_page["summary"])
+        self.assertEqual(priority_rows, result_page["contract_priority_allocations"])
+
+    def test_contract_cap_constraint_limits_priority_item_without_schema_change(self):
+        self.run_demo_to_weights()
+        parties = self.assert_ok(self.request("GET", "/api/v1/parties"))["items"]
+        non_data_party = next(item for item in parties if item["party_type"] != "DATA_PROVIDER")
+        self.assert_ok(
+            self.request(
+                "POST",
+                "/api/v1/contract-constraints",
+                {
+                    "party_id": non_data_party["party_id"],
+                    "constraint_name": "非数据源合同上限",
+                    "constraint_type": "CAP_AMOUNT",
+                    "value_type": "AMOUNT",
+                    "constraint_value": 80,
+                    "priority": 1,
+                },
+            )
+        )
+
+        scenario = self.assert_ok(
+            self.request(
+                "POST",
+                "/api/v1/allocation-scenarios",
+                {
+                    "total_revenue": 1000,
+                    "priority_items": [
+                        {
+                            "party_id": non_data_party["party_id"],
+                            "value_type": "AMOUNT",
+                            "priority_amount": 300,
+                        }
+                    ],
+                },
+            )
+        )
+
+        self.assertEqual(80.0, scenario["priority_allocation_amount"])
+        self.assertEqual(920.0, scenario["data_provider_revenue_pool"])
+        self.assertEqual(80.0, scenario["contract_priority_allocations"][0]["cap_amount"])
+
+    def test_contract_priority_total_exceeding_revenue_is_blocked(self):
+        self.run_demo_to_weights()
+        parties = self.assert_ok(self.request("GET", "/api/v1/parties"))["items"]
+        non_data_party = next(item for item in parties if item["party_type"] != "DATA_PROVIDER")
+
+        response = self.request(
+            "POST",
+            "/api/v1/allocation-scenarios",
+            {
+                "total_revenue": 100,
+                "priority_items": [
+                    {
+                        "party_id": non_data_party["party_id"],
+                        "value_type": "AMOUNT",
+                        "priority_amount": 120,
+                        "cap_amount": 120,
+                    }
+                ],
+            },
+        )
+
+        self.assertFalse(response["success"])
+        self.assertEqual("DVAS_CONTRACT_PRIORITY_EXCEEDS_TOTAL_REVENUE", response["code"])
+        self.assertEqual(
+            [{"field": "contract_priority_allocations", "reason": "合同优先分配合计不能超过总收益"}],
+            response["field_errors"],
+        )
+
+    def test_contract_priority_rejects_data_provider_party(self):
+        self.run_demo_to_weights()
+        parties = self.assert_ok(self.request("GET", "/api/v1/parties"))["items"]
+        data_provider = next(item for item in parties if item["party_type"] == "DATA_PROVIDER")
+
+        response = self.request(
+            "POST",
+            "/api/v1/allocation-scenarios",
+            {
+                "total_revenue": 1000,
+                "priority_items": [
+                    {
+                        "party_id": data_provider["party_id"],
+                        "value_type": "AMOUNT",
+                        "priority_amount": 100,
+                    }
+                ],
+            },
+        )
+
+        self.assertFalse(response["success"])
         self.assertEqual("DVAS_PRECONDITION_NOT_MET", response["code"])
         self.assertEqual(
-            [{"field": "priority_allocation_amount", "reason": "优先分配金额不能超过总收益"}],
+            [
+                {
+                    "field": "priority_items[0].party_id",
+                    "reason": "数据源主体应进入数据源收益池分配，不应作为非数据源合同优先分配项",
+                }
+            ],
             response["field_errors"],
         )
 

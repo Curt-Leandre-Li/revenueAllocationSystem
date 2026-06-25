@@ -36,6 +36,8 @@ export function SimulationPage({ route, snapshot, onAction, onNavigate }: PagePr
   const [allocationMode, setAllocationMode] = useState("MD_DSHAP_WEIGHT_WITH_CONSTRAINTS");
   const pageData = snapshot.pages["/allocation/simulation"];
   const rows = pageRows(pageData);
+  const dataProviderRows = rows.filter((row) => cellText(row, "subject_track", "DATA_PROVIDER_POOL") === "DATA_PROVIDER_POOL");
+  const contractPriorityRows = parseContractPriorityRows(pageData.technicalDetails.contract_priority_allocations_json);
   const firstRow = rows[0];
   const metricMap = new Map(pageMetrics(pageData).map((item) => [item.label, item]));
   const currentAllocationId = optionalCellText(pageData.technicalDetails, "current_allocation_id");
@@ -48,10 +50,10 @@ export function SimulationPage({ route, snapshot, onAction, onNavigate }: PagePr
       hint: "系统结果",
       tone: "neutral" as const,
     },
-    metricMap.get("优先分配") ?? {
-      label: "优先分配",
+    metricMap.get("非数据合同优先") ?? metricMap.get("优先分配") ?? {
+      label: "非数据合同优先",
       value: amountCell(firstRow, "priority_allocation_amount"),
-      hint: "系统结果",
+      hint: "合同优先合计",
       tone: "neutral" as const,
     },
     metricMap.get("数据源收益池") ?? {
@@ -67,13 +69,13 @@ export function SimulationPage({ route, snapshot, onAction, onNavigate }: PagePr
       tone: "neutral" as const,
     },
   ];
-  const allocationPoints = rows.map((row) => ({
+  const allocationPoints = dataProviderRows.map((row) => ({
     label: cellText(row, "party_name"),
     value: amountCell(row, "post_constraint_amount"),
     numeric: numericCellValue(row.post_constraint_amount),
     meta: cellText(row, "scenario_status"),
   }));
-  const sharePoints = rows.map((row) => ({
+  const sharePoints = dataProviderRows.map((row) => ({
     label: cellText(row, "party_name"),
     value: percentCell(row, "normalized_weight"),
     numeric: numericCellValue(row.normalized_weight),
@@ -98,7 +100,7 @@ export function SimulationPage({ route, snapshot, onAction, onNavigate }: PagePr
     <div className="pageWorkspace leanPage simulationPage">
       <CompactPageHeader
         title="模拟收益分配"
-        description="基于权重结果和合同约束生成分配模拟结果。"
+        description="先执行非数据源主体合同优先分配并受上限约束，再用 MD-DShap 权重分配数据源主体收益池。"
         primaryAction={
           <button
             className="actionButton primary"
@@ -115,6 +117,9 @@ export function SimulationPage({ route, snapshot, onAction, onNavigate }: PagePr
             <button className="actionButton secondary" type="button" onClick={() => setDrawer("revenue")}>
               配置收益
             </button>
+            <button className="actionButton secondary" type="button" onClick={() => setDrawer("priority")}>
+              配置合同优先
+            </button>
             <button className="actionButton secondary" type="button" onClick={() => setDrawer("trace")}>
               约束详情
             </button>
@@ -124,6 +129,53 @@ export function SimulationPage({ route, snapshot, onAction, onNavigate }: PagePr
 
       {connected ? null : <InlineNotice tone="warning">系统未连接，结果刷新和操作提交暂不可用。</InlineNotice>}
       <SummaryStrip items={summaryItems} />
+
+      <section className="leanTableSection">
+        <div className="leanSectionHead">
+          <div>
+            <h2>总收益与合同优先分配</h2>
+            <p>非数据源主体先按合同优先项分配，实际金额和上限均以系统返回为准。</p>
+          </div>
+        </div>
+        <dl className="businessDetail compact">
+          <div><dt>总收益</dt><dd>{amountCell(firstRow, "total_revenue")}</dd></div>
+          <div><dt>非数据源合同优先合计</dt><dd>{amountCell(firstRow, "priority_allocation_amount")}</dd></div>
+          <div><dt>剩余数据源收益池</dt><dd>{amountCell(firstRow, "data_provider_revenue_pool")}</dd></div>
+        </dl>
+        {contractPriorityRows.length ? (
+          <div className="tableWrap">
+            <table className="dataTable phase2Table">
+              <thead>
+                <tr>
+                  <th>非数据源主体</th>
+                  <th>请求金额</th>
+                  <th>合同上限</th>
+                  <th>实际优先分配</th>
+                  <th>依据</th>
+                  <th>状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                {contractPriorityRows.map((row) => (
+                  <tr key={row.key}>
+                    <td><strong>{row.partyName}</strong></td>
+                    <td>{row.requestedAmount}</td>
+                    <td>{row.capAmount}</td>
+                    <td>{row.actualPriorityAmount}</td>
+                    <td>{row.basisText}</td>
+                    <td><span className="tag success">{row.status}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyGuide
+            title="暂无合同优先明细"
+            description="执行模拟后展示后端返回的非数据源主体合同优先金额、上限和实际分配。"
+          />
+        )}
+      </section>
 
       <section className="resultChartGrid primary">
         <ChartArea title="收益流向" source={hasBackendRows(pageData) ? "rows" : pageData.chart?.chart_id}>
@@ -177,14 +229,14 @@ export function SimulationPage({ route, snapshot, onAction, onNavigate }: PagePr
             <section className="leanTableSection">
               <div className="leanSectionHead">
                 <div>
-                  <h2>分配结果</h2>
-                  <p>展示参与方权重、约束前后金额和调整原因。</p>
+                  <h2>数据源主体收益池分配</h2>
+                  <p>只展示数据源主体，金额按后端 MD-DShap 归一化权重和约束结果返回。</p>
                 </div>
                 <button className="textLinkButton" type="button" onClick={() => setDrawer("compare")}>
                   查看方案对比
                 </button>
               </div>
-          {hasBackendRows(pageData) ? (
+          {dataProviderRows.length ? (
             <div className="tableWrap">
               <table className="dataTable phase2Table">
                 <thead>
@@ -198,7 +250,7 @@ export function SimulationPage({ route, snapshot, onAction, onNavigate }: PagePr
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row, index) => (
+                  {dataProviderRows.map((row, index) => (
                     <tr key={`${cellText(row, "party_name", "party")}-${index}`}>
                       <td><strong>{cellText(row, "party_name")}</strong></td>
                       <td>{weightCell(row, "normalized_weight")}</td>
@@ -222,10 +274,10 @@ export function SimulationPage({ route, snapshot, onAction, onNavigate }: PagePr
         }
         aside={
           <>
-            <ProgressiveDisclosure title="运行与约束" summary="默认折叠">
+            <ProgressiveDisclosure title="合同约束与最终结果" summary="默认折叠">
               <div className="progressiveStack">
                 <PreconditionPanel items={pageData.preconditions} onNavigate={onNavigate} />
-                <p>约束轨迹、收益池和调整原因以系统返回记录为准。</p>
+                <p>合同约束、尾差、收益池和调整原因以系统返回记录为准。</p>
                 <dl className="businessDetail compact">
                   <div><dt>当前方案</dt><dd>{currentAllocationId || "暂无"}</dd></div>
                   <div><dt>分配模式</dt><dd>{cellText(firstRow, "allocation_mode")}</dd></div>
@@ -270,7 +322,7 @@ export function SimulationPage({ route, snapshot, onAction, onNavigate }: PagePr
 
       <DetailDrawer
         dirty={Boolean(priorityAmountInput)}
-        footerNote="优先分配金额不得超过总收益；该规则由系统返回错误信封。"
+        footerNote="优先分配金额、上限和剩余数据源收益池均由系统计算并返回；页面不自行扣减。"
         objectType="合同优先"
         open={drawer === "priority"}
         size="md"
@@ -285,7 +337,7 @@ export function SimulationPage({ route, snapshot, onAction, onNavigate }: PagePr
         <DrawerSection title="合同优先分配">
           <div className="formGrid">
             <label>
-              priority_allocation_amount
+              非数据源合同优先请求金额
               <input
                 value={priorityAmountInput}
                 type="number"
@@ -335,7 +387,7 @@ export function SimulationPage({ route, snapshot, onAction, onNavigate }: PagePr
         onClose={() => setDrawer("")}
       >
         <DrawerSection title="约束前后金额">
-          {hasBackendRows(pageData) ? (
+          {dataProviderRows.length ? (
             <div className="tableWrap">
               <table className="dataTable phase2Table">
                 <thead>
@@ -348,7 +400,7 @@ export function SimulationPage({ route, snapshot, onAction, onNavigate }: PagePr
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row, index) => (
+                  {dataProviderRows.map((row, index) => (
                     <tr key={`${cellText(row, "party_name", "party")}-${index}`}>
                       <td>{cellText(row, "party_name")}</td>
                       <td>{amountCell(row, "pre_constraint_amount")}</td>
@@ -390,6 +442,7 @@ export function SimulationPage({ route, snapshot, onAction, onNavigate }: PagePr
       >
         <ExportFieldList
           fields={[
+            { key: "subject_track", label: "主体轨道" },
             { key: "party_name", label: "参与方" },
             { key: "normalized_weight", label: "归一化权重" },
             { key: "pre_constraint_amount", label: "约束前金额" },
@@ -403,4 +456,60 @@ export function SimulationPage({ route, snapshot, onAction, onNavigate }: PagePr
       </DetailDrawer>
     </div>
   );
+}
+
+interface ContractPriorityRow {
+  key: string;
+  partyName: string;
+  requestedAmount: string;
+  capAmount: string;
+  actualPriorityAmount: string;
+  basisText: string;
+  status: string;
+}
+
+function parseContractPriorityRows(raw: unknown): ContractPriorityRow[] {
+  const text = typeof raw === "string" ? raw : "";
+  if (!text) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.map((item, index) => {
+      const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
+      const partyId = stringFromUnknown(row.party_id);
+      const partyName = stringFromUnknown(row.party_name) || "非数据源主体";
+      return {
+        key: partyId || `${partyName}-${index}`,
+        partyName,
+        requestedAmount: amountFromUnknown(row.requested_amount),
+        capAmount: amountFromUnknown(row.cap_amount),
+        actualPriorityAmount: amountFromUnknown(row.actual_priority_amount),
+        basisText: stringFromUnknown(row.basis_text) || "合同优先分配",
+        status: stringFromUnknown(row.status) || "APPLIED",
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+function stringFromUnknown(value: unknown) {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return "";
+}
+
+function amountFromUnknown(value: unknown) {
+  const numeric = numericCellValue(value);
+  return numeric !== null
+    ? numeric.toLocaleString("zh-CN", { maximumFractionDigits: 2, minimumFractionDigits: 2 })
+    : stringFromUnknown(value) || "暂无";
 }

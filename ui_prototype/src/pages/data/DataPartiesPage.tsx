@@ -23,6 +23,7 @@ interface PartyListItem {
   typeCode: string;
   dataProvider: string;
   mds: string;
+  processingMethod: string;
   resources: string;
   status: string;
   summary: string;
@@ -52,6 +53,7 @@ function partyFromRow(row: DataRow, index: number): PartyListItem {
     typeCode,
     dataProvider,
     mds,
+    processingMethod: readCell(row, "processing_method", dataProvider === "是" ? "贡献度 / 效用 / MD-DShap" : "合同优先 / 合同约束"),
     resources: readCell(row, "linked_resource_count", "暂无"),
     status: readCell(row, "status", "暂无"),
     summary: readCell(row, "contribution_summary", "暂无"),
@@ -145,6 +147,7 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
                   <th>主体类型</th>
                   <th>是否数据源主体</th>
                   <th>是否进入算法权重池</th>
+                  <th>处理方式</th>
                   <th>关联资源数</th>
                   <th>状态</th>
                   <th>操作</th>
@@ -160,6 +163,7 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
                     <td>{party.type}</td>
                     <td>{party.dataProvider}</td>
                     <td><span className={`tag ${party.mds === "是" ? "success" : "neutral"}`}>{party.mds}</span></td>
+                    <td>{party.processingMethod}</td>
                     <td>{party.resources}</td>
                     <td title={party.summary}>{party.status}</td>
                     <td>

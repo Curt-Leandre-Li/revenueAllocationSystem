@@ -75,10 +75,12 @@ role concepts for future P1 permissions:
 -> 质量评估
 -> 数元计量
 -> 贡献度计算与效用计算
+-> 配置总收益
+-> 配置非数据源主体合同优先分配和上限
+-> 扣除合同优先分配，形成数据源主体可分配收益池
 -> MD-DShap 权重计算
--> 配置总收益、合同优先分配、数据源收益池
--> 合同约束调整
--> 收益分配模拟
+-> 使用 MD-DShap 归一化权重分配数据源主体收益池
+-> 应用合同约束和尾差处理
 -> 锁定参考方案或复制新版本重算
 -> 报告生成与导出
 -> 审计追溯
@@ -93,5 +95,8 @@ role concepts for future P1 permissions:
   default.
 - Contract priority allocation and constraints apply before/after data-provider
   pool allocation according to the latest PRD.
+- Non-data party contract priority is applied before the data-provider revenue
+  pool is formed; MD-DShap then allocates only that remaining pool across data
+  providers.
 - Recalculation and export create new versions and never silently overwrite
   historical task/result/trace/report records.

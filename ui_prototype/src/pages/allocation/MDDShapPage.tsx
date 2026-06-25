@@ -186,7 +186,7 @@ export function MDDShapPage({ route, snapshot, onAction, onNavigate }: PageProps
       <header className="mdsPageHeader">
         <div>
           <h1>MD-DShap 权重计算</h1>
-          <p>基于效用结果计算参与方归一化权重，并保留边际贡献与审计说明。</p>
+          <p>基于效用结果只计算数据源主体归一化权重，用于分配扣除合同优先后的数据源收益池。</p>
         </div>
         <div className="mdsHeaderActions">
           <button type="button" onClick={() => setDrawer("audit")}>查看审计</button>
