@@ -37,13 +37,13 @@ export function ShuyuanPage({ route, snapshot, onAction }: PageProps) {
     metricMap.get("已计量资源") ?? { label: "已计量资源", value: cellText(pageData.technicalDetails, "metered_resource_count", "暂无"), hint: "系统摘要", tone: "neutral" as const },
     metricMap.get("已计量主体") ?? { label: "已计量主体", value: cellText(pageData.technicalDetails, "metered_party_count", "暂无"), hint: "系统摘要", tone: "neutral" as const },
   ];
-  const valueRankPoints = rows.map((row) => ({
+  const valueRankPoints = rankRowsByBackendNumber(rows, "metering_amount").map((row) => ({
     label: cellText(row, "resource_name"),
     value: amountCell(row, "metering_amount"),
     numeric: numericCellValue(row.metering_amount),
     meta: cellText(row, "party_name"),
   }));
-  const callRankPoints = rows.map((row) => ({
+  const callRankPoints = rankRowsByBackendNumber(rows, "call_count").map((row) => ({
     label: cellText(row, "resource_name"),
     value: numberCell(row, "call_count"),
     numeric: numericCellValue(row.call_count),
@@ -238,4 +238,22 @@ export function ShuyuanPage({ route, snapshot, onAction }: PageProps) {
       </DetailDrawer>
     </div>
   );
+}
+
+function rankRowsByBackendNumber(rows: ReturnType<typeof pageRows>, key: string) {
+  return rows
+    .map((row, index) => ({ row, index, value: numericCellValue(row[key]) }))
+    .sort((left, right) => {
+      if (left.value === null && right.value === null) {
+        return left.index - right.index;
+      }
+      if (left.value === null) {
+        return 1;
+      }
+      if (right.value === null) {
+        return -1;
+      }
+      return right.value - left.value || left.index - right.index;
+    })
+    .map((item) => item.row);
 }

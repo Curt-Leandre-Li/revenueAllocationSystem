@@ -40,6 +40,7 @@ interface BackendWorkspaceData {
   constraints: ReturnType<typeof mapConstraintDto>[];
   parameters: ReturnType<typeof mapSystemParameterDto>[];
   participantPool: Record<string, unknown>;
+  mdConfig: Record<string, unknown> | null;
   mdTask: Record<string, unknown> | null;
   mdResults: Record<string, unknown>[];
   mdMarginalTraces: Record<string, unknown>[];
@@ -119,8 +120,9 @@ export async function loadBackendWorkspaceSnapshot(
       ]);
     const currentAlgorithmTaskId = String(projectDto.current_algorithm_task_id ?? "");
     const currentAllocationId = String(projectDto.current_allocation_id ?? "");
-    const [participantPool, mdTask, mdResultsPage, allocationResultsPage] = await Promise.all([
+    const [participantPool, mdConfig, mdTask, mdResultsPage, allocationResultsPage] = await Promise.all([
       optionalBackendCall(() => dvasApi.listMdDshapParticipantPool(), {}),
+      optionalBackendCall(() => dvasApi.getMdDshapConfig(), null),
       currentAlgorithmTaskId
         ? optionalBackendCall(() => dvasApi.getMdDshapTask(currentAlgorithmTaskId), null)
         : Promise.resolve(null),
@@ -201,6 +203,7 @@ export async function loadBackendWorkspaceSnapshot(
       constraints: constraintsPage.items.map(mapConstraintDto),
       parameters: parametersPage.items.map(mapSystemParameterDto),
       participantPool: participantPool as Record<string, unknown>,
+      mdConfig: recordOrNull(mdConfig),
       mdTask,
       mdResults: mdResultsPage.items,
       mdMarginalTraces: mdMarginalTracesPage.items,
@@ -760,6 +763,8 @@ function buildUtilityPage(data: BackendWorkspaceData): PageWorkspaceData {
     preconditions: toPreconditions(data.overview.preconditions),
     rows: data.utilityTrace.map((item) => ({
       utility_id: stringValue(latest?.utility_id),
+      version_no: stringValue(latest?.version_no),
+      algorithm_version: stringValue(latest?.algorithm_version),
       trace_id: stringValue(item.trace_id),
       party_id: stringValue(item.party_id),
       party_name: stringValue(item.party_name),
@@ -775,6 +780,12 @@ function buildUtilityPage(data: BackendWorkspaceData): PageWorkspaceData {
       project_id: data.overview.projectId,
       utility_id: stringValue(latest?.utility_id),
       contribution_run_id: stringValue(latest?.contribution_run_id),
+      version_no: stringValue(latest?.version_no),
+      top_contribution_party_name: stringValue(latest?.top_contribution_party_name ?? latest?.highest_contribution_party_name),
+      top_contribution_value: stringValue(latest?.top_contribution_value ?? latest?.highest_contribution_value),
+      top_utility_party_name: stringValue(latest?.top_utility_party_name ?? latest?.highest_utility_party_name),
+      top_utility_value: stringValue(latest?.top_utility_value ?? latest?.highest_utility_value),
+      average_utility_value: stringValue(latest?.average_utility_value ?? latest?.avg_utility_value),
       parameter_snapshot_id: stringValue(latest?.parameter_snapshot_id),
       output_snapshot_id: stringValue(latest?.output_snapshot_id),
       algorithm_version: stringValue(latest?.algorithm_version),
@@ -785,39 +796,94 @@ function buildUtilityPage(data: BackendWorkspaceData): PageWorkspaceData {
 }
 
 function buildMDDShapPage(data: BackendWorkspaceData): PageWorkspaceData {
-  const participantCount = arrayRecord(data.participantPool.items).length;
-  const weightValidation = stringValue(data.mdTask?.weight_validation_status, "后端未返回");
-  const weightSum = stringValue(data.mdTask?.weight_sum, "后端未返回");
+  const task = recordValue(data.mdTask);
+  const config = recordValue(data.mdConfig);
+  const participantPool = recordValue(data.participantPool);
+  const participantPoolTotal = stringValue(
+    participantPool.total ?? task.result_count,
+  );
+  const taskSet = Array.isArray(task.task_set) ? task.task_set : [];
+  const participantSet = arrayRecord(task.participant_set);
   return {
     summary: "MD-DShap 参与方池、任务和权重结果来自后端。",
     primaryTask: data.mdTask ? "查看后端权重结果。" : "完成效用计算后启动 MD-DShap。",
     metrics: [
-      metric("参与方池", participantCount, "include_in_md_dshap=true", "neutral"),
-      metric("权重结果", data.mdResults.length, "后端 task results", data.mdResults.length ? "success" : "warning"),
-      metric("权重合计", weightSum, weightValidation, weightSum === "后端未返回" ? "warning" : "success"),
+      metric("进入权重池主体数", participantPoolTotal || "待生成", "participant-pool total", participantPoolTotal ? "neutral" : "warning"),
+      metric("当前算法模式", stringValue(task.algorithm_mode ?? config.algorithm_mode, "待生成"), "algorithm_mode", task.algorithm_mode ? "success" : "neutral"),
+      metric("计算状态", stringValue(task.status, "待生成"), "task.status", task.status ? "success" : "warning"),
+      metric("归一化权重合计", stringValue(task.weight_sum, "暂无"), "weight_sum", task.weight_sum ? "success" : "neutral"),
+      metric("最高权重主体", stringValue(task.top_weight_party_name, "暂无"), "top_weight_party_name", "neutral"),
     ],
     preconditions: toPreconditions(data.overview.preconditions),
     rows: data.mdResults.map((item) => ({
-          algorithm_mode: stringValue(data.mdTask?.algorithm_mode, "MD_DSHAP"),
-          participant_set: participantCount,
-          task_set: stringValue(data.mdTask?.task_set, "后端未返回"),
-          sample_rounds: stringValue(data.mdTask?.sample_rounds),
-          epsilon: stringValue(data.mdTask?.epsilon),
-          task_status: stringValue(data.mdTask?.status),
-          party_name: stringValue(item.party_name, "数据源主体"),
-          participant_weight: stringValue(item.participant_weight),
-          normalized_weight: stringValue(item.normalized_weight),
-          marginal_contribution: stringValue(item.weight_diff),
-          utility_value: stringValue(item.utility_value),
-          approximation_note: stringValue(item.approximation_note),
-        })),
+      result_id: stringValue(item.result_id),
+      task_id: stringValue(item.task_id ?? task.task_id),
+      party_id: stringValue(item.party_id),
+      party_name: stringValue(item.party_name, "数据源主体"),
+      algorithm_mode: stringValue(task.algorithm_mode ?? config.algorithm_mode),
+      algorithm_version: stringValue(task.algorithm_version),
+      task_status: stringValue(task.status),
+      participant_weight: stringValue(item.participant_weight),
+      normalized_weight: stringValue(item.normalized_weight),
+      baseline_weight: stringValue(item.baseline_weight),
+      weight_diff: stringValue(item.weight_diff),
+      utility_value: stringValue(item.utility_value),
+      approximation_note: stringValue(item.approximation_note ?? task.approximation_note),
+      task_level_weight_json: stringifyJson(item.task_level_weight_json),
+      task_set_json: stringifyJson(taskSet),
+      participant_set_json: stringifyJson(participantSet),
+      seed: stringValue(task.seed ?? config.seed),
+      sample_rounds: stringValue(task.sample_rounds ?? config.sample_rounds),
+      epsilon: stringValue(task.epsilon ?? config.epsilon),
+      baseline_enabled: stringValue(task.baseline_enabled ?? config.baseline_enabled),
+      save_marginal_detail: stringValue(task.save_marginal_detail),
+      parameter_snapshot_id: stringValue(task.parameter_snapshot_id),
+      result_snapshot_id: stringValue(task.result_snapshot_id),
+      algorithm_audit_snapshot_id: stringValue(task.algorithm_audit_snapshot_id),
+      created_at: stringValue(task.created_at),
+      completed_at: stringValue(task.completed_at),
+    })),
     technicalDetails: {
       project_id: data.overview.projectId,
       current_algorithm_task_id: data.currentAlgorithmTaskId,
+      current_project_name: data.overview.projectName,
+      project_status: data.overview.status,
+      participant_pool_total: participantPoolTotal,
+      result_count: stringValue(task.result_count),
+      task_set_count: stringValue(task.task_set_count),
+      algorithm_mode: stringValue(task.algorithm_mode ?? config.algorithm_mode),
+      algorithm_version: stringValue(task.algorithm_version),
+      task_status: stringValue(task.status),
+      weight_sum: stringValue(task.weight_sum),
+      weight_validation_status: stringValue(task.weight_validation_status),
+      top_weight_party_name: stringValue(task.top_weight_party_name),
+      seed: stringValue(task.seed ?? config.seed),
+      sample_rounds: stringValue(task.sample_rounds ?? config.sample_rounds),
+      epsilon: stringValue(task.epsilon ?? config.epsilon),
+      baseline_enabled: stringValue(task.baseline_enabled ?? config.baseline_enabled),
+      approximation_note: stringValue(task.approximation_note),
+      parameter_snapshot_id: stringValue(task.parameter_snapshot_id),
+      result_snapshot_id: stringValue(task.result_snapshot_id),
+      algorithm_audit_snapshot_id: stringValue(task.algorithm_audit_snapshot_id),
+      participant_set_json: stringifyJson(participantSet),
+      task_set_json: stringifyJson(taskSet),
+      participant_pool_json: stringifyJson(arrayRecord(participantPool.items)),
+      marginal_traces_json: stringifyJson(data.mdMarginalTraces),
       menu_code: "NAV_ALLOC_MDS",
       module_code: "MDS",
     },
   };
+}
+
+function stringifyJson(value: unknown) {
+  if (value === undefined || value === null || value === "") {
+    return "";
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "";
+  }
 }
 
 function buildSimulationPage(data: BackendWorkspaceData): PageWorkspaceData {

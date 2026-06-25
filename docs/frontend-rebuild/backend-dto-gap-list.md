@@ -1,6 +1,6 @@
 # 后端 DTO 缺口清单
 
-更新时间：2026-06-24
+更新时间：2026-06-25
 
 用途：Phase 1B 清理前端自算后，记录不能由浏览器端临时计算补齐的后端展示 DTO / 接口缺口。
 
@@ -13,8 +13,8 @@
 | DTO-005 | 质量评估管理 | quality chart DTO、weight validation DTO 缺失 | 维度图和权重合计校验不能展示 | 表格展示 latest/detail；图表显示缺 DTO |
 | DTO-006 | 数元计量管理 | shuyuan chart DTO、party-level metering summary DTO、call-count draft view 缺失 | 资源/参与方金额图、调用量排行和草稿默认值不能展示 | 只展示 latest/detail；参数/调用量保存入口禁用 |
 | DTO-007 | 贡献度与效用计算 | utility chart DTO、contribution factor draft view 缺失 | 贡献排行、效用排行和贡献因子草稿不能展示 | 只展示 utility trace；配置入口禁用 |
-| DTO-008 | MD-DShap 计算管理 | `md_dshap_view` 缺少 `weight_sum`, `weight_validation_status`, `task_set_count`, complexity/audit display DTO | 不能展示权重合计、归一化校验和复杂度说明 | 显示缺口，不计算权重合计 |
-| DTO-009 | MD-DShap 计算管理 | 页面级 marginal trace DTO 未接入到 workspace page data | 边际贡献抽屉不能展示 trace 明细 | 显示“等待后端 trace DTO”，不从权重结果推导 |
+| DTO-008 | MD-DShap 计算管理 | `md_dshap_view` 缺少 `weight_sum`, `weight_validation_status`, `task_set_count`, `top_weight_party_name`, 页面级 complexity/audit display DTO | 不能展示权重合计、归一化校验、最高权重主体和复杂度说明 | 显示“暂无/待生成”，不计算权重合计、最高主体或复杂度 |
+| DTO-009 | MD-DShap 计算管理 | marginal trace 已接入 workspace page data，但缺少页面专用筛选/分页 DTO | 边际贡献抽屉只能展示当前任务已返回 trace，不能做后端分页筛选 | 抽屉仅做本地展示筛选，不从权重结果推导 trace |
 | DTO-010 | 收益分配模拟 | allocation summary DTO 缺少 `total_revenue`, `priority_allocation_amount`, `data_provider_revenue_pool` | 指标卡不能展示收益池 | 显示缺口；后端模拟仍接收用户输入 |
 | DTO-011 | 收益分配模拟 | constraint apply trace / compare DTO 缺少 `constraint_adjustment_amount` 和应用轨迹 | 不能展示约束前后差额和轨迹 | 表格只展示后端 result rows；缺失字段显示“后端未返回” |
 | DTO-012 | 报告生成与导出 | report export view 缺少统一文件清单 DTO，`/reports` OpenAPI 仍是通用成功响应 | 不能稳定展示文件清单、`report_id`、`checksum`、生成时间和字段范围 | 只展示后端 reports rows；缺失字段显示“后端未返回”，不再使用 fallback 文件 |
@@ -23,3 +23,4 @@
 | DTO-015 | 系统首页流程 / 一键计算 | process / pipeline summary DTO 缺少通过检查数、阻塞检查数和阶段摘要 | 流程页不能展示聚合检查计数 | 只展示后端 precondition rows；指标显示缺 DTO |
 | DTO-016 | 合同约束管理 | constraints summary DTO 缺少约束总数、启用约束数、约束对象数和检查结果 | 约束卡片不能展示聚合统计 | 只展示 constraint rows；摘要显示缺 DTO |
 | DTO-017 | 审计日志管理 | audit summary DTO 缺少失败日志数和快照详情计数 | 审计卡片不能展示失败/快照聚合 | 只展示 audit rows；摘要显示缺 DTO |
+| DTO-018 | MD-DShap 计算管理 | 缺少权重流向 Sankey chart DTO、权重占比 chart DTO、参数配置中的 `save_marginal_detail` 持久化字段 | 页面只能将后端 task/results 字段映射为轻量图表；`save_marginal_detail` 只能作为启动计算请求参数 | 不构造业务含义、不归一化、不补算；配置保存只提交后端支持字段 |
