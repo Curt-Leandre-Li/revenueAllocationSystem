@@ -9,6 +9,7 @@ import {
   mapDataPackageDto,
   mapDataResourceDto,
   mapDataResourceToRow,
+  mapUploadValidationResultDto,
   mapPartyDto,
   mapProjectStatus,
   mapReportRecordDto,
@@ -19,6 +20,7 @@ import {
 } from "../api";
 import type {
   ActionId,
+  BackendOptionalReadIssue,
   DataRow,
   MetricItem,
   MockWorkspaceState,
@@ -33,11 +35,14 @@ import type { ServiceResult } from "./serviceTypes";
 interface BackendWorkspaceData {
   overview: ReturnType<typeof mapDashboardSummaryDto>;
   packages: ReturnType<typeof mapDataPackageDto>[];
+  uploadValidationResults: Record<string, ReturnType<typeof mapUploadValidationResultDto>>;
   resources: ReturnType<typeof mapDataResourceDto>[];
   parties: ReturnType<typeof mapPartyDto>[];
   reports: ReturnType<typeof mapReportRecordDto>[];
   auditLogs: ReturnType<typeof mapAuditLogDto>[];
   constraints: ReturnType<typeof mapConstraintDto>[];
+  constraintSummary: Record<string, unknown>;
+  allocationPriorityItems: Record<string, unknown>[];
   parameters: ReturnType<typeof mapSystemParameterDto>[];
   participantPool: Record<string, unknown>;
   mdConfig: Record<string, unknown> | null;
@@ -52,10 +57,19 @@ interface BackendWorkspaceData {
   utilityLatest: Record<string, unknown> | null;
   utilityTrace: Record<string, unknown>[];
   allocationSummary: Record<string, unknown>;
+  projectAllocationSummary: Record<string, unknown>;
+  contractRatio: Record<string, unknown>;
   contractPriorityAllocations: Record<string, unknown>[];
+  allocationConstraintTraces: Record<string, unknown>[];
+  allocationConstraintApplyTrace: Record<string, unknown>;
   allocationResults: Record<string, unknown>[];
   currentAlgorithmTaskId: string;
   currentAllocationId: string;
+  optionalReadIssues: BackendOptionalReadIssue[];
+}
+
+interface OptionalBackendCallOptions {
+  suppressIssueCodes?: string[];
 }
 
 const preconditionLabels: Record<
@@ -95,6 +109,7 @@ export function shouldUseBackend() {
 export async function loadBackendWorkspaceSnapshot(
   currentSnapshot: WorkbenchSnapshot,
 ): Promise<ServiceResult<WorkbenchSnapshot>> {
+  const optionalReadIssues: BackendOptionalReadIssue[] = [];
   try {
     const [
       projectDto,
@@ -116,47 +131,76 @@ export async function loadBackendWorkspaceSnapshot(
         dvasApi.listDataResources(),
         dvasApi.listParties(),
         dvasApi.listReports(),
-        dvasApi.listAuditLogs(),
+        optionalBackendCall("audit logs", () => dvasApi.listAuditLogs(), { items: [], total: 0, page: 1, page_size: 0 }, optionalReadIssues),
         dvasApi.listAllocationConstraints(),
-        dvasApi.listSystemParameters(),
+        optionalBackendCall("system parameters", () => dvasApi.listSystemParameters(), { items: [], total: 0, page: 1, page_size: 0 }, optionalReadIssues),
       ]);
+    const [contractRatio, projectAllocationSummary] = await Promise.all([
+      optionalBackendCall("contract ratio", () => dvasApi.getContractRatio(projectDto.project_id), {}, optionalReadIssues),
+      optionalBackendCall("allocation summary", () => dvasApi.getAllocationSummary(projectDto.project_id), {}, optionalReadIssues),
+    ]);
+    const uploadValidationResultItems = await Promise.all(
+      packagesPage.items.map((item) =>
+        optionalBackendCall(
+          `upload validation ${item.package_id}`,
+          () => dvasApi.getUploadValidationResult(item.package_id),
+          null,
+          optionalReadIssues,
+        ),
+      ),
+    );
+    const uploadValidationResults = Object.fromEntries(
+      uploadValidationResultItems
+        .filter((item): item is NonNullable<typeof item> => item !== null)
+        .map((item) => {
+          const mapped = mapUploadValidationResultDto(item);
+          return [mapped.packageId, mapped];
+        }),
+    );
+
     const currentAlgorithmTaskId = String(projectDto.current_algorithm_task_id ?? "");
     const currentAllocationId = String(projectDto.current_allocation_id ?? "");
     const [participantPool, mdConfig, mdTask, mdResultsPage, allocationResultsPage] = await Promise.all([
-      optionalBackendCall(() => dvasApi.listMdDshapParticipantPool(), {}),
-      optionalBackendCall(() => dvasApi.getMdDshapConfig(), null),
+      optionalBackendCall("MD-DShap participant pool", () => dvasApi.listMdDshapParticipantPool(), {}, optionalReadIssues),
+      optionalBackendCall("MD-DShap config", () => dvasApi.getMdDshapConfig(), null, optionalReadIssues),
       currentAlgorithmTaskId
-        ? optionalBackendCall(() => dvasApi.getMdDshapTask(currentAlgorithmTaskId), null)
+        ? optionalBackendCall("MD-DShap task", () => dvasApi.getMdDshapTask(currentAlgorithmTaskId), null, optionalReadIssues)
         : Promise.resolve(null),
       currentAlgorithmTaskId
-        ? optionalBackendCall(() => dvasApi.getMdDshapTaskResults(currentAlgorithmTaskId), {
+        ? optionalBackendCall("MD-DShap task results", () => dvasApi.getMdDshapTaskResults(currentAlgorithmTaskId), {
             items: [],
             total: 0,
             page: 1,
             page_size: 0,
-          })
+          }, optionalReadIssues)
         : Promise.resolve({ items: [], total: 0, page: 1, page_size: 0 }),
       currentAllocationId
-        ? optionalBackendCall(() => dvasApi.getAllocationResults(currentAllocationId), {
+        ? optionalBackendCall("allocation results", () => dvasApi.getAllocationResults(currentAllocationId), {
             items: [],
             total: 0,
             page: 1,
             page_size: 0,
-          })
+          }, optionalReadIssues)
         : Promise.resolve({ items: [], total: 0, page: 1, page_size: 0 }),
     ]);
     const [qualityLatest, shuyuanLatest, utilityLatest, mdMarginalTracesPage] =
       await Promise.all([
-        optionalBackendCall(() => dvasApi.getLatestQualityAssessment(), null),
-        optionalBackendCall(() => dvasApi.getLatestShuyuanMetering(), null),
-        optionalBackendCall(() => dvasApi.getLatestUtility(), null),
+        optionalBackendCall("latest quality assessment", () => dvasApi.getLatestQualityAssessment(), null, optionalReadIssues, {
+          suppressIssueCodes: ["DVAS_NOT_FOUND"],
+        }),
+        optionalBackendCall("latest shuyuan metering", () => dvasApi.getLatestShuyuanMetering(), null, optionalReadIssues, {
+          suppressIssueCodes: ["DVAS_NOT_FOUND"],
+        }),
+        optionalBackendCall("latest utility", () => dvasApi.getLatestUtility(), null, optionalReadIssues, {
+          suppressIssueCodes: ["DVAS_NOT_FOUND"],
+        }),
         currentAlgorithmTaskId
-          ? optionalBackendCall(() => dvasApi.getMdDshapMarginalTraces(currentAlgorithmTaskId), {
+          ? optionalBackendCall("MD-DShap marginal traces", () => dvasApi.getMdDshapMarginalTraces(currentAlgorithmTaskId), {
               items: [],
               total: 0,
               page: 1,
               page_size: 0,
-            })
+            }, optionalReadIssues)
           : Promise.resolve({ items: [], total: 0, page: 1, page_size: 0 }),
       ]);
     const qualityAssessmentId = stringValue(
@@ -168,28 +212,33 @@ export async function loadBackendWorkspaceSnapshot(
       await Promise.all([
         qualityAssessmentId
           ? optionalBackendCall(
+              "quality assessment details",
               () => dvasApi.getQualityAssessmentDetails(qualityAssessmentId),
               null,
+              optionalReadIssues,
             )
           : Promise.resolve(null),
         qualityAssessmentId
           ? optionalBackendCall(
+              "quality resource results",
               () => dvasApi.getQualityResourceResults(qualityAssessmentId),
               null,
+              optionalReadIssues,
             )
           : Promise.resolve(null),
         shuyuanMeteringId
           ? optionalBackendCall(
+              "shuyuan metering details",
               () => dvasApi.getShuyuanMeteringDetails(shuyuanMeteringId),
               null,
+              optionalReadIssues,
             )
           : Promise.resolve(null),
         utilityId
-          ? optionalBackendCall(() => dvasApi.getUtilityTrace(utilityId), null)
+          ? optionalBackendCall("utility trace", () => dvasApi.getUtilityTrace(utilityId), null, optionalReadIssues)
           : Promise.resolve(null),
       ]);
     const allocationResultPayload = recordValue(allocationResultsPage);
-
     const data: BackendWorkspaceData = {
       overview: mapDashboardSummaryDto({
         ...overviewDto,
@@ -199,11 +248,14 @@ export async function loadBackendWorkspaceSnapshot(
         disabled_actions: preconditionsDto.disabled_actions,
       }),
       packages: packagesPage.items.map(mapDataPackageDto),
+      uploadValidationResults,
       resources: resourcesPage.items.map(mapDataResourceDto),
       parties: partiesPage.items.map(mapPartyDto),
       reports: reportsPage.items.map(mapReportRecordDto),
       auditLogs: auditPage.items.map(mapAuditLogDto),
       constraints: constraintsPage.items.map(mapConstraintDto),
+      constraintSummary: recordValue(recordValue(constraintsPage).summary),
+      allocationPriorityItems: arrayRecord(recordValue(constraintsPage).allocation_priority_items),
       parameters: parametersPage.items.map(mapSystemParameterDto),
       participantPool: participantPool as Record<string, unknown>,
       mdConfig: recordOrNull(mdConfig),
@@ -218,10 +270,15 @@ export async function loadBackendWorkspaceSnapshot(
       utilityLatest: recordOrNull(utilityLatest),
       utilityTrace: arrayRecord(recordOrNull(utilityTraceResult)?.trace),
       allocationSummary: recordValue(allocationResultPayload.summary),
+      projectAllocationSummary: recordValue(projectAllocationSummary),
+      contractRatio: recordValue(contractRatio),
       contractPriorityAllocations: arrayRecord(allocationResultPayload.contract_priority_allocations),
+      allocationConstraintTraces: arrayRecord(allocationResultPayload.constraint_traces),
+      allocationConstraintApplyTrace: recordValue(allocationResultPayload.constraint_apply_trace),
       allocationResults: allocationResultsPage.items,
       currentAlgorithmTaskId,
       currentAllocationId,
+      optionalReadIssues,
     };
 
     return {
@@ -238,10 +295,25 @@ export async function loadBackendWorkspaceSnapshot(
   }
 }
 
-async function optionalBackendCall<T>(call: () => Promise<T>, fallback: T): Promise<T> {
+async function optionalBackendCall<T>(
+  label: string,
+  call: () => Promise<T>,
+  fallback: T,
+  issues: BackendOptionalReadIssue[],
+  options: OptionalBackendCallOptions = {},
+): Promise<T> {
   try {
     return await call();
-  } catch {
+  } catch (error) {
+    const normalized = normalizeApiError(error);
+    if (!options.suppressIssueCodes?.includes(normalized.errorCode)) {
+      issues.push({
+        label,
+        errorCode: normalized.errorCode,
+        errorMessage: normalized.errorMessage,
+        errorField: normalized.errorField,
+      });
+    }
     return fallback;
   }
 }
@@ -253,10 +325,13 @@ export async function refreshStoreFromBackend(
   const result = await loadBackendWorkspaceSnapshot(store.snapshot);
   if (result.ok && result.data) {
     const lastSyncAt = result.data.backend?.lastSyncedAt ?? new Date().toISOString();
+    const optionalIssueCount = result.data.backend?.optionalReadIssues?.length ?? 0;
     return {
       ...store,
       snapshot: result.data,
-      lastMessage: `${successMessage}（数据来源：后端）`,
+      lastMessage: optionalIssueCount
+        ? `${successMessage}（数据来源：后端；${optionalIssueCount} 个次要接口读取失败，页面已标注）`
+        : `${successMessage}（数据来源：后端）`,
       dataSource: {
         mode: "backend",
         lastSyncAt,
@@ -288,6 +363,18 @@ export async function mutateBackendAndRefresh(
     return refreshStoreFromBackend(store, successMessage);
   } catch (error) {
     const normalized = normalizeApiError(error);
+    if (!normalized.retryable) {
+      return {
+        ...store,
+        lastMessage: `后端操作未完成，当前页面未用 mock 伪造成功。位置：${location}。${formatBackendError(normalized)}`,
+        dataSource: {
+          ...store.dataSource,
+          mode: "backend",
+          lastError: normalized,
+          backendAvailable: true,
+        },
+      };
+    }
     return {
       ...store,
       snapshot: markSnapshotSource(store.snapshot, "backend_unavailable"),
@@ -322,6 +409,7 @@ export function markSnapshotSource(
       apiBaseUrl: getDvasApiBaseUrl(),
       availableActions: snapshot.backend?.availableActions ?? [],
       disabledActions: snapshot.backend?.disabledActions ?? [],
+      optionalReadIssues: snapshot.backend?.optionalReadIssues ?? [],
       connected: source === "backend",
       lastSyncedAt:
         source === "backend" ? new Date().toISOString() : snapshot.backend?.lastSyncedAt ?? "",
@@ -363,6 +451,7 @@ function buildSnapshotFromBackend(
       apiBaseUrl: getDvasApiBaseUrl(),
       availableActions: data.overview.availableActions.filter(isActionId),
       disabledActions: data.overview.disabledActions,
+      optionalReadIssues: data.optionalReadIssues,
       connected: true,
       lastSyncedAt: new Date().toISOString(),
     },
@@ -397,6 +486,7 @@ function buildOverviewPage(data: BackendWorkspaceData): PageWorkspaceData {
       ?.packageName ?? "未接入";
   const latestReport = data.reports[0];
   const latestAudit = data.auditLogs[0];
+  const currentRevenuePool = data.overview.metrics.currentRevenuePool;
 
   return {
     summary: "从后端聚合项目状态、数据接入、参与方、报告和审计摘要。",
@@ -405,6 +495,12 @@ function buildOverviewPage(data: BackendWorkspaceData): PageWorkspaceData {
       metric("数据包", data.overview.metrics.dataPackageCount, "有效数据包", "neutral"),
       metric("数据资源", data.overview.metrics.resourceCount, "已识别资源", "success"),
       metric("参与方", data.overview.metrics.partyCount, "当前项目主体", "success"),
+      metric(
+        "收益池",
+        currentRevenuePool === null ? "后端未返回" : currentRevenuePool,
+        "当前输入快照或分配结果",
+        currentRevenuePool === null ? "warning" : "success",
+      ),
       metric("报告状态", data.overview.metrics.reportCount, "已生成报告记录", "neutral"),
       metric("审计记录", data.overview.metrics.auditLogCount, "最近审计日志", "neutral"),
     ],
@@ -491,6 +587,7 @@ function buildOneClickPage(data: BackendWorkspaceData): PageWorkspaceData {
 }
 
 function buildPackagesPage(data: BackendWorkspaceData): PageWorkspaceData {
+  const currentPackageId = data.overview.currentPackageId;
   return {
     summary: "数据包列表来自后端；演示数据初始化和 JSON 上传均调用真实接口。",
     primaryTask: data.packages.length ? "检查最新数据包校验结果。" : "选择演示数据或上传 JSON。",
@@ -500,21 +597,37 @@ function buildPackagesPage(data: BackendWorkspaceData): PageWorkspaceData {
       metric("校验失败", "后端未返回", "需要上传校验 summary DTO", "warning"),
     ],
     preconditions: toPreconditions(data.overview.preconditions),
-    rows: data.packages.map((item) => ({
-      package_id: item.packageId,
-      package_name: item.packageName,
-      source_type: item.sourceTypeLabel,
-      file_name: item.fileName,
-      validation_status: item.statusLabel,
-      access_status: item.status,
-      file_size: item.fileSize,
-      validation_result_id: item.validationResultId,
-      input_snapshot_id: item.inputSnapshotId,
-      checksum: item.checksum,
-      created_at: item.createdAt,
-      error_field: "",
-      repair_suggestion: "",
-    })),
+    rows: data.packages.map((item) => {
+      const validation = data.uploadValidationResults[item.packageId];
+      const firstFieldError = validation?.fieldErrors[0];
+      const validationDetail = recordValue(validation?.detailJson);
+      const isCurrentPackage = item.packageId === currentPackageId;
+      return {
+        package_id: item.packageId,
+        package_name: item.packageName,
+        source_type: item.sourceTypeLabel,
+        file_name: item.fileName,
+        validation_status: item.statusLabel,
+        access_status: item.status,
+        file_size: item.fileSize,
+        resource_count: stringValue(
+          isCurrentPackage ? data.overview.metrics.resourceCount : validationDetail.resource_count,
+        ),
+        party_count: stringValue(
+          isCurrentPackage ? data.overview.metrics.partyCount : validationDetail.party_count,
+        ),
+        validation_result_id: item.validationResultId || validation?.validationResultId || "",
+        input_snapshot_id: item.inputSnapshotId,
+        checksum: item.checksum,
+        created_at: item.createdAt,
+        error_code: validation?.errorCode || validation?.code || "",
+        error_field: validation?.errorField || stringValue(firstFieldError?.field),
+        error_message: validation?.errorMessage || validation?.message || "",
+        repair_suggestion: validation?.repairSuggestion || stringValue(firstFieldError?.reason),
+        validation_field_errors_json: stringifyJson(validation?.fieldErrors ?? []),
+        validation_result_json: stringifyJson(validation ?? {}),
+      };
+    }),
     technicalDetails: {
       project_id: data.overview.projectId,
       current_package_id: data.overview.currentPackageId ?? "",
@@ -529,26 +642,40 @@ function buildResourcesPage(data: BackendWorkspaceData): PageWorkspaceData {
   const relationPrecondition = data.overview.preconditions.find(
     (item) => item.code === "HAS_RESOURCE_PARTY_RELATION",
   );
+  const resourceCount = data.resources.length;
+  const fieldCountTotal = data.resources.reduce((total, item) => total + item.fieldCount, 0);
+  const sampleCountTotal = data.resources.reduce((total, item) => total + item.sampleCount, 0);
+  const sensitiveFieldCount = data.resources.reduce(
+    (total, item) => total + item.sensitiveFieldCount,
+    0,
+  );
+  const providerPartyCount = new Set(
+    data.resources
+      .map((item) => item.providerName)
+      .filter((providerName) => providerName && providerName !== "未关联"),
+  ).size;
   return {
     summary: "资源清单来自后端；主体关系读取已接入，未接入写操作会明确提示暂不可用。",
     primaryTask: relationPrecondition?.passed
       ? "资源主体关系已满足质量评估前置条件。"
       : relationPrecondition?.message ?? "等待后端返回资源主体关系前置条件。",
     metrics: [
-      metric("资源", data.overview.metrics.resourceCount, "来自 dashboard 聚合字段", "neutral"),
-      metric(
-        "主体关系",
-        relationPrecondition?.passed ? "通过" : "待处理",
-        "来自后端前置条件",
-        relationPrecondition?.passed ? "success" : "warning",
-      ),
-      metric("图表 DTO", "待后端返回", "不在前端聚合缺失率", "neutral"),
+      metric("数据资源", resourceCount, "当前数据包资源行", resourceCount ? "success" : "neutral"),
+      metric("字段数量", formatInteger(fieldCountTotal), "资源字段合计", fieldCountTotal ? "success" : "neutral"),
+      metric("样本数量", formatInteger(sampleCountTotal), "资源样本合计", sampleCountTotal ? "success" : "neutral"),
+      metric("关联主体", providerPartyCount, "已关联数据源主体", providerPartyCount ? "success" : "warning"),
+      metric("敏感字段", formatInteger(sensitiveFieldCount), "资源敏感字段合计", "neutral"),
     ],
     preconditions: toPreconditions(data.overview.preconditions),
     rows: data.resources.map(mapDataResourceToRow),
     technicalDetails: {
       project_id: data.overview.projectId,
       current_package_id: data.overview.currentPackageId ?? "",
+      field_count_total: fieldCountTotal,
+      sample_count_total: sampleCountTotal,
+      provider_party_count: providerPartyCount,
+      sensitive_field_count: sensitiveFieldCount,
+      relation_precondition: relationPrecondition?.passed ? "通过" : relationPrecondition?.message ?? "",
       menu_code: "NAV_DATA_RESOURCE",
       module_code: "RES",
     },
@@ -556,27 +683,50 @@ function buildResourcesPage(data: BackendWorkspaceData): PageWorkspaceData {
 }
 
 function buildPartiesPage(data: BackendWorkspaceData): PageWorkspaceData {
+  const linkedResourceCountByPartyName = new Map<string, number>();
+  for (const resource of data.resources) {
+    if (!resource.providerName || resource.providerName === "未关联") {
+      continue;
+    }
+    linkedResourceCountByPartyName.set(
+      resource.providerName,
+      (linkedResourceCountByPartyName.get(resource.providerName) ?? 0) + 1,
+    );
+  }
+  const currentParties = data.resources.length
+    ? data.parties.filter((item) =>
+        item.partyType !== "DATA_PROVIDER" ||
+        linkedResourceCountByPartyName.has(item.partyName),
+      )
+    : data.parties;
+  const dataProviderCount = currentParties.filter((item) => item.partyType === "DATA_PROVIDER").length;
+  const weightPoolCount = currentParties.filter(
+    (item) => item.partyType === "DATA_PROVIDER" && item.includeInMdDshap && item.statusLabel !== "停用",
+  ).length;
   return {
     summary: "参与方列表来自后端；非数据贡献主体默认不进入 MD-DShap 权重层。",
     primaryTask: "维护数据源主体与非数据贡献主体边界。",
     metrics: [
-      metric("参与方", data.overview.metrics.partyCount, "来自 dashboard 聚合字段", "neutral"),
-      metric("数据源主体", "后端摘要待补", "不在前端按类型聚合", "neutral"),
-      metric("进入权重池", "后端摘要待补", "不在前端按标记聚合", "neutral"),
+      metric("参与方", currentParties.length, "当前数据包主体", currentParties.length ? "success" : "neutral"),
+      metric("数据源主体", dataProviderCount, "当前数据包数据源主体", dataProviderCount ? "success" : "neutral"),
+      metric("进入权重池", weightPoolCount, "当前数据包算法主体", weightPoolCount ? "success" : "warning"),
     ],
     preconditions: toPreconditions(data.overview.preconditions),
-    rows: data.parties.map((item) => ({
+    rows: currentParties.map((item) => {
+      const linkedResourceCount = linkedResourceCountByPartyName.get(item.partyName) ?? 0;
+      return {
       party_id: item.partyId,
       party_name: item.partyName,
       party_type_code: item.partyType,
       party_type: item.partyTypeLabel,
       is_data_provider: item.partyType === "DATA_PROVIDER" ? "是" : "否",
-      include_in_md_dshap: item.includeInMdDshap ? "是" : "否",
-      processing_method: item.partyType === "DATA_PROVIDER" ? "贡献度 / 效用 / MD-DShap" : "合同优先 / 合同约束",
-      linked_resource_count: "后端未返回",
+      include_in_md_dshap: item.partyType === "DATA_PROVIDER" && item.includeInMdDshap ? "是" : "否",
+      processing_method: item.partyType === "DATA_PROVIDER" ? "贡献度 / 效用 / MD-DShap" : "合同比例分配",
+      linked_resource_count: linkedResourceCount,
       status: item.statusLabel,
-      contribution_summary: "后端未返回",
-    })),
+      contribution_summary: item.partyType === "DATA_PROVIDER" ? "当前数据包资源关联" : "合同比例分配",
+    };
+    }),
     technicalDetails: {
       project_id: data.overview.projectId,
       menu_code: "NAV_DATA_PARTY",
@@ -805,13 +955,51 @@ function buildMDDShapPage(data: BackendWorkspaceData): PageWorkspaceData {
   const task = recordValue(data.mdTask);
   const config = recordValue(data.mdConfig);
   const participantPool = recordValue(data.participantPool);
+  const currentResources = data.overview.currentPackageId
+    ? data.resources.filter((item) => item.packageId === data.overview.currentPackageId)
+    : data.resources;
+  const currentResourcePartyIds = new Set(
+    currentResources
+      .map((item) => item.partyId)
+      .filter((partyId) => partyId),
+  );
+  const currentProviderNames = new Set(
+    currentResources
+      .map((item) => item.providerName)
+      .filter((providerName) => providerName && providerName !== "未关联"),
+  );
+  const shouldScopeToCurrentResources = currentResourcePartyIds.size > 0 || currentProviderNames.size > 0;
+  const isCurrentResourceParty = (item: Record<string, unknown>) => {
+    if (!shouldScopeToCurrentResources) {
+      return true;
+    }
+    const partyId = stringValue(item.party_id);
+    const partyName = stringValue(item.party_name);
+    return currentResourcePartyIds.has(partyId) || currentProviderNames.has(partyName);
+  };
+  const participantPoolItems = arrayRecord(participantPool.items).filter(isCurrentResourceParty);
+  const scopedMdResults = data.mdResults.filter(isCurrentResourceParty);
+  const scopedParticipantPoolTotal = participantPoolItems.length || undefined;
   const participantPoolTotal = stringValue(
-    participantPool.total ?? task.result_count,
+    scopedParticipantPoolTotal
+      ?? participantPool.algorithm_party_count
+      ?? task.algorithm_party_count
+      ?? participantPool.total
+      ?? task.result_count,
+  );
+  const contractPartyCount = stringValue(
+    participantPool.contract_party_count ?? task.contract_party_count,
+  );
+  const excludedPartyCount = stringValue(
+    participantPool.excluded_party_count ?? task.excluded_party_count,
   );
   const taskSet = Array.isArray(task.task_set) ? task.task_set : [];
-  const participantSet = arrayRecord(task.participant_set);
+  const participantSet = arrayRecord(task.participant_set).filter(isCurrentResourceParty);
+  const excludedParties = arrayRecord(
+    participantPool.excluded_parties ?? participantPool.excluded_items ?? task.excluded_parties,
+  );
   return {
-    summary: "MD-DShap 只计算数据源主体归一化权重；权重用于分配扣除合同优先后的数据源收益池。",
+    summary: "MD-DShap 只计算数据源主体归一化权重；权重用于分配合同比例方案划分后的数据源收益池。",
     primaryTask: data.mdTask ? "查看后端权重结果。" : "完成效用计算后启动 MD-DShap。",
     metrics: [
       metric("进入权重池主体数", participantPoolTotal || "待生成", "participant-pool total", participantPoolTotal ? "neutral" : "warning"),
@@ -821,7 +1009,7 @@ function buildMDDShapPage(data: BackendWorkspaceData): PageWorkspaceData {
       metric("最高权重主体", stringValue(task.top_weight_party_name, "暂无"), "top_weight_party_name", "neutral"),
     ],
     preconditions: toPreconditions(data.overview.preconditions),
-    rows: data.mdResults.map((item) => ({
+    rows: scopedMdResults.map((item) => ({
       result_id: stringValue(item.result_id),
       task_id: stringValue(item.task_id ?? task.task_id),
       party_id: stringValue(item.party_id),
@@ -855,7 +1043,11 @@ function buildMDDShapPage(data: BackendWorkspaceData): PageWorkspaceData {
       current_project_name: data.overview.projectName,
       project_status: data.overview.status,
       participant_pool_total: participantPoolTotal,
-      result_count: stringValue(task.result_count),
+      algorithm_party_count: participantPoolTotal,
+      contract_party_count: contractPartyCount,
+      excluded_party_count: excludedPartyCount,
+      result_count: stringValue(scopedMdResults.length || task.result_count),
+      raw_result_count: stringValue(task.result_count),
       task_set_count: stringValue(task.task_set_count),
       algorithm_mode: stringValue(task.algorithm_mode ?? config.algorithm_mode),
       algorithm_version: stringValue(task.algorithm_version),
@@ -872,8 +1064,9 @@ function buildMDDShapPage(data: BackendWorkspaceData): PageWorkspaceData {
       result_snapshot_id: stringValue(task.result_snapshot_id),
       algorithm_audit_snapshot_id: stringValue(task.algorithm_audit_snapshot_id),
       participant_set_json: stringifyJson(participantSet),
+      excluded_parties_json: stringifyJson(excludedParties),
       task_set_json: stringifyJson(taskSet),
-      participant_pool_json: stringifyJson(arrayRecord(participantPool.items)),
+      participant_pool_json: stringifyJson(participantPoolItems),
       marginal_traces_json: stringifyJson(data.mdMarginalTraces),
       menu_code: "NAV_ALLOC_MDS",
       module_code: "MDS",
@@ -893,27 +1086,38 @@ function stringifyJson(value: unknown) {
 }
 
 function buildSimulationPage(data: BackendWorkspaceData): PageWorkspaceData {
-  const summary = data.allocationSummary;
+  const summary = Object.keys(data.projectAllocationSummary).length
+    ? data.projectAllocationSummary
+    : data.allocationSummary;
   const firstResult = data.allocationResults[0] ?? {};
-  const totalRevenue = stringValue(summary.total_revenue ?? firstResult.total_revenue);
-  const priorityAmount = stringValue(
-    summary.total_contract_priority_amount
-      ?? summary.priority_allocation_amount
-      ?? firstResult.total_contract_priority_amount
-      ?? firstResult.priority_allocation_amount,
-  );
-  const dataProviderPool = stringValue(
-    summary.data_provider_revenue_pool ?? firstResult.data_provider_revenue_pool,
-  );
+  const totalRevenueValue =
+    summary.total_revenue ??
+    firstResult.total_revenue ??
+    data.overview.metrics.currentRevenuePool;
+  const priorityAmountValue =
+    summary.total_contract_priority_amount ??
+    summary.priority_allocation_amount ??
+    firstResult.total_contract_priority_amount ??
+    firstResult.priority_allocation_amount;
+  const dataProviderPoolValue =
+    summary.data_provider_revenue_pool ??
+    firstResult.data_provider_revenue_pool;
+  const totalRevenue = stringValue(totalRevenueValue);
+  const priorityAmount = stringValue(priorityAmountValue);
+  const dataProviderPool = stringValue(dataProviderPoolValue);
+  const contractConfigured = Boolean(summary.contract_ratio_configured);
+  const blockingReasons = Array.isArray(summary.blocking_reasons)
+    ? summary.blocking_reasons.map((item) => stringValue(item)).filter(Boolean)
+    : [];
   return {
-    summary: "收益分配模拟结果来自后端：先扣非数据源主体合同优先分配，再形成数据源主体收益池。",
-    primaryTask: data.allocationResults.length ? "查看模拟结果或锁定方案。" : "完成权重计算后执行收益分配模拟。",
+    summary: "收益分配模拟结果来自后端：总收益先按合同比例划分非数据主体金额与数据源收益池，再按 MD-DShap 权重分配数据源收益池。",
+    primaryTask: data.allocationResults.length ? "查看模拟结果或锁定方案。" : contractConfigured ? "完成权重计算后执行收益分配模拟。" : "请先配置并保存合同比例分配方案。",
     metrics: [
       metric("结果行", data.allocationResults.length, "后端 allocation results", data.allocationResults.length ? "success" : "warning"),
       metric("总收益", totalRevenue || "后端未返回", "allocation summary DTO", totalRevenue ? "success" : "warning"),
-      metric("非数据合同优先", priorityAmount || "后端未返回", "contract priority summary", priorityAmount ? "success" : "warning"),
+      metric("非数据合同金额", stringValue(summary.non_data_contract_amount ?? priorityAmountValue, "后端未返回"), "contract-ratio summary", priorityAmount ? "success" : "warning"),
       metric("数据源收益池", dataProviderPool || "后端未返回", "data_provider_revenue_pool", dataProviderPool ? "success" : "warning"),
-      metric("锁定/导出", projectStatusLabel(data.overview.status), "项目状态", "neutral"),
+      metric("合同比例方案", contractConfigured ? "已保存" : "未配置", "contract_ratio_configured", contractConfigured ? "success" : "warning"),
     ],
     preconditions: toPreconditions(data.overview.preconditions),
     rows: data.allocationResults.map((item) => ({
@@ -927,12 +1131,22 @@ function buildSimulationPage(data: BackendWorkspaceData): PageWorkspaceData {
       ),
       data_provider_revenue_pool: stringValue(item.data_provider_revenue_pool ?? summary.data_provider_revenue_pool, ""),
       allocation_mode: stringValue(item.allocation_mode, "MD-DShap 权重分配"),
+      party_id: stringValue(item.party_id, ""),
       party_name: stringValue(item.party_name, "数据源主体"),
+      party_type: stringValue(item.party_type, ""),
+      is_data_provider: stringValue(item.is_data_provider, ""),
+      include_in_md_dshap: stringValue(item.include_in_md_dshap, ""),
       subject_track: stringValue(item.subject_track, "DATA_PROVIDER_POOL"),
+      amount_source: stringValue(item.amount_source, ""),
+      contract_ratio: stringValue(item.contract_ratio, ""),
+      base_pool_amount: stringValue(item.base_pool_amount, ""),
+      weight_source: stringValue(item.weight_source, ""),
       raw_weight: stringValue(item.raw_weight),
       normalized_weight: stringValue(item.normalized_weight),
       pre_constraint_amount: stringValue(item.pre_constraint_amount),
       post_constraint_amount: stringValue(item.post_constraint_amount),
+      final_amount: stringValue(item.final_amount ?? item.post_constraint_amount),
+      rounding_delta: stringValue(item.rounding_delta),
       constraint_adjustment_amount: stringValue(item.constraint_adjustment_amount),
       adjustment_reason: stringValue(item.constraint_adjustment_reason, "无约束调整"),
       scenario_status: projectStatusLabel(data.overview.status),
@@ -942,8 +1156,23 @@ function buildSimulationPage(data: BackendWorkspaceData): PageWorkspaceData {
       current_allocation_id: data.currentAllocationId,
       total_revenue: totalRevenue,
       priority_allocation_amount: priorityAmount,
+      non_data_contract_amount: stringValue(summary.non_data_contract_amount ?? priorityAmountValue, ""),
+      contract_ratio_configured: String(contractConfigured),
+      contract_ratio_sum: stringValue(summary.contract_ratio_sum, ""),
+      data_provider_pool_ratio: stringValue(summary.data_provider_pool_ratio, ""),
       data_provider_revenue_pool: dataProviderPool,
+      blocking_reasons_json: stringifyJson(blockingReasons),
+      allocation_summary_json: stringifyJson(summary),
       contract_priority_allocations_json: stringifyJson(data.contractPriorityAllocations),
+      allocation_priority_items_json: stringifyJson(data.allocationPriorityItems),
+      constraint_traces_json: stringifyJson(data.allocationConstraintTraces),
+      constraint_apply_trace_json: stringifyJson(data.allocationConstraintApplyTrace),
+      constraint_trace_count: String(data.allocationConstraintTraces.length),
+      ordinary_constraint_state: data.allocationConstraintTraces.length
+        ? "HAS_TRACE"
+        : data.allocationResults.length
+          ? "CONTRACT_RATIO_OR_NO_TRACE"
+          : "NOT_RUN",
       menu_code: "NAV_ALLOC_SIMULATION",
       module_code: "ALLOC",
     },
@@ -951,33 +1180,62 @@ function buildSimulationPage(data: BackendWorkspaceData): PageWorkspaceData {
 }
 
 function buildConstraintsPage(data: BackendWorkspaceData): PageWorkspaceData {
+  const contractRatio = data.contractRatio;
+  const summary = data.projectAllocationSummary;
+  const items = arrayRecord(contractRatio.items);
+  const configured = Boolean(contractRatio.configured);
+  const totalRevenueValue =
+    contractRatio.total_revenue ??
+    summary.total_revenue ??
+    data.overview.metrics.currentRevenuePool;
+  const blockingReasons = Array.isArray(contractRatio.blocking_reasons)
+    ? contractRatio.blocking_reasons.map((item) => stringValue(item)).filter(Boolean)
+    : [];
   return {
-    summary: "合同约束列表来自后端 allocation constraints；没有约束时不显示示例约束。",
-    primaryTask: data.constraints.length ? "查看或刷新合同约束。" : "暂无后端合同约束记录。",
+    summary: "合同比例分配方案来自后端 contract-ratio；没有保存方案时不显示示例合同规则。",
+    primaryTask: configured ? "查看或调整已保存的合同比例分配方案。" : "配置数据源收益池比例并新增非数据主体比例。",
     metrics: [
-      metric("约束总数", "后端未返回", "需要 constraints summary DTO", "warning"),
-      metric("启用约束", "后端未返回", "不在前端按状态聚合", "warning"),
-      metric("约束对象", "后端未返回", "不在前端按主体聚合", "warning"),
-      metric("检查结果", "后端未返回", "不使用前端示例", "warning"),
-      metric("被引用约束", "后端追溯", "分配后查看轨迹", "neutral"),
+      metric("合同规则状态", stringValue(contractRatio.status, "EMPTY"), "contract-ratio status", configured ? "success" : "warning"),
+      metric("合同比例合计", stringValue(contractRatio.ratio_sum, "0.000000"), "ratio_sum", stringValue(contractRatio.ratio_sum) === "1.000000" ? "success" : "warning"),
+      metric(
+        "数据源收益池比例",
+        stringValue(contractRatio.data_provider_pool_ratio, "后端未返回"),
+        "data_provider_pool_ratio",
+        stringValue(contractRatio.data_provider_pool_ratio) ? "success" : "warning",
+      ),
+      metric("可执行模拟", Boolean(summary.can_simulate) ? "是" : "否", "can_simulate", Boolean(summary.can_simulate) ? "success" : "warning"),
+      metric("非数据主体金额", stringValue(summary.non_data_contract_amount, "后端未返回"), "allocation summary", stringValue(summary.non_data_contract_amount) ? "neutral" : "warning"),
     ],
     preconditions: toPreconditions(data.overview.preconditions),
-    rows: data.constraints.map((item) => ({
-      constraint_id: item.constraintId,
-      party_id: item.partyId,
-      constraint_name: item.constraintName,
-      party_name: item.partyName,
-      constraint_type: item.constraintType,
-      constraint_type_label: item.constraintTypeLabel,
-      value_type: item.valueType,
-      constraint_value: item.constraintValue,
-      priority: item.priority,
-      status: item.statusLabel,
-      version_no: item.versionNo,
-      updated_at: item.updatedAt,
+    rows: items.map((item) => ({
+      item_id: stringValue(item.item_id),
+      plan_id: stringValue(item.plan_id),
+      bucket_type: stringValue(item.bucket_type),
+      party_id: stringValue(item.party_id),
+      party_name: stringValue(item.party_name),
+      party_type: stringValue(item.party_type),
+      ratio: stringValue(item.ratio),
+      calculated_amount: stringValue(item.calculated_amount),
+      basis_text: stringValue(item.basis_text),
+      amount_source: stringValue(item.amount_source),
+      sort_no: stringValue(item.sort_no),
     })),
     technicalDetails: {
       project_id: data.overview.projectId,
+      project_name: stringValue(contractRatio.project_name ?? data.overview.projectName),
+      project_status: stringValue(contractRatio.project_status ?? data.overview.status),
+      configured: String(configured),
+      plan_id: stringValue(contractRatio.plan_id),
+      status: stringValue(contractRatio.status, "EMPTY"),
+      total_revenue: stringValue(totalRevenueValue),
+      currency: stringValue(contractRatio.currency, "CNY"),
+      ratio_sum: stringValue(contractRatio.ratio_sum, "0.000000"),
+      data_provider_pool_ratio: stringValue(contractRatio.data_provider_pool_ratio),
+      data_provider_revenue_pool: stringValue(contractRatio.data_provider_revenue_pool),
+      can_simulate: String(Boolean(summary.can_simulate)),
+      blocking_reasons_json: stringifyJson(blockingReasons),
+      allocation_summary_json: stringifyJson(summary),
+      contract_ratio_json: stringifyJson(contractRatio),
       menu_code: "NAV_ALLOC_CONSTRAINT",
       module_code: "CONS",
     },
@@ -1130,6 +1388,17 @@ function stringValue(value: unknown, fallback = "") {
   return fallback;
 }
 
+function numberFromUnknown(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  return null;
+}
+
 function metric(
   label: string,
   value: string | number,
@@ -1137,6 +1406,10 @@ function metric(
   tone: MetricItem["tone"],
 ): MetricItem {
   return { label, value: String(value), hint, tone };
+}
+
+function formatInteger(value: number) {
+  return value.toLocaleString("zh-CN", { maximumFractionDigits: 0 });
 }
 
 function isActionId(value: string): value is ActionId {

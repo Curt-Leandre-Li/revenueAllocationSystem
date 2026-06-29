@@ -1,9 +1,14 @@
+import base64
 import copy
 import csv
 import hashlib
 import io
 import json
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
+from uuid import uuid4
+import zipfile
+import xml.etree.ElementTree as ET
 
 from .audit import AuditService
 from .constants import (
@@ -69,6 +74,39 @@ SYSTEM_HOME_BUTTON_PERMISSIONS = [
         "permission_action": "VIEW",
     },
 ]
+
+
+SENSITIVE_AUDIT_KEYS = {
+    "password",
+    "password_hash",
+    "initial_password",
+    "temporary_password",
+    "one_time_initial_password",
+    "one_time_temporary_password",
+    "current_password",
+    "new_password",
+    "confirm_password",
+    "token",
+    "_auth_token",
+}
+
+
+def redact_sensitive(value):
+    if isinstance(value, dict):
+        redacted = {}
+        for key, item in value.items():
+            if key in SENSITIVE_AUDIT_KEYS or key.endswith("_password"):
+                redacted[key] = "***REDACTED***"
+            else:
+                redacted[key] = redact_sensitive(item)
+        return redacted
+    if isinstance(value, list):
+        return [redact_sensitive(item) for item in value]
+    return value
+
+
+def current_operator_id(repository):
+    return getattr(repository, "current_user_id", LOCAL_OPERATOR) or LOCAL_OPERATOR
 
 
 def write_audit(
@@ -148,6 +186,921 @@ class ProjectService:
         return DashboardService(self.repository).preconditions()
 
 
+class AuthService:
+    def __init__(self, repository):
+        self.repository = repository
+
+    def login(self, payload):
+        username = str((payload or {}).get("username") or "").strip()
+        password = str((payload or {}).get("password") or "")
+        user = self.repository.get_user_account(username)
+        if not user or user.get("status") != "ENABLED" or user.get("password_hash") != self._hash_password(password):
+            raise ApiError(
+                "DVAS_AUTH_FAILED",
+                "用户名或密码错误",
+                status=401,
+                field_errors=[{"field": "username", "reason": "认证失败"}],
+            )
+        token = f"session_{uuid4().hex}"
+        now = utc_now()
+        session = {
+            "token": token,
+            "user_id": user["user_id"],
+            "username": user["username"],
+            "created_at": now,
+            "last_seen_at": now,
+            "status": "ACTIVE",
+        }
+        self.repository.put_session(session)
+        self.repository.update_user_account(user["user_id"], last_login_at=now)
+        self.repository.current_user_id = user["user_id"]
+        public_user = self._public_user(user["user_id"])
+        write_audit(
+            self.repository,
+            module_code="USER",
+            menu_code="NAV_SYSTEM_USER",
+            operation_type="LOGIN",
+            object_type="user_account",
+            object_id=user["user_id"],
+            status="SUCCESS",
+            after_value_json={"user_id": user["user_id"], "username": user["username"]},
+        )
+        return {
+            "token": token,
+            "user": public_user,
+            "roles": public_user["roles"],
+            "permissions": self.permission_summary(user["user_id"]),
+        }
+
+    def logout(self, payload):
+        token = (payload or {}).get("_auth_token") or (payload or {}).get("token")
+        session = self.repository.delete_session(token) if token else None
+        if session:
+            write_audit(
+                self.repository,
+                module_code="USER",
+                menu_code="NAV_SYSTEM_USER",
+                operation_type="LOGOUT",
+                object_type="user_session",
+                object_id=session["token"],
+                status="SUCCESS",
+                after_value_json={"user_id": session["user_id"]},
+            )
+        return {"logged_out": bool(session)}
+
+    def me(self, payload):
+        user = self.current_user(payload, require_login=True)
+        return {
+            "user": user,
+            "roles": user["roles"],
+            "permissions": self.permission_summary(user["user_id"]),
+        }
+
+    def current_user(self, payload, require_login=False):
+        token = (payload or {}).get("_auth_token")
+        if token:
+            session = self.repository.get_session(token)
+            if not session or session.get("status") != "ACTIVE":
+                raise ApiError("DVAS_AUTH_REQUIRED", "登录状态已失效", status=401)
+            account = self.repository.get_user_account(session["user_id"])
+            if not account or account.get("status") != "ENABLED":
+                self.repository.delete_session(token)
+                raise ApiError("DVAS_AUTH_REQUIRED", "账号已禁用或登录状态已失效", status=401)
+            return self._public_user(session["user_id"])
+        if require_login:
+            raise ApiError("DVAS_AUTH_REQUIRED", "请先登录", status=401)
+        return self._public_user(LOCAL_OPERATOR)
+
+    def permission_summary(self, user_id):
+        permission_codes = self.repository.user_permission_codes(user_id)
+        permissions = self.repository.list_permissions()
+        by_code = {item["permission_code"]: item for item in permissions}
+        menu_codes = []
+        button_codes = []
+        api_permissions = []
+        export_permissions = []
+        for code in permission_codes:
+            permission = by_code.get(code)
+            if not permission:
+                continue
+            if permission["permission_type"] == "MENU":
+                menu_codes.append(permission["resource_code"])
+            elif permission["permission_type"] == "BUTTON":
+                button_codes.append(permission["resource_code"])
+            elif permission["permission_type"] == "API":
+                api_permissions.append(
+                    {
+                        "permission_code": code,
+                        "method": permission["action"],
+                        "path": permission["resource_code"],
+                    }
+                )
+            elif permission["permission_type"] == "EXPORT":
+                export_permissions.append(permission["resource_code"])
+        return {
+            "permission_codes": permission_codes,
+            "menu_codes": sorted(set(menu_codes)),
+            "button_codes": sorted(set(button_codes)),
+            "api_permissions": api_permissions,
+            "export_permissions": sorted(set(export_permissions)),
+        }
+
+    def require_button(self, payload, button_code):
+        user = self.current_user(payload)
+        permissions = self.permission_summary(user["user_id"])
+        if button_code not in permissions["button_codes"]:
+            raise ApiError(
+                "DVAS_PERMISSION_DENIED",
+                "当前用户无此操作权限",
+                status=403,
+                field_errors=[{"field": "button_code", "reason": button_code}],
+            )
+        return user
+
+    def require_menu(self, payload, menu_code):
+        user = self.current_user(payload)
+        permissions = self.permission_summary(user["user_id"])
+        if menu_code not in permissions["menu_codes"]:
+            raise ApiError(
+                "DVAS_PERMISSION_DENIED",
+                "当前用户无此页面权限",
+                status=403,
+                field_errors=[{"field": "menu_code", "reason": menu_code}],
+            )
+        return user
+
+    def has_any_role(self, user_id, role_ids):
+        return self.repository.user_has_any_role(user_id, role_ids)
+
+    def _public_user(self, user_id):
+        user = self.repository.get_user_account(user_id)
+        if not user:
+            raise ApiError("DVAS_AUTH_REQUIRED", "用户不存在或未登录", status=401)
+        user = self.repository._public_user(user)
+        user["roles"] = self.repository.state["user_roles"].get(user_id, [])
+        return user
+
+    def _hash_password(self, password):
+        return hashlib.sha256(f"dvas-p1:{password}".encode("utf-8")).hexdigest()
+
+
+class UserAccessService:
+    def __init__(self, repository, auth_service):
+        self.repository = repository
+        self.auth_service = auth_service
+
+    def me(self, payload):
+        return self.auth_service.current_user(payload, require_login=True)
+
+    def list_users(self, payload):
+        self.auth_service.require_button(payload, "USER-001")
+        rows = self.repository.list_user_accounts()
+        return table_page(rows)
+
+    def get_user(self, user_id, payload):
+        self._require_user_admin(payload, "USER_UPDATE")
+        user = self.repository.get_user_account(user_id)
+        if not user:
+            raise ApiError("DVAS_NOT_FOUND", "用户不存在", status=404)
+        return self.repository._public_user(user)
+
+    def create_user(self, payload):
+        actor = self._require_user_admin(payload, "USER_CREATE")
+        now = utc_now()
+        username = str(payload.get("username") or "").strip()
+        if not username:
+            raise ApiError(
+                "DVAS_REQUIRED_FIELD_MISSING",
+                "用户名不能为空",
+                status=422,
+                field_errors=[{"field": "username", "reason": "用户名不能为空"}],
+            )
+        if self.repository.get_user_account(username):
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "用户名已存在",
+                status=409,
+                field_errors=[{"field": "username", "reason": "用户名已存在"}],
+            )
+        user_id = self.repository.next_id("user")
+        roles = self._validated_roles(payload.get("roles"))
+        password = str(
+            payload.get("initial_password")
+            or payload.get("password")
+            or self._generate_temporary_password()
+        )
+        self._validate_password_strength(password)
+        user = {
+            "user_id": user_id,
+            "username": username,
+            "display_name": payload.get("display_name") or username,
+            "email": str(payload.get("email") or "").strip(),
+            "status": payload.get("status") or "ENABLED",
+            "password_hash": self._hash_password(password),
+            "password_updated_at": now,
+            "must_change_password": True,
+            "disabled_by": None,
+            "disabled_at": None,
+            "last_login_at": None,
+            "created_at": now,
+            "updated_at": now,
+        }
+        saved = self.repository.put_user_account(user)
+        self.repository.set_user_roles(user_id, roles)
+        saved = {**saved, "roles": roles}
+        write_audit(
+            self.repository,
+            module_code="USER",
+            menu_code="NAV_SYSTEM_USER",
+            operation_type="CREATE",
+            object_type="user_account",
+            object_id=user_id,
+            status="SUCCESS",
+            after_value_json={"user": saved, "password_set": True, "created_by": actor["user_id"]},
+            button_code="USER-002",
+        )
+        return {**saved, "one_time_initial_password": password}
+
+    def update_user(self, user_id, payload):
+        actor = self._require_user_admin(payload, "USER_UPDATE")
+        user = self.repository.get_user_account(user_id)
+        if not user:
+            raise ApiError("DVAS_NOT_FOUND", "用户不存在", status=404)
+        if payload.get("status") == "DISABLED" and user.get("status") != "DISABLED":
+            return self.disable_user(user_id, payload)
+        changes = {}
+        for key in ("display_name", "email", "status", "must_change_password"):
+            if key in payload:
+                changes[key] = payload[key]
+        if "roles" in payload:
+            self.repository.set_user_roles(user_id, self._validated_roles(payload.get("roles")))
+        saved = self.repository.update_user_account(user_id, **changes)
+        result = {**saved, "roles": self.repository.state["user_roles"].get(user_id, [])}
+        write_audit(
+            self.repository,
+            module_code="USER",
+            menu_code="NAV_SYSTEM_USER",
+            operation_type="UPDATE",
+            object_type="user_account",
+            object_id=user_id,
+            status="SUCCESS",
+            before_value_json={"user": self.repository._public_user(user)},
+            after_value_json={"user": result, "updated_by": actor["user_id"]},
+            button_code="USER-003",
+        )
+        return result
+
+    def disable_user(self, user_id, payload):
+        actor = self._require_user_admin(payload, "USER_DISABLE")
+        target = self.repository.get_user_account(user_id)
+        if not target:
+            raise ApiError("DVAS_NOT_FOUND", "用户不存在", status=404)
+        if actor["user_id"] == target["user_id"]:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "系统管理员不能禁用自己",
+                status=409,
+                field_errors=[{"field": "user_id", "reason": "不能禁用当前登录用户"}],
+            )
+        target_roles = set(self.repository.user_role_ids(target["user_id"]))
+        if "SYSTEM_ADMIN" in target_roles and len(self.repository.enabled_system_admin_user_ids()) <= 1:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "不能禁用最后一个启用的系统管理员",
+                status=409,
+                field_errors=[{"field": "user_id", "reason": "最后一个启用的 SYSTEM_ADMIN"}],
+            )
+        now = utc_now()
+        saved = self.repository.update_user_account(
+            user_id,
+            status="DISABLED",
+            disabled_by=actor["user_id"],
+            disabled_at=now,
+        )
+        self.repository.revoke_user_sessions(user_id)
+        write_audit(
+            self.repository,
+            module_code="USER",
+            menu_code="NAV_SYSTEM_USER",
+            operation_type="DISABLE",
+            object_type="user_account",
+            object_id=user_id,
+            status="SUCCESS",
+            before_value_json={"user": self.repository._public_user(target)},
+            after_value_json={"user": saved, "disabled_by": actor["user_id"], "disabled_at": now},
+            button_code="USER-005",
+        )
+        return saved
+
+    def reset_password(self, user_id, payload):
+        actor = self._require_user_admin(payload, "USER_RESET_PASSWORD")
+        target = self.repository.get_user_account(user_id)
+        if not target:
+            raise ApiError("DVAS_NOT_FOUND", "用户不存在", status=404)
+        password = str(
+            payload.get("temporary_password")
+            or payload.get("password")
+            or self._generate_temporary_password()
+        )
+        self._validate_password_strength(password)
+        now = utc_now()
+        saved = self.repository.update_user_account(
+            user_id,
+            password_hash=self._hash_password(password),
+            password_updated_at=now,
+            must_change_password=True,
+        )
+        self.repository.revoke_user_sessions(user_id, except_token=(payload or {}).get("_auth_token"))
+        write_audit(
+            self.repository,
+            module_code="USER",
+            menu_code="NAV_SYSTEM_USER",
+            operation_type="RESET_PASSWORD",
+            object_type="user_account",
+            object_id=user_id,
+            status="SUCCESS",
+            before_value_json={"user": self.repository._public_user(target)},
+            after_value_json={"user": saved, "password_set": True, "reset_by": actor["user_id"]},
+            button_code="USER-007",
+        )
+        return {**saved, "one_time_temporary_password": password}
+
+    def change_own_password(self, payload):
+        actor = self.auth_service.current_user(payload, require_login=True)
+        self._require_permission(actor, "USER_CHANGE_OWN_PASSWORD")
+        current_password = str(payload.get("current_password") or "")
+        new_password = str(payload.get("new_password") or "")
+        confirm_password = str(payload.get("confirm_password") or "")
+        account = self.repository.get_user_account(actor["user_id"])
+        if not account or account.get("password_hash") != self._hash_password(current_password):
+            raise ApiError(
+                "DVAS_AUTH_FAILED",
+                "当前密码不正确",
+                status=403,
+                field_errors=[{"field": "current_password", "reason": "当前密码不正确"}],
+            )
+        if new_password != confirm_password:
+            raise ApiError(
+                "DVAS_PASSWORD_CONFIRM_MISMATCH",
+                "两次输入的新密码不一致",
+                status=422,
+                field_errors=[{"field": "confirm_password", "reason": "两次输入的新密码不一致"}],
+            )
+        if self._hash_password(new_password) == account.get("password_hash"):
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "新密码不能与旧密码相同",
+                status=409,
+                field_errors=[{"field": "new_password", "reason": "新密码不能与旧密码相同"}],
+            )
+        self._validate_password_strength(new_password)
+        now = utc_now()
+        saved = self.repository.update_user_account(
+            actor["user_id"],
+            password_hash=self._hash_password(new_password),
+            password_updated_at=now,
+            must_change_password=False,
+        )
+        write_audit(
+            self.repository,
+            module_code="USER",
+            menu_code="NAV_SYSTEM_USER",
+            operation_type="UPDATE",
+            object_type="user_account",
+            object_id=actor["user_id"],
+            status="SUCCESS",
+            before_value_json={"user": self.repository._public_user(account)},
+            after_value_json={"user": saved, "password_set": True},
+            button_code="USER-010",
+        )
+        return saved
+
+    def list_roles(self, payload):
+        self.auth_service.require_button(payload, "USER-008")
+        rows = []
+        for role in self.repository.list_roles():
+            rows.append(
+                {
+                    **role,
+                    "permission_codes": self.repository.get_role_permission_codes(role["role_id"]),
+                }
+            )
+        return table_page(rows)
+
+    def list_permissions(self, payload):
+        self.auth_service.require_button(payload, "USER-009")
+        return table_page(self.repository.list_permissions())
+
+    def update_role_permissions(self, role_id, payload):
+        self.auth_service.require_button(payload, "USER-009")
+        role = self.repository.get_role(role_id)
+        if not role:
+            raise ApiError("DVAS_NOT_FOUND", "角色不存在", status=404)
+        valid_codes = {item["permission_code"] for item in self.repository.list_permissions()}
+        requested = [code for code in payload.get("permission_codes", []) if code in valid_codes]
+        permission_codes = self.repository.set_role_permission_codes(role_id, requested)
+        return {**role, "permission_codes": permission_codes}
+
+    def _require_user_admin(self, payload, permission_code):
+        actor = self.auth_service.current_user(payload, require_login=True)
+        self._require_permission(actor, permission_code)
+        return actor
+
+    def _require_permission(self, actor, permission_code):
+        permission_codes = set(self.repository.user_permission_codes(actor["user_id"]))
+        if "SYSTEM_ADMIN" in actor.get("roles", []) or permission_code in permission_codes:
+            return
+        raise ApiError(
+            "DVAS_PERMISSION_DENIED",
+            "当前用户无此用户管理权限",
+            status=403,
+            field_errors=[{"field": "permission_code", "reason": permission_code}],
+        )
+
+    def _validated_roles(self, roles):
+        if not isinstance(roles, list) or not roles:
+            raise ApiError(
+                "DVAS_REQUIRED_FIELD_MISSING",
+                "至少需要分配一个角色",
+                status=422,
+                field_errors=[{"field": "roles", "reason": "至少需要分配一个角色"}],
+            )
+        normalized = sorted({str(role).strip() for role in roles if str(role).strip()})
+        if not normalized:
+            raise ApiError(
+                "DVAS_REQUIRED_FIELD_MISSING",
+                "至少需要分配一个角色",
+                status=422,
+                field_errors=[{"field": "roles", "reason": "至少需要分配一个角色"}],
+            )
+        missing = [role for role in normalized if not self.repository.get_role(role)]
+        if missing:
+            raise ApiError(
+                "DVAS_PRECONDITION_NOT_MET",
+                "角色不存在",
+                status=422,
+                field_errors=[{"field": "roles", "reason": ",".join(missing)}],
+            )
+        return normalized
+
+    def _hash_password(self, password):
+        return hashlib.sha256(f"dvas-p1:{password}".encode("utf-8")).hexdigest()
+
+    def _generate_temporary_password(self):
+        return f"Dvas{uuid4().hex[:10]}1"
+
+    def _validate_password_strength(self, password):
+        if len(password) < 8 or not any(ch.isalpha() for ch in password) or not any(ch.isdigit() for ch in password):
+            raise ApiError(
+                "DVAS_PASSWORD_WEAK",
+                "密码长度至少 8 位，且必须包含字母和数字",
+                status=422,
+                field_errors=[{"field": "password", "reason": "长度至少 8 位，且包含字母和数字"}],
+            )
+
+
+class MyContentService:
+    ADMIN_ROLES = {"SYSTEM_ADMIN"}
+    BUSINESS_ROLES = {"BUSINESS_ADMIN"}
+    AUDIT_ROLES = {"AUDITOR"}
+
+    def __init__(self, repository, auth_service):
+        self.repository = repository
+        self.auth_service = auth_service
+
+    def projects(self, payload):
+        user = self._user(payload)
+        project = self.repository.get_project()
+        scope = str(payload.get("scope") or "").strip().lower()
+        if scope in {"mine", "my", "current_user"}:
+            items = [project] if project.get("created_by") == user["user_id"] or project.get("operator_id") == user["user_id"] else []
+        else:
+            items = [project] if self._can_see_project(user["user_id"], project) else []
+        return table_page(items)
+
+    def uploads(self, payload):
+        user = self._user(payload)
+        scope = str(payload.get("scope") or "").strip().lower()
+        if scope in {"mine", "my", "current_user"}:
+            items = [
+                package
+                for package in self.repository.list_data_packages()
+                if package.get("created_by") == user["user_id"]
+            ]
+        else:
+            items = [
+                package
+                for package in self.repository.list_data_packages()
+                if self._can_see_upload(user["user_id"], package)
+            ]
+        return table_page(items)
+
+    def jobs(self, payload):
+        user = self._user(payload)
+        project_id = payload.get("project_id") or self.repository.get_project()["project_id"]
+        scope = str(payload.get("scope") or "").strip().lower()
+        items = [
+            job
+            for job in self.repository.list_async_jobs(project_id)
+            if self._can_see_job(user["user_id"], job)
+        ]
+        md_tasks = [
+            self._md_task_as_job(task)
+            for task in self.repository.list_md_dshap_tasks()
+            if self._can_see_job(user["user_id"], task)
+        ]
+        if scope in {"mine", "my", "current_user"}:
+            items = [
+                job
+                for job in items
+                if job.get("requested_by") == user["user_id"] or job.get("created_by") == user["user_id"]
+            ]
+            md_tasks = [
+                job
+                for job in md_tasks
+                if job.get("requested_by") == user["user_id"] or job.get("created_by") == user["user_id"]
+            ]
+        return table_page(sorted(items + md_tasks, key=lambda item: item.get("created_at", "")))
+
+    def reports(self, payload):
+        user = self._user(payload)
+        scope = str(payload.get("scope") or "").strip().lower()
+        if scope in {"mine", "my", "current_user"}:
+            items = [
+                report
+                for report in self.repository.list_report_records()
+                if report.get("created_by") == user["user_id"]
+            ]
+        else:
+            items = [
+                report
+                for report in self.repository.list_report_records()
+                if self._can_see_report(user["user_id"], report)
+            ]
+        return table_page(items)
+
+    def workbench(self, payload):
+        user = self._user(payload)
+        projects = self.projects(payload)["items"]
+        uploads = self.uploads(payload)["items"]
+        jobs = self.jobs(payload)["items"]
+        reports = self.reports(payload)["items"]
+        recent_operations = [
+            item
+            for item in reversed(self.repository.list_audit_logs())
+            if self._can_see_audit(user["user_id"], item)
+        ][:8]
+        return {
+            "user_id": user["user_id"],
+            "username": user["username"],
+            "display_name": user.get("display_name"),
+            "roles": user.get("roles", []),
+            "projects": projects,
+            "uploads": uploads,
+            "jobs": jobs,
+            "reports": reports,
+            "recent_operations": recent_operations,
+            "summary": {
+                "project_count": len(projects),
+                "upload_count": len(uploads),
+                "job_count": len(jobs),
+                "report_count": len(reports),
+                "recent_operation_count": len(recent_operations),
+            },
+        }
+
+    def _user(self, payload):
+        return self.auth_service.current_user(payload, require_login=True)
+
+    def _is_admin(self, user_id):
+        return self.repository.user_has_any_role(user_id, self.ADMIN_ROLES)
+
+    def _is_business_admin(self, user_id):
+        return self.repository.user_has_any_role(user_id, self.BUSINESS_ROLES)
+
+    def _is_auditor(self, user_id):
+        return self.repository.user_has_any_role(user_id, self.AUDIT_ROLES)
+
+    def _has_elevated_read(self, user_id):
+        return self._is_admin(user_id) or self._is_business_admin(user_id) or self._is_auditor(user_id)
+
+    def _can_see_project(self, user_id, project):
+        if self._has_elevated_read(user_id):
+            return True
+        if project.get("created_by") == user_id or project.get("operator_id") == user_id:
+            return True
+        return project.get("project_status") in {ProjectStatus.CONFIRMED.value, ProjectStatus.EXPORTED.value}
+
+    def _can_see_upload(self, user_id, package):
+        if self._is_admin(user_id) or self._is_business_admin(user_id):
+            return True
+        if package.get("created_by") == user_id:
+            return True
+        if self._is_auditor(user_id):
+            return package.get("status") in {"VALIDATED", "CONFIRMED"}
+        return False
+
+    def _can_see_job(self, user_id, job):
+        if self._has_elevated_read(user_id):
+            return True
+        return (
+            job.get("requested_by") == user_id
+            or job.get("created_by") == user_id
+        ) and job.get("status") in {"SUCCESS", "COMPLETED", "CONFIRMED"}
+
+    def _can_see_report(self, user_id, report):
+        if self._has_elevated_read(user_id):
+            return True
+        if report.get("created_by") == user_id:
+            return True
+        return report.get("status") in {"PUBLISHED"}
+
+    def _can_see_audit(self, user_id, audit_log):
+        if self._has_elevated_read(user_id):
+            return True
+        return audit_log.get("operator_id") == user_id
+
+    def _md_task_as_job(self, task):
+        return {
+            "job_id": task.get("task_id"),
+            "project_id": task.get("project_id"),
+            "job_type": "MD_DSHAP_TASK",
+            "job_name": "MD-DShap 权重计算",
+            "status": task.get("status"),
+            "progress": 100 if task.get("status") == "COMPLETED" else 0,
+            "subject_id": task.get("task_id"),
+            "requested_by": task.get("requested_by") or task.get("created_by"),
+            "created_by": task.get("created_by"),
+            "created_at": task.get("created_at"),
+            "completed_at": task.get("completed_at"),
+            "result_json": {
+                "algorithm_party_count": task.get("algorithm_party_count"),
+                "contract_party_count": task.get("contract_party_count"),
+            },
+            "simulation_disclaimer": task.get("simulation_disclaimer", SIMULATION_DISCLAIMER),
+        }
+
+
+class ImportTemplateService:
+    REQUIRED_SHEETS = [
+        "participants",
+        "data_units",
+        "revenue_pool",
+        "resource_party_relation",
+        "optional_constraints",
+    ]
+
+    def __init__(self, repository, ingestion_service, auth_service):
+        self.repository = repository
+        self.ingestion_service = ingestion_service
+        self.auth_service = auth_service
+
+    def csv_template(self, payload):
+        self.auth_service.require_button(payload, "DATA-010")
+        rows = [
+            ["record_type", "package_name", "party_id", "party_name", "party_type", "is_data_provider", "include_in_md_dshap", "resource_name", "provider_party_name", "modality", "field_count", "sample_count", "missing_rate", "revenue_pool"],
+            ["participant", "导入数据包", "P001", "数据源主体A", "DATA_PROVIDER", "true", "true", "", "", "", "", "", "", ""],
+            ["data_unit", "导入数据包", "P001", "", "", "", "", "资源A", "数据源主体A", "结构化数据", "10", "1000", "0.02", ""],
+            ["revenue_pool", "导入数据包", "", "", "", "", "", "", "", "", "", "", "", "1200000"],
+        ]
+        content = "\n".join(",".join(row) for row in rows) + "\n"
+        return self._download_payload("dvas_import_template.csv", "text/csv", content.encode("utf-8"))
+
+    def xlsx_template(self, payload):
+        self.auth_service.require_button(payload, "DATA-011")
+        sheets = {
+            "participants": [
+                ["package_name", "party_id", "party_name", "party_type", "is_data_provider", "include_in_md_dshap"],
+                ["导入数据包", "P001", "数据源主体A", "DATA_PROVIDER", "true", "true"],
+            ],
+            "data_units": [
+                ["package_name", "resource_name", "party_id", "provider_party_name", "modality", "field_count", "sample_count", "missing_rate"],
+                ["导入数据包", "资源A", "P001", "数据源主体A", "结构化数据", "10", "1000", "0.02"],
+            ],
+            "revenue_pool": [["package_name", "total_revenue"], ["导入数据包", "1200000"]],
+            "resource_party_relation": [["resource_name", "party_id", "split_ratio"], ["资源A", "P001", "1"]],
+            "optional_constraints": [["constraint_name", "party_id", "constraint_type", "constraint_value"], ["", "", "", ""]],
+        }
+        content = self._xlsx_bytes(sheets)
+        return self._download_payload(
+            "dvas_import_template.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            content,
+        )
+
+    def import_csv(self, payload):
+        self.auth_service.require_button(payload, "DATA-012")
+        file_part = self._file_part(payload)
+        content = file_part["content"]
+        text = content.decode("utf-8-sig")
+        rows = list(csv.DictReader(io.StringIO(text)))
+        package_payload = self._payload_from_rows(rows)
+        return self.ingestion_service.import_structured_payload(
+            package_payload,
+            "CSV_UPLOAD",
+            file_part.get("filename") or "uploaded.csv",
+            len(content),
+            hashlib.sha256(content).hexdigest(),
+        )
+
+    def import_xlsx(self, payload):
+        self.auth_service.require_button(payload, "DATA-012")
+        file_part = self._file_part(payload)
+        content = file_part["content"]
+        sheets = self._read_xlsx_rows(content)
+        rows = []
+        for sheet_name, sheet_rows in sheets.items():
+            if not sheet_rows:
+                continue
+            header = sheet_rows[0]
+            for values in sheet_rows[1:]:
+                row = {header[index]: values[index] if index < len(values) else "" for index in range(len(header))}
+                row["record_type"] = self._record_type_for_sheet(sheet_name)
+                rows.append(row)
+        package_payload = self._payload_from_rows(rows)
+        return self.ingestion_service.import_structured_payload(
+            package_payload,
+            "XLSX_UPLOAD",
+            file_part.get("filename") or "uploaded.xlsx",
+            len(content),
+            hashlib.sha256(content).hexdigest(),
+        )
+
+    def _file_part(self, payload):
+        file_part = (payload.get("_multipart_files") or {}).get("file")
+        if not file_part:
+            raise ApiError(
+                "DVAS_REQUIRED_FIELD_MISSING",
+                "必须使用 FormData 的 file 字段上传导入模板",
+                status=422,
+                field_errors=[{"field": "file", "reason": "缺少上传文件"}],
+            )
+        return file_part
+
+    def _payload_from_rows(self, rows):
+        participants = []
+        resources = []
+        package_name = "导入数据包"
+        revenue_pool = None
+        for raw in rows:
+            row = {str(key or "").strip(): str(value or "").strip() for key, value in raw.items()}
+            if row.get("package_name"):
+                package_name = row["package_name"]
+            record_type = (row.get("record_type") or "").lower()
+            if record_type == "participant":
+                participants.append(
+                    {
+                        "party_id": row.get("party_id"),
+                        "party_name": row.get("party_name"),
+                        "party_type": row.get("party_type") or "DATA_PROVIDER",
+                        "is_data_provider": self._bool(row.get("is_data_provider")),
+                        "include_in_md_dshap": self._bool(row.get("include_in_md_dshap")),
+                    }
+                )
+            elif record_type == "data_unit":
+                resources.append(
+                    {
+                        "resource_name": row.get("resource_name"),
+                        "party_id": row.get("party_id"),
+                        "provider_party_name": row.get("provider_party_name"),
+                        "modality": row.get("modality") or "结构化数据",
+                        "field_count": self._int(row.get("field_count")),
+                        "sample_count": self._int(row.get("sample_count")),
+                        "missing_rate": self._float(row.get("missing_rate")),
+                    }
+                )
+            elif record_type == "revenue_pool":
+                revenue_pool = self._float(row.get("total_revenue") or row.get("revenue_pool"))
+        return {
+            "package_name": package_name,
+            "project_name": package_name,
+            "participants": participants,
+            "data_units": resources,
+            "revenue_pool": revenue_pool,
+            "import_sheets": self.REQUIRED_SHEETS,
+        }
+
+    def _download_payload(self, file_name, mime_type, content):
+        return {
+            "file_name": file_name,
+            "mime_type": mime_type,
+            "byte_size": len(content),
+            "checksum": hashlib.sha256(content).hexdigest(),
+            "content_base64": base64.b64encode(content).decode("ascii"),
+        }
+
+    def _xlsx_bytes(self, sheets):
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("[Content_Types].xml", self._xlsx_content_types(len(sheets)))
+            archive.writestr("_rels/.rels", self._xlsx_root_rels())
+            archive.writestr("xl/workbook.xml", self._xlsx_workbook_xml(list(sheets)))
+            archive.writestr("xl/_rels/workbook.xml.rels", self._xlsx_workbook_rels(len(sheets)))
+            for index, rows in enumerate(sheets.values(), start=1):
+                archive.writestr(f"xl/worksheets/sheet{index}.xml", self._xlsx_sheet_xml(rows))
+        return output.getvalue()
+
+    def _read_xlsx_rows(self, content):
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            workbook = ET.fromstring(archive.read("xl/workbook.xml"))
+            ns = {"main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+            names = [sheet.attrib["name"] for sheet in workbook.findall(".//main:sheet", ns)]
+            result = {}
+            for index, sheet_name in enumerate(names, start=1):
+                xml = ET.fromstring(archive.read(f"xl/worksheets/sheet{index}.xml"))
+                rows = []
+                for row in xml.findall(".//main:row", ns):
+                    values = []
+                    for cell in row.findall("main:c", ns):
+                        value = cell.find("main:is/main:t", ns)
+                        values.append(value.text if value is not None and value.text is not None else "")
+                    rows.append(values)
+                result[sheet_name] = rows
+            return result
+
+    def _record_type_for_sheet(self, sheet_name):
+        return {
+            "participants": "participant",
+            "data_units": "data_unit",
+            "revenue_pool": "revenue_pool",
+        }.get(sheet_name, sheet_name)
+
+    def _xlsx_content_types(self, sheet_count):
+        sheets = "".join(
+            f'<Override PartName="/xl/worksheets/sheet{index}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+            for index in range(1, sheet_count + 1)
+        )
+        return (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            f"{sheets}</Types>"
+        )
+
+    def _xlsx_root_rels(self):
+        return (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+            "</Relationships>"
+        )
+
+    def _xlsx_workbook_xml(self, sheet_names):
+        sheets = "".join(
+            f'<sheet name="{name}" sheetId="{index}" r:id="rId{index}"/>'
+            for index, name in enumerate(sheet_names, start=1)
+        )
+        return (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            f"<sheets>{sheets}</sheets></workbook>"
+        )
+
+    def _xlsx_workbook_rels(self, sheet_count):
+        rels = "".join(
+            f'<Relationship Id="rId{index}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{index}.xml"/>'
+            for index in range(1, sheet_count + 1)
+        )
+        return (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            f"{rels}</Relationships>"
+        )
+
+    def _xlsx_sheet_xml(self, rows):
+        xml_rows = []
+        for row_index, row in enumerate(rows, start=1):
+            cells = []
+            for col_index, value in enumerate(row, start=1):
+                cell_ref = f"{chr(64 + col_index)}{row_index}"
+                escaped = str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                cells.append(f'<c r="{cell_ref}" t="inlineStr"><is><t>{escaped}</t></is></c>')
+            xml_rows.append(f'<row r="{row_index}">{"".join(cells)}</row>')
+        return (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            f'<sheetData>{"".join(xml_rows)}</sheetData></worksheet>'
+        )
+
+    def _bool(self, value):
+        return str(value).strip().lower() in {"1", "true", "yes", "是"}
+
+    def _int(self, value):
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return 0
+
+    def _float(self, value):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+
 class NavigationService:
     def menu_tree(self):
         return {
@@ -189,7 +1142,7 @@ class NavigationService:
                     [
                         self._leaf("MENU_ALLOC_MDS", "NAV_ALLOC_MDS", "MD-DShap 计算管理", "MDS", "/allocation/md-dshap", 41),
                         self._leaf("MENU_ALLOC_SIMULATION", "NAV_ALLOC_SIMULATION", "收益分配模拟", "ALLOC", "/allocation/simulation", 42),
-                        self._leaf("MENU_ALLOC_CONSTRAINT", "NAV_ALLOC_CONSTRAINT", "合同约束管理", "CONS", "/allocation/constraints", 43),
+                        self._leaf("MENU_ALLOC_CONSTRAINT", "NAV_ALLOC_CONSTRAINT", "合同分配规则", "CONS", "/allocation/constraints", 43),
                     ],
                 ),
                 self._leaf("MENU_REPORT_EXPORT", "NAV_REPORT_EXPORT", "报告生成与导出", "REP", "/reports", 5),
@@ -427,6 +1380,12 @@ class SystemParameterService:
             "shuyuan_parameters",
         )
 
+    def shuyuan_parameters(self):
+        return {
+            "project_status": self.repository.get_project()["project_status"],
+            "shuyuan_parameters": self._parameter_group(self.SHUYUAN_PARAM_CODES),
+        }
+
     def update_contribution_factors(self, payload):
         return self._update_parameter_group(
             payload,
@@ -539,7 +1498,7 @@ class SystemParameterService:
             "version_no": version_no,
             "operation_type": operation_type,
             "snapshot_id": snapshot_id,
-            "updated_by": LOCAL_OPERATOR,
+            "updated_by": current_operator_id(self.repository),
             "created_at": now,
             "simulation_disclaimer": SIMULATION_DISCLAIMER,
         }
@@ -549,7 +1508,7 @@ class SystemParameterService:
             "snapshot_type": "PARAMETER",
             "content_json": {"parameter": updated, "version": version},
             "checksum": stable_checksum({"parameter": updated, "version": version}),
-            "created_by": LOCAL_OPERATOR,
+            "created_by": current_operator_id(self.repository),
             "created_at": now,
         }
         self.repository.put_snapshot(snapshot)
@@ -591,11 +1550,14 @@ class SystemParameterService:
         ]
         return {
             "project_status": self.repository.get_project()["project_status"],
-            response_key: {
-                field: self._parameter(parameter_code)["current_value"]
-                for field, parameter_code in mapping.items()
-            },
+            response_key: self._parameter_group(mapping),
             "updated_parameters": updated,
+        }
+
+    def _parameter_group(self, mapping):
+        return {
+            field: self._parameter(parameter_code)["current_value"]
+            for field, parameter_code in mapping.items()
         }
 
     def _normalize_value(self, parameter, raw_value):
@@ -755,6 +1717,27 @@ class DraftConfigurationService:
             )
         return self._persist("UTILITY_FUNCTION", copy.deepcopy(payload))
 
+    def utility_function(self):
+        draft = self._latest_draft("UTILITY_FUNCTION")
+        content = draft.get("content_json") if draft else {}
+        if not isinstance(content, dict):
+            content = {}
+        formula = content.get("formula") or "normalized_contribution × quality_factor × usage_factor × scenario_factor"
+        return {
+            "project_id": self.repository.get_project()["project_id"],
+            "project_status": self.repository.get_project()["project_status"],
+            "utility_function": {
+                "formula": formula,
+                "usage_factor": content.get("usage_factor", 1.0),
+                "scenario_factor": content.get("scenario_factor", 1.0),
+                "quality_factor_source": content.get(
+                    "quality_factor_source",
+                    "SHUYUAN_RESOURCE_WEIGHTED_AVERAGE",
+                ),
+            },
+            "draft": draft,
+        }
+
     def save_revenue_pool(self, payload):
         try:
             total_revenue = float(payload["total_revenue"])
@@ -804,18 +1787,62 @@ class DraftConfigurationService:
                     "优先分配项缺少参与方",
                     field_errors=[{"field": f"items[{index}].party_id", "reason": "party_id 为必填字段"}],
                 )
+            value_type = item.get("value_type", "AMOUNT")
+            if value_type == "RATIO":
+                priority_ratio = self._ratio(item.get("priority_ratio"), f"items[{index}].priority_ratio")
+                priority_amount = None
+            elif value_type == "AMOUNT":
+                priority_ratio = None
+                priority_amount = self._amount(
+                    item.get("priority_amount", 0),
+                    f"items[{index}].priority_amount",
+                )
+            else:
+                raise ApiError(
+                    "DVAS_FACTOR_INVALID",
+                    "优先分配值类型不支持",
+                    field_errors=[{"field": f"items[{index}].value_type", "reason": "value_type 必须为 AMOUNT 或 RATIO"}],
+                )
             normalized.append(
                 {
                     "party_id": party_id,
-                    "value_type": item.get("value_type", "AMOUNT"),
-                    "priority_amount": self._amount(item.get("priority_amount", 0), f"items[{index}].priority_amount"),
-                    "priority_ratio": item.get("priority_ratio"),
+                    "value_type": value_type,
+                    "priority_amount": priority_amount,
+                    "priority_ratio": priority_ratio,
                     "cap_amount": item.get("cap_amount"),
                     "basis_text": item.get("basis_text") or "P0 本地草稿配置",
                     "priority_order": int(item.get("priority_order", index + 1)),
                 }
             )
-        return self._persist("ALLOCATION_PRIORITY_ITEMS", normalized)
+        persisted = self._persist("ALLOCATION_PRIORITY_ITEMS", normalized)
+        now = utc_now()
+        priority_items = []
+        for index, item in enumerate(normalized):
+            priority_items.append(
+                {
+                    "item_id": self.repository.next_id("allocation_priority_item"),
+                    "allocation_id": None,
+                    "project_id": persisted["project_id"],
+                    "party_id": item["party_id"],
+                    "value_type": item["value_type"],
+                    "priority_amount": item["priority_amount"],
+                    "priority_ratio": item["priority_ratio"],
+                    "cap_amount": item["cap_amount"],
+                    "basis_text": item["basis_text"],
+                    "priority_order": item["priority_order"],
+                    "status": "DRAFT",
+                    "source_draft_id": persisted["draft"]["draft_id"],
+                    "source_constraint_id": None,
+                    "created_at": now,
+                    "updated_at": now,
+                    "simulation_disclaimer": SIMULATION_DISCLAIMER,
+                }
+            )
+        self.repository.put_allocation_priority_items(
+            priority_items,
+            source_constraint_id=f"draft:{persisted['draft']['draft_id']}",
+        )
+        return {**persisted, "allocation_priority_items": priority_items}
 
     def save_allocation_mode(self, payload):
         mode = payload.get("allocation_mode") or payload.get("mode")
@@ -839,7 +1866,7 @@ class DraftConfigurationService:
             "snapshot_type": spec["snapshot_type"],
             "content_json": {"draft_type": draft_type, "content": copy.deepcopy(content)},
             "checksum": stable_checksum({"draft_type": draft_type, "content": content}),
-            "created_by": LOCAL_OPERATOR,
+            "created_by": current_operator_id(self.repository),
             "created_at": now,
         }
         draft = {
@@ -849,7 +1876,7 @@ class DraftConfigurationService:
             "content_json": copy.deepcopy(content),
             "snapshot_id": snapshot_id,
             "checksum": snapshot["checksum"],
-            "created_by": LOCAL_OPERATOR,
+            "created_by": current_operator_id(self.repository),
             "created_at": now,
             "simulation_disclaimer": SIMULATION_DISCLAIMER,
         }
@@ -878,6 +1905,10 @@ class DraftConfigurationService:
             "snapshot": snapshot,
         }
 
+    def _latest_draft(self, draft_type):
+        drafts = self.repository.list_business_drafts(draft_type)
+        return drafts[-1] if drafts else None
+
     def _amount(self, raw_value, field):
         try:
             value = float(raw_value)
@@ -894,6 +1925,23 @@ class DraftConfigurationService:
                 field_errors=[{"field": field, "reason": f"{field} 必须大于等于 0"}],
             )
         return round(value, P0_CONFIG.amount_precision)
+
+    def _ratio(self, raw_value, field):
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "优先分配比例不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须是数字"}],
+            ) from exc
+        if value < 0 or value > 1:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "优先分配比例不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须在 0 到 1 之间"}],
+            )
+        return round(value, 6)
 
 
 class AuditLogService:
@@ -967,8 +2015,13 @@ class DashboardService:
     def overview(self):
         project = self.repository.get_project()
         packages = self.repository.list_data_packages()
-        resources = self.repository.list_data_resources()
+        current_package_id = project.get("current_package_id")
+        resources = self.repository.list_data_resources(current_package_id) if current_package_id else []
         parties = self.repository.list_parties()
+        current_package = (
+            self.repository.get_data_package(current_package_id) if current_package_id else None
+        )
+        current_snapshot = self._current_input_snapshot(project, current_package)
         metering_count = len(self.repository.list_shuyuan_meterings())
         utility_count = len(self.repository.list_utility_records())
         weight_count = len(self.repository.list_md_dshap_tasks())
@@ -981,7 +2034,8 @@ class DashboardService:
             "metrics": {
                 "data_package_count": len([item for item in packages if item["status"] == "VALIDATED"]),
                 "resource_count": len(resources),
-                "party_count": len(parties),
+                "party_count": self._current_participant_count(current_snapshot, parties, resources),
+                "current_revenue_pool": self._current_revenue_pool(project, current_snapshot),
                 "metering_count": metering_count,
                 "utility_count": utility_count,
                 "weight_count": weight_count,
@@ -1000,6 +2054,52 @@ class DashboardService:
             "available_actions": preconditions["available_actions"],
             "disabled_actions": preconditions["disabled_actions"],
         }
+
+    def _current_input_snapshot(self, project, current_package=None):
+        snapshot_id = project.get("current_input_snapshot_id") or (current_package or {}).get(
+            "input_snapshot_id"
+        )
+        if not snapshot_id:
+            return None
+        return self.repository.get_input_snapshot(snapshot_id)
+
+    def _current_participant_count(self, snapshot, parties, resources):
+        content = self._snapshot_content(snapshot)
+        participants = content.get("participants")
+        if not isinstance(participants, list):
+            participants = content.get("parties")
+        if isinstance(participants, list):
+            return len(participants)
+
+        party_ids = {
+            resource.get("party_id")
+            for resource in resources
+            if resource.get("party_id")
+        }
+        if party_ids:
+            return len(party_ids)
+        return len(parties)
+
+    def _current_revenue_pool(self, project, snapshot):
+        allocation_id = project.get("current_allocation_id")
+        if allocation_id:
+            allocation = self.repository.get_allocation_scenario(allocation_id)
+            if allocation and allocation.get("data_provider_revenue_pool") is not None:
+                return allocation["data_provider_revenue_pool"]
+
+        content = self._snapshot_content(snapshot)
+        for field in ("data_provider_revenue_pool", "revenue_pool", "total_revenue"):
+            value = content.get(field)
+            if value is not None and value != "":
+                try:
+                    return round(float(value), P0_CONFIG.amount_precision)
+                except (TypeError, ValueError):
+                    return value
+        return None
+
+    def _snapshot_content(self, snapshot):
+        content = (snapshot or {}).get("content_json")
+        return content if isinstance(content, dict) else {}
 
     def preconditions(self):
         project = self.repository.get_project()
@@ -1154,18 +2254,37 @@ class DashboardService:
                     if item["code"] == "HAS_RESOURCE_PARTY_RELATION"
                 ],
             )
+        project = self.repository.get_project()
+        contract_ratio_plan = self.repository.latest_contract_ratio_plan(project["project_id"])
+        if not contract_ratio_plan or contract_ratio_plan.get("status") not in {"SAVED", "LOCKED"}:
+            raise ApiError(
+                "DVAS_CONTRACT_RATIO_REQUIRED",
+                "请先在合同分配规则页保存合同比例方案后再执行完整链路计算。",
+                field_errors=[
+                    {
+                        "field": "contract_ratio_plan",
+                        "reason": "请先在合同分配规则页保存合同比例方案后再执行完整链路计算",
+                    }
+                ],
+            )
+        if contract_ratio_plan.get("ratio_sum") != "1.000000":
+            raise ApiError(
+                "DVAS_CONTRACT_RATIO_INVALID",
+                "合同比例合计必须等于 100.0000%。",
+                field_errors=[
+                    {
+                        "field": "ratio_sum",
+                        "reason": f"当前比例合计为 {contract_ratio_plan.get('ratio_sum')}",
+                    }
+                ],
+            )
         quality = QualityAssessmentService(self.repository).run(payload.get("quality", {}))
         metering = ShuyuanMeteringService(self.repository).run(payload.get("shuyuan", {}))
         contribution = ContributionService(self.repository).run(payload.get("contribution", {}))
         utility = UtilityService(self.repository).run(payload.get("utility", {}))
         weights = MdDshapService(self.repository).run(payload.get("md_dshap", {}))
-        allocation_payload = {
-            "total_revenue": payload.get("total_revenue", 1000),
-            "priority_allocation_amount": payload.get("priority_allocation_amount", 0),
-            "currency": payload.get("currency", "CNY"),
-        }
-        allocation = AllocationService(self.repository).create(allocation_payload)
-        simulation = AllocationService(self.repository).simulate(allocation["allocation_id"])
+        simulation = AllocationService(self.repository).simulate_contract_ratio(project["project_id"])
+        contract_ratio = ContractRatioService(self.repository).get(project["project_id"])
         write_audit(
             self.repository,
             module_code="SYS",
@@ -1182,13 +2301,18 @@ class DashboardService:
                 "utility_id": utility["utility"]["utility_id"],
                 "md_dshap_task_id": weights["task"]["task_id"],
                 "allocation_id": simulation["allocation"]["allocation_id"],
+                "contract_ratio_plan_id": simulation["allocation"].get("contract_ratio_plan_id"),
+                "contract_ratio_sum": simulation["allocation"].get("contract_ratio_sum"),
             },
         )
         return {
             "project_id": simulation["project_id"],
             "project_status": simulation["project_status"],
             "pipeline_status": "COMPLETED",
+            "contract_ratio_plan_id": simulation["allocation"].get("contract_ratio_plan_id"),
+            "contract_ratio_sum": simulation["allocation"].get("contract_ratio_sum"),
             "steps": {
+                "contract_ratio": contract_ratio,
                 "quality": quality,
                 "shuyuan": metering,
                 "contribution": contribution,
@@ -1233,12 +2357,14 @@ class DashboardService:
         utility_records = self.repository.list_utility_records()
         if not utility_records:
             return False, "请先完成效用计算"
+        current_resource_party_ids = self._current_resource_party_ids(project)
         participants = [
             party
             for party in self.repository.list_parties()
             if self._is_data_provider_party(party)
             and self._is_active_party(party)
             and party.get("include_in_md_dshap")
+            and party.get("party_id") in current_resource_party_ids
         ]
         if not participants:
             return False, "请先维护可进入 MD-DShap 的数据源主体"
@@ -1255,6 +2381,168 @@ class DashboardService:
 
     def _is_active_party(self, party):
         return party.get("status") in {"ACTIVE", "ENABLED"}
+
+    def _current_resource_party_ids(self, project):
+        package_id = project.get("current_package_id")
+        resources = (
+            self.repository.list_data_resources(package_id)
+            if package_id
+            else self.repository.list_data_resources()
+        )
+        return {
+            resource.get("party_id")
+            for resource in resources
+            if resource.get("party_id")
+            and resource.get("status") == "ACTIVE"
+            and resource.get("include_in_calculation", True) is not False
+        }
+
+
+class AsyncJobService:
+    def __init__(self, repository, auth_service):
+        self.repository = repository
+        self.auth_service = auth_service
+
+    def run_pipeline(self, payload, runner):
+        self.auth_service.require_button(payload, "SYS-004")
+        return self._run_job(payload, "FULL_PIPELINE", "完整链路计算", runner)
+
+    def run_md_dshap(self, payload, runner):
+        self.auth_service.require_button(payload, "MDS-011")
+        return self._run_job(payload, "MD_DSHAP", "MD-DShap 权重计算", runner)
+
+    def _run_job(self, payload, job_type, job_name, runner):
+        now = utc_now()
+        project = self.repository.get_project()
+        user_id = self.auth_service.current_user(payload, require_login=True)["user_id"]
+        job = {
+            "job_id": self.repository.next_id("job"),
+            "project_id": project["project_id"],
+            "job_type": job_type,
+            "job_name": job_name,
+            "status": "RUNNING",
+            "progress": 10,
+            "can_cancel": True,
+            "subject_id": None,
+            "requested_by": user_id,
+            "created_by": user_id,
+            "created_at": now,
+            "started_at": now,
+            "completed_at": None,
+            "cancelled_at": None,
+            "failure_reason": None,
+            "error_code": None,
+            "result_json": None,
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+        }
+        self.repository.put_async_job(job)
+        try:
+            result = runner()
+        except ApiError as error:
+            failed = {
+                **job,
+                "status": "FAILED",
+                "progress": 100,
+                "can_cancel": False,
+                "completed_at": utc_now(),
+                "failure_reason": error.message,
+                "error_code": error.code,
+                "result_json": {"field_errors": error.field_errors, "detail_json": error.detail_json},
+            }
+            self.repository.put_async_job(failed)
+            raise
+        subject_id = None
+        if isinstance(result, dict):
+            subject_id = (
+                result.get("task", {}).get("task_id")
+                or result.get("task_id")
+                or result.get("allocation_id")
+                or result.get("report", {}).get("report_id")
+            )
+        completed = {
+            **job,
+            "status": "SUCCESS",
+            "progress": 100,
+            "can_cancel": False,
+            "subject_id": subject_id,
+            "completed_at": utc_now(),
+            "result_json": result,
+        }
+        self.repository.put_async_job(completed)
+        return {"job": completed, "result": result}
+
+    def list_jobs(self, payload):
+        user = self.auth_service.current_user(payload, require_login=True)
+        project_id = payload.get("project_id") or self.repository.get_project()["project_id"]
+        jobs = self.repository.list_async_jobs(project_id)
+        if not self.repository.user_has_any_role(user["user_id"], {"SYSTEM_ADMIN", "BUSINESS_ADMIN", "AUDITOR"}):
+            jobs = [
+                job
+                for job in jobs
+                if (job.get("requested_by") == user["user_id"] or job.get("created_by") == user["user_id"])
+                and job.get("status") in {"SUCCESS", "COMPLETED", "CONFIRMED"}
+            ]
+        return table_page(jobs)
+
+    def detail(self, payload, job_id):
+        user = self.auth_service.current_user(payload, require_login=True)
+        job = self.repository.get_async_job(job_id)
+        if not job:
+            raise ApiError("DVAS_NOT_FOUND", "任务不存在", status=404)
+        if (
+            not self.repository.user_has_any_role(user["user_id"], {"SYSTEM_ADMIN", "BUSINESS_ADMIN", "AUDITOR"})
+            and job.get("requested_by") != user["user_id"]
+            and job.get("created_by") != user["user_id"]
+        ):
+            raise ApiError("DVAS_PERMISSION_DENIED", "当前用户无此任务权限", status=403)
+        return job
+
+    def cancel(self, payload, job_id):
+        self.auth_service.require_button(payload, "MDS-019")
+        job = self.repository.get_async_job(job_id)
+        if not job:
+            raise ApiError("DVAS_NOT_FOUND", "任务不存在", status=404)
+        if job["status"] not in {"PENDING", "RUNNING"}:
+            return {**job, "cancel_requested": False, "message": "任务已结束，不能取消"}
+        cancelled = {
+            **job,
+            "status": "CANCELLED",
+            "can_cancel": False,
+            "cancelled_at": utc_now(),
+            "failure_reason": "用户取消",
+        }
+        self.repository.put_async_job(cancelled)
+        return {**cancelled, "cancel_requested": True}
+
+    def md_dshap_progress(self, payload, task_id):
+        user = self.auth_service.current_user(payload, require_login=True)
+        task = self.repository.get_md_dshap_task(task_id)
+        if not task:
+            raise ApiError("DVAS_NOT_FOUND", "MD-DShap 任务不存在", status=404)
+        if (
+            not self.repository.user_has_any_role(user["user_id"], {"SYSTEM_ADMIN", "BUSINESS_ADMIN", "AUDITOR"})
+            and task.get("requested_by") != user["user_id"]
+            and task.get("created_by") != user["user_id"]
+        ):
+            raise ApiError("DVAS_PERMISSION_DENIED", "当前用户无此任务权限", status=403)
+        linked_jobs = [
+            job
+            for job in self.repository.list_async_jobs(task.get("project_id"))
+            if job.get("subject_id") == task_id
+            or (job.get("result_json") or {}).get("task", {}).get("task_id") == task_id
+        ]
+        job = linked_jobs[-1] if linked_jobs else None
+        status = "SUCCESS" if task.get("status") == "COMPLETED" else task.get("status", "UNKNOWN")
+        return {
+            "task_id": task_id,
+            "job": job,
+            "status": status,
+            "progress": 100 if status == "SUCCESS" else 0,
+            "result_count": task.get("result_count", 0),
+            "algorithm_party_count": task.get("algorithm_party_count", 0),
+            "failure_reason": task.get("failure_reason"),
+            "can_cancel": bool(job and job.get("can_cancel")),
+        }
 
 
 class DataIngestionService:
@@ -1278,17 +2566,74 @@ class DataIngestionService:
             audit_context={"module_code": "SYS", "menu_code": "NAV_SYS_HOME"},
         )
 
+    def upload_multipart(self, payload):
+        files = payload.get("_multipart_files") or {}
+        file_part = files.get("file")
+        if not file_part:
+            diagnostics = {
+                "filename": None,
+                "content_length": 0,
+                "sha256": None,
+                "json_keys": [],
+                "field_name": "file",
+            }
+            return self._reject_upload(
+                {},
+                [{"field": "file", "reason": "必须使用 FormData 的 file 字段上传 JSON 文件"}],
+                diagnostics,
+                code="DVAS_REQUIRED_FIELD_MISSING",
+            )
+
+        content = file_part.get("content") or b""
+        diagnostics = self._upload_diagnostics(
+            file_part.get("filename") or "uploaded.json",
+            content,
+        )
+        try:
+            text = content.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            return self._reject_upload(
+                {"file_name": diagnostics["filename"]},
+                [{"field": "file", "reason": f"文件必须是合法 UTF-8 JSON：{exc}"}],
+                diagnostics,
+                code="DVAS_INPUT_FORMAT_ERROR",
+            )
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError as exc:
+            return self._reject_upload(
+                {"file_name": diagnostics["filename"]},
+                [{"field": "file", "reason": f"文件内容不是合法 JSON：{exc}"}],
+                diagnostics,
+                code="DVAS_INPUT_FORMAT_ERROR",
+            )
+        if not isinstance(payload, dict):
+            return self._reject_upload(
+                {"file_name": diagnostics["filename"]},
+                [{"field": "body", "reason": "上传 JSON 顶层必须是对象"}],
+                diagnostics,
+                code="DVAS_INPUT_FORMAT_ERROR",
+            )
+
+        diagnostics["json_keys"] = sorted(payload.keys())
+        self._print_upload_diagnostics(diagnostics)
+        payload = {**payload, "_upload_diagnostics": diagnostics}
+        return self.upload_json(payload)
+
     def upload_json(self, payload):
         payload = payload or {}
+        upload_diagnostics = payload.get("_upload_diagnostics") if isinstance(payload, dict) else None
+        payload = self._normalize_upload_payload(payload)
         field_errors = self._validate_upload_payload(payload)
         if field_errors:
-            package = self._create_invalid_package(payload, field_errors)
+            package = self._create_invalid_package(payload, field_errors, upload_diagnostics=upload_diagnostics)
             validation_result = self.repository.get_validation_result(package["package_id"])
             raise ApiError(
                 validation_result["code"],
                 "上传 JSON 校验失败",
                 field_errors=validation_result["field_errors"],
                 audit_recorded=True,
+                detail_json=validation_result["detail_json"],
             )
         return self._create_valid_ingestion(
             source_type="UPLOAD",
@@ -1297,10 +2642,70 @@ class DataIngestionService:
             resources=payload["resources"],
             parties=payload["parties"],
             file_name=payload.get("file_name", "uploaded.json"),
+            file_size=payload.get("file_size"),
+            upload_diagnostics=upload_diagnostics,
         )
 
-    def list_packages(self):
-        return table_page(self.repository.list_data_packages())
+    def import_structured_payload(self, payload, source_type, file_name, file_size, checksum):
+        payload = payload or {}
+        diagnostics = {
+            "filename": file_name,
+            "content_length": int(file_size or 0),
+            "sha256": checksum,
+            "json_keys": sorted(payload.keys()),
+            "field_name": "file",
+        }
+        normalized = self._normalize_upload_payload({**payload, "_upload_diagnostics": diagnostics})
+        field_errors = self._validate_upload_payload(normalized)
+        if field_errors:
+            package = self._create_invalid_package(
+                {
+                    **normalized,
+                    "file_name": file_name,
+                    "file_size": file_size,
+                },
+                field_errors,
+                upload_diagnostics=diagnostics,
+            )
+            validation_result = self.repository.get_validation_result(package["package_id"])
+            raise ApiError(
+                validation_result["code"],
+                f"{source_type} 导入校验失败",
+                field_errors=validation_result["field_errors"],
+                audit_recorded=True,
+                detail_json=validation_result["detail_json"],
+            )
+        return self._create_valid_ingestion(
+            source_type=source_type,
+            package_name=normalized["package_name"],
+            raw_payload=normalized,
+            resources=normalized["resources"],
+            parties=normalized["parties"],
+            file_name=file_name,
+            file_size=file_size,
+            upload_diagnostics=diagnostics,
+        )
+
+    def list_packages(self, payload=None):
+        payload = payload or {}
+        packages = self.repository.list_data_packages()
+        user_id = current_operator_id(self.repository)
+        scope = str(payload.get("scope") or payload.get("created_by") or "").strip().lower()
+        if scope in {"mine", "my", "current_user"}:
+            packages = [package for package in packages if package.get("created_by") == user_id]
+        elif not self.repository.user_has_any_role(user_id, {"SYSTEM_ADMIN", "BUSINESS_ADMIN"}):
+            if self.repository.user_has_any_role(user_id, {"AUDITOR"}):
+                packages = [package for package in packages if package.get("status") in {"VALIDATED", "CONFIRMED"}]
+            else:
+                packages = [package for package in packages if package.get("created_by") == user_id]
+        query = str(payload.get("q") or payload.get("search") or "").strip().lower()
+        if query:
+            packages = [
+                package
+                for package in packages
+                if self._package_matches_query(package, query)
+            ]
+        return table_page(packages)
 
     def package_detail(self, package_id):
         package = self.repository.get_data_package(package_id)
@@ -1318,6 +2723,64 @@ class DataIngestionService:
         if not validation:
             raise ApiError("DVAS_NOT_FOUND", "数据包校验结果不存在", status=404)
         return validation
+
+    def delete_package(self, package_id):
+        package = self.repository.get_data_package(package_id)
+        if not package:
+            raise ApiError("DVAS_NOT_FOUND", "数据包不存在", status=404)
+
+        resources = self.repository.delete_data_resources_by_package(package_id)
+        validation = self.repository.delete_validation_result(package_id)
+        input_snapshot = self.repository.delete_input_snapshot(package.get("input_snapshot_id"))
+        deleted_package = self.repository.delete_data_package(package_id)
+        remaining_packages = self.repository.list_data_packages()
+        project = self.repository.get_project()
+        if project.get("current_package_id") == package_id:
+            if remaining_packages:
+                latest_package = remaining_packages[-1]
+                project = self.repository.update_project(
+                    project_status=ProjectStatus.INGESTED.value,
+                    current_package_id=latest_package["package_id"],
+                    current_input_snapshot_id=latest_package.get("input_snapshot_id"),
+                    current_algorithm_task_id=None,
+                    current_allocation_id=None,
+                )
+            else:
+                self.repository.clear_derived_calculation_artifacts()
+                project = self.repository.update_project(
+                    project_status=ProjectStatus.DRAFT.value,
+                    current_package_id=None,
+                    current_input_snapshot_id=None,
+                    current_algorithm_task_id=None,
+                    current_allocation_id=None,
+                )
+
+        deleted_summary = {
+            "package_id": package_id,
+            "package_name": package.get("package_name"),
+            "deleted": True,
+            "deleted_resource_count": len(resources),
+            "deleted_validation_result_id": (validation or {}).get("validation_result_id"),
+            "deleted_input_snapshot_id": (input_snapshot or {}).get("snapshot_id"),
+            "remaining_package_count": len(remaining_packages),
+            "current_package_id": project.get("current_package_id"),
+            "project_status": project["project_status"],
+        }
+        self._audit(
+            module_code="DATA",
+            menu_code="NAV_DATA_PACKAGE",
+            operation_type="DELETE_DATA_PACKAGE",
+            object_type="data_package",
+            object_id=package_id,
+            status="SUCCESS",
+            after_value_json={
+                "deleted_package": deleted_package,
+                "deleted_resource_count": len(resources),
+                "remaining_package_count": len(remaining_packages),
+            },
+            button_code="DATA-009",
+        )
+        return deleted_summary
 
     def list_resources(self):
         return table_page(self.repository.list_data_resources())
@@ -1361,32 +2824,177 @@ class DataIngestionService:
                 )
         return errors
 
-    def _create_invalid_package(self, payload, field_errors):
+    def _normalize_upload_payload(self, payload):
+        payload = copy.deepcopy(payload) if isinstance(payload, dict) else {}
+        upload_diagnostics = payload.pop("_upload_diagnostics", None) or {}
+        participants = payload.get("parties")
+        if not isinstance(participants, list) and isinstance(payload.get("participants"), list):
+            participants = payload.get("participants")
+        parties = self._normalize_uploaded_parties(participants or [])
+        party_name_by_id = {
+            str(party.get("party_id")): party.get("party_name")
+            for party in parties
+            if party.get("party_id") and party.get("party_name")
+        }
+
+        data_units = payload.get("resources")
+        if not isinstance(data_units, list) and isinstance(payload.get("data_units"), list):
+            data_units = payload.get("data_units")
+        resources = self._normalize_uploaded_resources(data_units or [], party_name_by_id)
+
+        package_name = payload.get("package_name") or payload.get("project_name")
+        file_name = payload.get("file_name") or upload_diagnostics.get("filename") or "uploaded.json"
+        normalized = {
+            **payload,
+            "package_name": package_name,
+            "scenario_name": payload.get("scenario_name") or payload.get("project_name"),
+            "resources": resources,
+            "parties": parties,
+            "file_name": file_name,
+        }
+        if "content_length" in upload_diagnostics:
+            normalized["file_size"] = upload_diagnostics["content_length"]
+        elif "file_size" in payload:
+            normalized["file_size"] = payload["file_size"]
+        return normalized
+
+    def _package_matches_query(self, package, query):
+        fields = (
+            "package_id",
+            "package_name",
+            "source_type",
+            "file_name",
+            "status",
+            "checksum",
+            "created_at",
+        )
+        return any(query in str(package.get(field, "")).lower() for field in fields)
+
+    def _normalize_uploaded_parties(self, parties):
+        normalized = []
+        for party in parties:
+            if not isinstance(party, dict):
+                normalized.append({})
+                continue
+            party_type = party.get("party_type") or (
+                "DATA_PROVIDER" if party.get("is_data_provider") else "CONTRACT_PARTY"
+            )
+            normalized.append(
+                {
+                    **party,
+                    "party_name": party.get("party_name"),
+                    "party_type": party_type,
+                    "is_data_provider": bool(
+                        party.get("is_data_provider", party_type == "DATA_PROVIDER")
+                    ),
+                    "include_in_md_dshap": bool(
+                        party.get("include_in_md_dshap", party_type == "DATA_PROVIDER")
+                    ),
+                }
+            )
+        return normalized
+
+    def _normalize_uploaded_resources(self, resources, party_name_by_id):
+        normalized = []
+        for resource in resources:
+            if not isinstance(resource, dict):
+                normalized.append({})
+                continue
+            provider_party_name = (
+                resource.get("provider_party_name")
+                or party_name_by_id.get(str(resource.get("party_id")))
+            )
+            normalized.append(
+                {
+                    **resource,
+                    "resource_name": resource.get("resource_name"),
+                    "modality": resource.get("modality", "TABULAR"),
+                    "field_count": resource.get("field_count", 0),
+                    "sample_count": resource.get("sample_count", 0),
+                    "provider_party_name": provider_party_name,
+                }
+            )
+        return normalized
+
+    def _upload_diagnostics(self, filename, content):
+        return {
+            "filename": filename,
+            "content_length": len(content),
+            "sha256": hashlib.sha256(content).hexdigest(),
+            "json_keys": [],
+            "field_name": "file",
+        }
+
+    def _print_upload_diagnostics(self, diagnostics):
+        print(
+            "DVAS upload received "
+            f"filename={diagnostics['filename']} "
+            f"content_length={diagnostics['content_length']} "
+            f"sha256={diagnostics['sha256']} "
+            f"json_keys={diagnostics['json_keys']}"
+        )
+
+    def _reject_upload(self, payload, field_errors, upload_diagnostics, code):
+        package = self._create_invalid_package(
+            payload,
+            field_errors,
+            code=code,
+            upload_diagnostics=upload_diagnostics,
+        )
+        validation_result = self.repository.get_validation_result(package["package_id"])
+        raise ApiError(
+            validation_result["code"],
+            validation_result["message"],
+            field_errors=validation_result["field_errors"],
+            audit_recorded=True,
+            detail_json=validation_result["detail_json"],
+        )
+
+    def _create_invalid_package(
+        self,
+        payload,
+        field_errors,
+        code="DVAS_REQUIRED_FIELD_MISSING",
+        upload_diagnostics=None,
+    ):
         now = utc_now()
+        operator_id = current_operator_id(self.repository)
         package_id = self.repository.next_id("package")
+        validation_result_id = self.repository.next_id("validation")
+        upload_diagnostics = upload_diagnostics or {}
+        first_error = field_errors[0] if field_errors else {}
         package = {
             "package_id": package_id,
             "project_id": self.repository.get_project()["project_id"],
             "package_name": payload.get("package_name") or "未命名上传数据包",
             "source_type": "UPLOAD",
-            "file_name": payload.get("file_name", "uploaded.json"),
+            "file_name": payload.get("file_name") or upload_diagnostics.get("filename") or "uploaded.json",
+            "file_size": int(payload.get("file_size", upload_diagnostics.get("content_length", 0)) or 0),
             "status": "INVALID",
             "input_snapshot_id": None,
-            "checksum": stable_checksum(payload),
-            "created_by": LOCAL_OPERATOR,
+            "validation_result_id": validation_result_id,
+            "checksum": upload_diagnostics.get("sha256") or stable_checksum(payload),
+            "created_by": operator_id,
             "created_at": now,
             "simulation_disclaimer": SIMULATION_DISCLAIMER,
         }
+        detail_json = {
+            "field_errors": field_errors,
+            "upload_diagnostics": upload_diagnostics,
+        }
         validation_result = {
-            "validation_result_id": self.repository.next_id("validation"),
+            "validation_result_id": validation_result_id,
             "package_id": package_id,
             "project_id": package["project_id"],
             "status": "INVALID",
             "is_valid": False,
-            "code": "DVAS_REQUIRED_FIELD_MISSING",
+            "code": code,
             "message": "上传 JSON 校验失败",
+            "error_code": code,
+            "error_field": first_error.get("field"),
+            "error_message": first_error.get("reason") or "上传 JSON 校验失败",
             "field_errors": field_errors,
-            "detail_json": {"field_errors": field_errors},
+            "detail_json": detail_json,
             "created_at": now,
         }
         self.repository.put_data_package(package)
@@ -1413,10 +3021,14 @@ class DataIngestionService:
         demo_case_id=None,
         scenario_name=None,
         file_name=None,
+        file_size=None,
+        upload_diagnostics=None,
         audit_context=None,
     ):
         now = utc_now()
+        operator_id = current_operator_id(self.repository)
         project = self.repository.get_project()
+        upload_diagnostics = upload_diagnostics or {}
         snapshot_id = self.repository.next_id("snapshot")
         snapshot = {
             "snapshot_id": snapshot_id,
@@ -1424,10 +3036,11 @@ class DataIngestionService:
             "snapshot_type": "INPUT",
             "content_json": copy.deepcopy(raw_payload),
             "checksum": stable_checksum(raw_payload),
-            "created_by": LOCAL_OPERATOR,
+            "created_by": operator_id,
             "created_at": now,
         }
         package_id = self.repository.next_id("package")
+        validation_result_id = self.repository.next_id("validation")
         package = {
             "package_id": package_id,
             "project_id": project["project_id"],
@@ -1435,43 +3048,61 @@ class DataIngestionService:
             "source_type": source_type,
             "demo_case_id": demo_case_id,
             "file_name": file_name,
+            "file_size": int(file_size or upload_diagnostics.get("content_length", 0) or 0),
             "status": "VALIDATED",
             "input_snapshot_id": snapshot_id,
-            "checksum": snapshot["checksum"],
-            "created_by": LOCAL_OPERATOR,
+            "validation_result_id": validation_result_id,
+            "checksum": upload_diagnostics.get("sha256") or snapshot["checksum"],
+            "created_by": operator_id,
             "created_at": now,
             "simulation_disclaimer": SIMULATION_DISCLAIMER,
         }
         validation_result = {
-            "validation_result_id": self.repository.next_id("validation"),
+            "validation_result_id": validation_result_id,
             "package_id": package_id,
             "project_id": project["project_id"],
             "status": "VALIDATED",
             "is_valid": True,
             "code": "OK",
             "message": "数据包校验通过",
+            "error_code": None,
+            "error_field": None,
+            "error_message": None,
             "field_errors": [],
-            "detail_json": {"resource_count": len(resources), "party_count": len(parties)},
+            "detail_json": {
+                "resource_count": len(resources),
+                "party_count": len(parties),
+                "upload_diagnostics": upload_diagnostics,
+            },
             "created_at": now,
         }
 
         self.repository.put_input_snapshot(snapshot)
         self.repository.put_data_package(package)
         self.repository.put_validation_result(validation_result)
-        created_parties = self._upsert_parties(parties, project["project_id"], now)
+        created_parties = self._upsert_parties(parties, project["project_id"], now, operator_id)
         party_by_name = {party["party_name"]: party for party in created_parties}
-        created_resources = self._create_resources(resources, package_id, project["project_id"], party_by_name, now)
+        created_resources = self._create_resources(
+            resources,
+            package_id,
+            project["project_id"],
+            party_by_name,
+            now,
+            operator_id,
+        )
         updated_project = self.repository.update_project(
             project_status=ProjectStatus.INGESTED.value,
             current_package_id=package_id,
             current_input_snapshot_id=snapshot_id,
             scenario_name=scenario_name or project["scenario_name"],
+            operator_id=operator_id,
+            created_by=operator_id,
         )
         audit_context = audit_context or {"module_code": "DATA", "menu_code": "NAV_DATA_PACKAGE"}
         self._audit(
             module_code=audit_context["module_code"],
             menu_code=audit_context["menu_code"],
-            operation_type="INITIALIZE_DEMO" if source_type == "DEMO" else "UPLOAD_JSON",
+            operation_type=self._ingestion_operation_type(source_type),
             object_type="data_package",
             object_id=package_id,
             status="SUCCESS",
@@ -1487,26 +3118,40 @@ class DataIngestionService:
             "validation_result": validation_result,
             "resources": created_resources,
             "parties": created_parties,
+            "upload_diagnostics": upload_diagnostics,
             "simulation_disclaimer": SIMULATION_DISCLAIMER,
         }
 
-    def _upsert_parties(self, parties, project_id, now):
+    def _ingestion_operation_type(self, source_type):
+        if source_type == "DEMO":
+            return "INITIALIZE_DEMO"
+        if source_type == "CSV_UPLOAD":
+            return "IMPORT_CSV_TEMPLATE"
+        if source_type == "XLSX_UPLOAD":
+            return "IMPORT_XLSX_TEMPLATE"
+        return "UPLOAD_JSON"
+
+    def _upsert_parties(self, parties, project_id, now, operator_id):
         existing_by_name = {party["party_name"]: party for party in self.repository.list_parties()}
         created = []
         for party_payload in parties:
             party = existing_by_name.get(party_payload["party_name"])
             if not party:
                 party_type = party_payload.get("party_type", "DATA_PROVIDER")
+                is_data_provider = bool(
+                    party_payload.get("is_data_provider", party_type == "DATA_PROVIDER")
+                )
                 party = {
                     "party_id": self.repository.next_id("party"),
                     "project_id": project_id,
                     "party_name": party_payload["party_name"],
                     "party_type": party_type,
-                    "is_data_provider": party_type == "DATA_PROVIDER",
+                    "is_data_provider": is_data_provider,
                     "include_in_md_dshap": bool(
-                        party_payload.get("include_in_md_dshap", party_type == "DATA_PROVIDER")
+                        party_payload.get("include_in_md_dshap", is_data_provider)
                     ),
                     "status": "ENABLED",
+                    "created_by": operator_id,
                     "created_at": now,
                     "updated_at": now,
                 }
@@ -1514,7 +3159,7 @@ class DataIngestionService:
             created.append(party)
         return created
 
-    def _create_resources(self, resources, package_id, project_id, party_by_name, now):
+    def _create_resources(self, resources, package_id, project_id, party_by_name, now, operator_id):
         created = []
         for resource_payload in resources:
             party = party_by_name.get(resource_payload["provider_party_name"])
@@ -1532,6 +3177,7 @@ class DataIngestionService:
                 "party_id": party["party_id"] if party else None,
                 "provider_party_name": resource_payload["provider_party_name"],
                 "status": "ACTIVE",
+                "created_by": operator_id,
                 "created_at": now,
                 "updated_at": now,
             }
@@ -1836,7 +3482,7 @@ class QualityAssessmentService:
             "snapshot_type": "RESULT",
             "content_json": snapshot_content,
             "checksum": stable_checksum(snapshot_content),
-            "created_by": LOCAL_OPERATOR,
+            "created_by": current_operator_id(self.repository),
             "created_at": now,
         }
         assessment = {
@@ -1856,7 +3502,7 @@ class QualityAssessmentService:
             "input_snapshot_id": package.get("input_snapshot_id"),
             "parameter_snapshot_id": None,
             "output_snapshot_id": snapshot_id,
-            "created_by": LOCAL_OPERATOR,
+            "created_by": current_operator_id(self.repository),
             "created_at": now,
             "simulation_disclaimer": SIMULATION_DISCLAIMER,
         }
@@ -2430,10 +4076,11 @@ class ShuyuanMeteringService:
         self.repository = repository
 
     def run(self, payload):
+        payload = payload or {}
         ProjectStateMachine(self.repository).require_metering_allowed()
         quality = self._latest_quality()
         package = self.repository.get_data_package(quality["package_id"])
-        resources = self.repository.list_data_resources(quality["package_id"])
+        resources = self._meterable_resources(quality["package_id"])
         if not resources:
             raise ApiError(
                 "DVAS_PRECONDITION_NOT_MET",
@@ -2443,7 +4090,10 @@ class ShuyuanMeteringService:
 
         now = utc_now()
         version_no = len(self.repository.list_shuyuan_meterings()) + 1
-        call_count = int(payload.get("call_count", sum(item.get("sample_count", 0) for item in resources)))
+        call_counts = self._resource_call_counts(resources, payload)
+        call_count = sum(call_counts.values())
+        package_quality_factor = self._number(payload, "quality_coefficient", quality["quality_factor"])
+        resource_quality_factors = self._resource_quality_factors(quality)
         parameters = {
             "base_price": self._number(
                 payload,
@@ -2455,7 +4105,10 @@ class ShuyuanMeteringService:
                 "scenario_coefficient",
                 parameter_current_value(self.repository, "DEFAULT_SCENARIO_COEFFICIENT", 1.1),
             ),
-            "quality_coefficient": self._number(payload, "quality_coefficient", quality["quality_factor"]),
+            "quality_coefficient": package_quality_factor,
+            "package_quality_coefficient": package_quality_factor,
+            "resource_quality_strategy": "RESOURCE_FIRST_PACKAGE_FALLBACK",
+            "resource_quality_factors": resource_quality_factors,
             "technology_coefficient": self._number(
                 payload,
                 "technology_coefficient",
@@ -2472,10 +4125,10 @@ class ShuyuanMeteringService:
                 parameter_current_value(self.repository, "DEFAULT_DEVELOPMENT_COEFFICIENT", 0.98),
             ),
             "call_count": call_count,
+            "call_counts": call_counts,
         }
-        raw_total = self._metering_amount(parameters, call_count)
-        total_amount = round(raw_total, 2)
-        details = self._details(resources, parameters, total_amount)
+        details = self._details(resources, parameters, call_counts)
+        total_amount = round(sum(item["metering_amount"] for item in details), 2)
         parameter_snapshot_id = self.repository.next_id("snapshot")
         result_snapshot_id = self.repository.next_id("snapshot")
         parameter_snapshot = self._snapshot(
@@ -2512,8 +4165,8 @@ class ShuyuanMeteringService:
             "input_snapshot_id": package.get("input_snapshot_id") if package else None,
             "parameter_snapshot_id": parameter_snapshot_id,
             "output_snapshot_id": result_snapshot_id,
-            "algorithm_version": "DVAS_SHUYUAN_METERING_SKELETON_V0",
-            "created_by": LOCAL_OPERATOR,
+            "algorithm_version": "DVAS_SHUYUAN_METERING_RESOURCE_QUALITY_V1",
+            "created_by": current_operator_id(self.repository),
             "created_at": now,
             "simulation_disclaimer": SIMULATION_DISCLAIMER,
         }
@@ -2585,29 +4238,33 @@ class ShuyuanMeteringService:
             )
         return round(value, 6)
 
-    def _metering_amount(self, parameters, call_count):
+    def _metering_amount(self, parameters, call_count, quality_coefficient):
         return (
             parameters["base_price"]
             * parameters["scenario_coefficient"]
-            * parameters["quality_coefficient"]
+            * quality_coefficient
             * parameters["technology_coefficient"]
             * parameters["expert_coefficient"]
             * parameters["development_coefficient"]
             * call_count
         )
 
-    def _details(self, resources, parameters, total_amount):
-        total_units = sum(item.get("sample_count", 0) for item in resources) or 1
+    def _details(self, resources, parameters, call_counts):
         details = []
-        running_amount = 0.0
-        for index, resource in enumerate(resources):
-            valid_units = int(resource.get("sample_count", 0))
-            if index == len(resources) - 1:
-                amount = round(total_amount - running_amount, 2)
-            else:
-                amount = round(total_amount * valid_units / total_units, 2)
-                running_amount = round(running_amount + amount, 2)
+        resource_quality_factors = parameters["resource_quality_factors"]
+        package_quality_coefficient = parameters["package_quality_coefficient"]
+        for resource in resources:
+            valid_units = int(call_counts.get(resource["resource_id"], resource.get("sample_count", 0) or 0))
+            quality_coefficient = float(
+                resource_quality_factors.get(resource["resource_id"], package_quality_coefficient)
+            )
+            amount = round(self._metering_amount(parameters, valid_units, quality_coefficient), 2)
             party = self.repository.get_party(resource.get("party_id")) if resource.get("party_id") else None
+            quality_factor_source = (
+                "RESOURCE_QUALITY_ASSESSMENT"
+                if resource["resource_id"] in resource_quality_factors
+                else "PACKAGE_QUALITY_FALLBACK"
+            )
             details.append(
                 {
                     "detail_id": self.repository.next_id("metering_detail"),
@@ -2618,16 +4275,108 @@ class ShuyuanMeteringService:
                     "valid_units": valid_units,
                     "base_shuyuan_price": parameters["base_price"],
                     "scenario_coefficient": parameters["scenario_coefficient"],
-                    "quality_coefficient": parameters["quality_coefficient"],
+                    "quality_coefficient": round(quality_coefficient, 6),
+                    "resource_quality_factor": round(quality_coefficient, 6),
+                    "package_quality_coefficient": package_quality_coefficient,
+                    "quality_factor_source": quality_factor_source,
                     "technology_coefficient": parameters["technology_coefficient"],
                     "expert_coefficient": parameters["expert_coefficient"],
                     "development_coefficient": parameters["development_coefficient"],
                     "call_count": valid_units,
                     "metering_amount": amount,
-                    "evidence": "BE-05 数元计量骨架按资源有效样本数分摊总数元值。",
+                    "evidence": "数元计量按资源调用量和资源级质量因子计算；缺少资源级质量结果时回退包级质量因子。",
                 }
             )
         return details
+
+    def _meterable_resources(self, package_id):
+        return [
+            resource
+            for resource in self.repository.list_data_resources(package_id)
+            if resource.get("status") == "ACTIVE"
+            and resource.get("include_in_calculation", True) is not False
+        ]
+
+    def _resource_quality_factors(self, quality):
+        resource_results = self.repository.list_quality_resource_assessments(
+            assessment_id=quality["assessment_id"],
+            package_id=quality["package_id"],
+            project_id=quality["project_id"],
+        )
+        return {
+            item["resource_id"]: round(float(item["quality_factor"]), 6)
+            for item in resource_results
+            if item.get("resource_id") and item.get("quality_factor") is not None
+        }
+
+    def _resource_call_counts(self, resources, payload):
+        raw_counts = payload.get("call_counts") if isinstance(payload, dict) else None
+        if raw_counts is None:
+            raw_counts = self._latest_call_count_draft()
+        if isinstance(raw_counts, dict) and raw_counts:
+            return {
+                resource["resource_id"]: self._non_negative_int(
+                    raw_counts.get(resource["resource_id"], resource.get("sample_count", 0)),
+                    f"call_counts.{resource['resource_id']}",
+                )
+                for resource in resources
+            }
+        if "call_count" in payload:
+            return self._distribute_call_count(resources, payload["call_count"])
+        return {
+            resource["resource_id"]: self._non_negative_int(
+                resource.get("sample_count", 0),
+                f"resources.{resource['resource_id']}.sample_count",
+            )
+            for resource in resources
+        }
+
+    def _latest_call_count_draft(self):
+        drafts = self.repository.list_business_drafts("SHUYUAN_CALL_COUNTS")
+        if not drafts:
+            return None
+        content = drafts[-1].get("content_json")
+        return content if isinstance(content, dict) else None
+
+    def _distribute_call_count(self, resources, raw_total):
+        total_call_count = self._non_negative_int(raw_total, "call_count")
+        if not resources:
+            return {}
+        total_units = sum(int(resource.get("sample_count", 0) or 0) for resource in resources)
+        if total_units <= 0:
+            base = total_call_count // len(resources)
+            remainder = total_call_count - base * len(resources)
+            return {
+                resource["resource_id"]: base + (1 if index < remainder else 0)
+                for index, resource in enumerate(resources)
+            }
+        distributed = {}
+        running = 0
+        for index, resource in enumerate(resources):
+            if index == len(resources) - 1:
+                count = total_call_count - running
+            else:
+                count = round(total_call_count * int(resource.get("sample_count", 0) or 0) / total_units)
+                running += count
+            distributed[resource["resource_id"]] = max(0, int(count))
+        return distributed
+
+    def _non_negative_int(self, raw_value, field):
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "数元调用量不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须是非负整数"}],
+            ) from exc
+        if value < 0:
+            raise ApiError(
+                "DVAS_FACTOR_INVALID",
+                "数元调用量不合法",
+                field_errors=[{"field": field, "reason": f"{field} 必须大于等于 0"}],
+            )
+        return value
 
     def _snapshot(self, snapshot_id, snapshot_type, content, now):
         return {
@@ -2636,7 +4385,7 @@ class ShuyuanMeteringService:
             "snapshot_type": snapshot_type,
             "content_json": copy.deepcopy(content),
             "checksum": stable_checksum(content),
-            "created_by": LOCAL_OPERATOR,
+            "created_by": current_operator_id(self.repository),
             "created_at": now,
         }
 
@@ -2738,7 +4487,7 @@ class ContributionService:
                     "contribution_score": item["contribution_score"],
                     "normalized_contribution": round(item["contribution_score"] / total_score, 6),
                     "formula_text": "valid_units × usage_weight × coverage_weight × scarcity_weight",
-                    "created_by": LOCAL_OPERATOR,
+                    "created_by": current_operator_id(self.repository),
                     "created_at": now,
                     "simulation_disclaimer": SIMULATION_DISCLAIMER,
                 }
@@ -2769,7 +4518,7 @@ class ContributionService:
             "snapshot_type": snapshot_type,
             "content_json": copy.deepcopy(content),
             "checksum": stable_checksum(content),
-            "created_by": LOCAL_OPERATOR,
+            "created_by": current_operator_id(self.repository),
             "created_at": now,
         }
 
@@ -2782,10 +4531,15 @@ class UtilityService:
         ProjectStateMachine(self.repository).require_utility_allowed()
         contribution_records = self._latest_contribution_records()
         quality = self._latest_quality()
+        party_quality_factors = self._party_quality_factors(quality)
         now = utc_now()
         version_no = len(self.repository.list_utility_records()) + 1
+        package_quality_factor = self._number(payload, "quality_factor", quality["quality_factor"])
         parameters = {
-            "quality_factor": self._number(payload, "quality_factor", quality["quality_factor"]),
+            "quality_factor": package_quality_factor,
+            "package_quality_factor": package_quality_factor,
+            "quality_factor_strategy": "PARTY_RESOURCE_WEIGHTED_AVERAGE_FALLBACK_PACKAGE",
+            "party_quality_factors": party_quality_factors,
             "usage_factor": self._number(payload, "usage_factor", 1.0),
             "scenario_factor": self._number(payload, "scenario_factor", 1.0),
         }
@@ -2807,8 +4561,8 @@ class UtilityService:
             "parameter_snapshot_json": parameters,
             "parameter_snapshot_id": parameter_snapshot_id,
             "output_snapshot_id": result_snapshot_id,
-            "algorithm_version": "DVAS_UTILITY_SKELETON_V0",
-            "created_by": LOCAL_OPERATOR,
+            "algorithm_version": "DVAS_UTILITY_PARTY_QUALITY_V1",
+            "created_by": current_operator_id(self.repository),
             "created_at": now,
             "simulation_disclaimer": SIMULATION_DISCLAIMER,
         }
@@ -2877,9 +4631,21 @@ class UtilityService:
     def _trace(self, utility_id, contribution_records, parameters, now):
         trace = []
         for record in contribution_records:
+            party_id = record["party_id"]
+            quality_factor = float(
+                parameters["party_quality_factors"].get(
+                    party_id,
+                    parameters["package_quality_factor"],
+                )
+            )
+            quality_factor_source = (
+                "SHUYUAN_RESOURCE_WEIGHTED_AVERAGE"
+                if party_id in parameters["party_quality_factors"]
+                else "PACKAGE_QUALITY_FALLBACK"
+            )
             utility_value = round(
                 record["normalized_contribution"]
-                * parameters["quality_factor"]
+                * quality_factor
                 * parameters["usage_factor"]
                 * parameters["scenario_factor"],
                 6,
@@ -2889,10 +4655,12 @@ class UtilityService:
                     "trace_id": self.repository.next_id("utility_trace"),
                     "utility_id": utility_id,
                     "contribution_id": record["contribution_id"],
-                    "party_id": record["party_id"],
+                    "party_id": party_id,
                     "party_name": record["party_name"],
                     "normalized_contribution": record["normalized_contribution"],
-                    "quality_factor": parameters["quality_factor"],
+                    "quality_factor": round(quality_factor, 6),
+                    "package_quality_factor": parameters["package_quality_factor"],
+                    "quality_factor_source": quality_factor_source,
                     "usage_factor": parameters["usage_factor"],
                     "scenario_factor": parameters["scenario_factor"],
                     "utility_value": utility_value,
@@ -2901,6 +4669,46 @@ class UtilityService:
                 }
             )
         return trace
+
+    def _party_quality_factors(self, quality):
+        meterings = self.repository.list_shuyuan_meterings()
+        if not meterings:
+            return {}
+        latest_metering = meterings[-1]
+        if latest_metering.get("assessment_id") != quality["assessment_id"]:
+            return {}
+        details = self.repository.get_shuyuan_metering_details(latest_metering["metering_id"])
+        grouped = {}
+        for detail in details:
+            party_id = detail.get("party_id")
+            if not party_id:
+                continue
+            quality_factor = detail.get("resource_quality_factor", detail.get("quality_coefficient"))
+            if quality_factor is None:
+                continue
+            weight = (
+                detail.get("valid_units")
+                or detail.get("call_count")
+                or detail.get("metering_amount")
+                or 1
+            )
+            try:
+                numeric_weight = float(weight)
+                numeric_quality_factor = float(quality_factor)
+            except (TypeError, ValueError):
+                continue
+            if numeric_weight < 0:
+                continue
+            if numeric_weight == 0:
+                numeric_weight = 1.0
+            bucket = grouped.setdefault(party_id, {"weighted": 0.0, "weight": 0.0})
+            bucket["weighted"] += numeric_quality_factor * numeric_weight
+            bucket["weight"] += numeric_weight
+        return {
+            party_id: round(bucket["weighted"] / bucket["weight"], 6)
+            for party_id, bucket in grouped.items()
+            if bucket["weight"] > 0
+        }
 
     def _number(self, payload, field, default):
         try:
@@ -2926,7 +4734,7 @@ class UtilityService:
             "snapshot_type": snapshot_type,
             "content_json": copy.deepcopy(content),
             "checksum": stable_checksum(content),
-            "created_by": LOCAL_OPERATOR,
+            "created_by": current_operator_id(self.repository),
             "created_at": now,
         }
 
@@ -2946,9 +4754,10 @@ class MdDshapService:
     def run(self, payload):
         project = self.repository.get_project()
         self._ensure_project_ready(project)
+        operator_id = current_operator_id(self.repository)
         utility = self._latest_utility()
         utility_traces = self.repository.get_utility_traces(utility["utility_id"])
-        participants = self._participants()
+        participants, excluded_parties = self._participant_pool_rows()
         if not participants:
             raise ApiError(
                 "DVAS_PRECONDITION_NOT_MET",
@@ -3006,6 +4815,12 @@ class MdDshapService:
             "created_at": now,
             "completed_at": now,
             "failure_reason": None,
+            "requested_by": operator_id,
+            "created_by": operator_id,
+            "algorithm_party_count": len(participants),
+            "contract_party_count": self._contract_party_count(excluded_parties),
+            "excluded_party_count": len(excluded_parties),
+            "excluded_parties": excluded_parties,
             "simulation_disclaimer": SIMULATION_DISCLAIMER,
         }
         results = self._results(task_id, participants, weights, baseline_weights, approximation_note, now)
@@ -3069,6 +4884,10 @@ class MdDshapService:
             "project_status": updated_project["project_status"],
             "task": task,
             "result_count": len(results),
+            "algorithm_party_count": len(participants),
+            "contract_party_count": self._contract_party_count(excluded_parties),
+            "excluded_party_count": len(excluded_parties),
+            "excluded_parties": excluded_parties,
             "approximation_note": approximation_note,
             "results": results,
         }
@@ -3078,6 +4897,16 @@ class MdDshapService:
         if not task:
             raise ApiError("DVAS_NOT_FOUND", "MD-DShap 任务不存在", status=404)
         return task
+
+    def list_tasks(self, payload=None):
+        payload = payload or {}
+        project_id = payload.get("project_id") or self.repository.get_project()["project_id"]
+        items = [
+            task
+            for task in self.repository.list_md_dshap_tasks()
+            if not project_id or task.get("project_id") == project_id
+        ]
+        return table_page(items)
 
     def results(self, task_id):
         self.task(task_id)
@@ -3101,27 +4930,43 @@ class MdDshapService:
         return utilities[-1]
 
     def _participants(self):
-        return [
-            party
-            for party in self.repository.list_parties()
-            if self._is_data_provider_party(party)
-            and self._is_active_party(party)
-            and party.get("include_in_md_dshap")
-        ]
+        return self._participant_pool_rows()[0]
 
     def participant_pool(self):
+        included, excluded = self._participant_pool_rows()
+        return {
+            "project_id": self.repository.get_project()["project_id"],
+            "project_status": self.repository.get_project()["project_status"],
+            "items": included,
+            "excluded_items": excluded,
+            "excluded_parties": excluded,
+            "total": len(included),
+            "algorithm_party_count": len(included),
+            "contract_party_count": self._contract_party_count(excluded),
+            "excluded_party_count": len(excluded),
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+        }
+
+    def _participant_pool_rows(self):
         included = []
         excluded = []
+        current_resource_party_ids = self._current_resource_party_ids()
         for party in self.repository.list_parties():
             is_data_provider = self._is_data_provider_party(party)
             is_active = self._is_active_party(party)
             include_in_md_dshap = bool(party.get("include_in_md_dshap"))
+            linked_to_current_resources = party.get("party_id") in current_resource_party_ids
             row = {
                 **party,
                 "is_data_provider": is_data_provider,
                 "active_status": "ACTIVE" if is_active else "INACTIVE",
             }
-            if is_data_provider and is_active and include_in_md_dshap:
+            if (
+                is_data_provider
+                and is_active
+                and include_in_md_dshap
+                and linked_to_current_resources
+            ):
                 included.append(row)
                 continue
             reasons = []
@@ -3131,15 +4976,29 @@ class MdDshapService:
                 reasons.append("非数据源主体默认不进入 MD-DShap 权重池")
             if not include_in_md_dshap:
                 reasons.append("include_in_md_dshap=false")
+            if is_data_provider and not linked_to_current_resources:
+                reasons.append("未关联当前数据包有效数据资源")
             excluded.append({**row, "excluded_reason": "；".join(reasons)})
+        return included, excluded
+
+    def _current_resource_party_ids(self):
+        project = self.repository.get_project()
+        package_id = project.get("current_package_id")
+        resources = (
+            self.repository.list_data_resources(package_id)
+            if package_id
+            else self.repository.list_data_resources()
+        )
         return {
-            "project_id": self.repository.get_project()["project_id"],
-            "project_status": self.repository.get_project()["project_status"],
-            "items": included,
-            "excluded_items": excluded,
-            "total": len(included),
-            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+            resource.get("party_id")
+            for resource in resources
+            if resource.get("party_id")
+            and resource.get("status") == "ACTIVE"
+            and resource.get("include_in_calculation", True) is not False
         }
+
+    def _contract_party_count(self, excluded_parties):
+        return sum(1 for party in excluded_parties if not party.get("is_data_provider"))
 
     def _is_data_provider_party(self, party):
         return bool(party.get("is_data_provider", party.get("party_type") == "DATA_PROVIDER"))
@@ -3272,7 +5131,7 @@ class MdDshapService:
             "snapshot_type": snapshot_type,
             "content_json": copy.deepcopy(content),
             "checksum": stable_checksum(content),
-            "created_by": LOCAL_OPERATOR,
+            "created_by": current_operator_id(self.repository),
             "created_at": now,
         }
 
@@ -3336,7 +5195,22 @@ class ContractConstraintService:
         self.repository = repository
 
     def list(self):
-        return table_page(self.repository.list_contract_constraints())
+        items = self.repository.list_contract_constraints()
+        page = table_page(items)
+        active_items = [item for item in items if item["status"] == "ACTIVE"]
+        priority_items = [
+            item
+            for item in active_items
+            if item["constraint_type"] == ContractConstraintType.PRIORITY_ALLOCATION.value
+        ]
+        page["summary"] = {
+            "constraint_count": len(items),
+            "active_constraint_count": len(active_items),
+            "priority_items_count": len(priority_items),
+            "ordinary_constraint_count": len(active_items) - len(priority_items),
+        }
+        page["allocation_priority_items"] = self.repository.list_allocation_priority_items()
+        return page
 
     def create(self, payload):
         now = utc_now()
@@ -3347,6 +5221,7 @@ class ContractConstraintService:
             now=now,
         )
         self.repository.put_contract_constraint(constraint)
+        self._sync_priority_constraint_item(constraint)
         write_audit(
             self.repository,
             module_code="CONS",
@@ -3373,6 +5248,7 @@ class ContractConstraintService:
             created_at=existing["created_at"],
         )
         self.repository.put_contract_constraint(updated)
+        self._sync_priority_constraint_item(updated)
         write_audit(
             self.repository,
             module_code="CONS",
@@ -3405,6 +5281,7 @@ class ContractConstraintService:
             "updated_at": utc_now(),
         }
         self.repository.put_contract_constraint(updated)
+        self._sync_priority_constraint_item(updated)
         write_audit(
             self.repository,
             module_code="CONS",
@@ -3483,18 +5360,662 @@ class ContractConstraintService:
             )
         return round(value, 2)
 
+    def _sync_priority_constraint_item(self, constraint):
+        if constraint["constraint_type"] != ContractConstraintType.PRIORITY_ALLOCATION.value:
+            self.repository.put_allocation_priority_items(
+                [],
+                source_constraint_id=constraint["constraint_id"],
+            )
+            return
+        now = utc_now()
+        item = {
+            "item_id": f"allocation_priority_item_{constraint['constraint_id']}",
+            "allocation_id": None,
+            "project_id": constraint["project_id"],
+            "party_id": constraint["party_id"],
+            "value_type": constraint["value_type"],
+            "priority_amount": None
+            if constraint["value_type"] == "RATIO"
+            else constraint["constraint_value"],
+            "priority_ratio": constraint["constraint_value"]
+            if constraint["value_type"] == "RATIO"
+            else None,
+            "cap_amount": None,
+            "basis_text": constraint.get("description") or constraint["constraint_name"],
+            "priority_order": constraint["priority"],
+            "status": "ACTIVE" if constraint["status"] == "ACTIVE" else "DISABLED",
+            "source_draft_id": None,
+            "source_constraint_id": constraint["constraint_id"],
+            "created_at": constraint["created_at"],
+            "updated_at": now,
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+        }
+        self.repository.put_allocation_priority_items(
+            [item],
+            source_constraint_id=constraint["constraint_id"],
+        )
 
-class AllocationService:
-    PRIORITY_CAP_TYPES = {"CAP_AMOUNT", "MAX_AMOUNT"}
+
+class ContractRatioService:
+    RATIO_QUANT = Decimal("0.000001")
+    AMOUNT_QUANT = Decimal("0.01")
 
     def __init__(self, repository):
         self.repository = repository
 
+    def get(self, project_id):
+        project = self._project(project_id)
+        plan = self.repository.latest_contract_ratio_plan(project["project_id"])
+        if not plan:
+            total_revenue, currency = self._current_total_revenue()
+            blocking_reasons = self._blocking_reasons(None)
+            return {
+                "configured": False,
+                "plan_id": "",
+                "project_id": project["project_id"],
+                "project_name": project["project_name"],
+                "project_status": project["project_status"],
+                "status": "EMPTY",
+                "total_revenue": self._format_amount(total_revenue) if total_revenue is not None else "",
+                "currency": currency,
+                "ratio_sum": "0.000000",
+                "data_provider_pool_ratio": "",
+                "data_provider_revenue_pool": "",
+                "items": [],
+                "can_simulate": False,
+                "blocking_reasons": blocking_reasons,
+                "simulation_disclaimer": SIMULATION_DISCLAIMER,
+            }
+        items = self.repository.list_contract_ratio_items(plan["plan_id"])
+        summary = self.summary(project["project_id"])
+        return {
+            "configured": plan.get("status") in {"SAVED", "LOCKED"},
+            "plan_id": plan["plan_id"],
+            "project_id": project["project_id"],
+            "project_name": project["project_name"],
+            "project_status": project["project_status"],
+            "status": plan["status"],
+            "total_revenue": plan["total_revenue"],
+            "currency": plan.get("currency", "CNY"),
+            "ratio_sum": plan["ratio_sum"],
+            "data_provider_pool_ratio": plan["data_provider_pool_ratio"],
+            "data_provider_revenue_pool": plan["data_provider_revenue_pool"],
+            "items": items,
+            "can_simulate": summary["can_simulate"],
+            "blocking_reasons": summary["blocking_reasons"],
+            "version_no": plan.get("version_no", 1),
+            "created_by": plan.get("created_by"),
+            "created_at": plan.get("created_at"),
+            "updated_at": plan.get("updated_at"),
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+        }
+
+    def save(self, project_id, payload):
+        project = self._project(project_id)
+        payload = payload or {}
+        total_revenue = self._decimal(payload.get("total_revenue"), "total_revenue", scale="amount", required=True)
+        if total_revenue < 0:
+            raise self._invalid("total_revenue", "total_revenue 必须大于等于 0")
+        pool_ratio = self._decimal(
+            payload.get("data_provider_pool_ratio"),
+            "data_provider_pool_ratio",
+            scale="ratio",
+            required=True,
+        )
+        if pool_ratio <= 0 or pool_ratio > Decimal("1"):
+            raise self._invalid("data_provider_pool_ratio", "data_provider_pool_ratio 必须大于 0 且小于等于 1")
+        items_payload = payload.get("items", [])
+        if not isinstance(items_payload, list):
+            raise self._invalid("items", "items 必须为数组")
+
+        non_data_items = []
+        seen_party_ids = set()
+        for index, item in enumerate(items_payload):
+            if not isinstance(item, dict):
+                raise self._invalid(f"items[{index}]", "合同主体比例项必须是对象")
+            bucket_type = item.get("bucket_type", "NON_DATA_PARTY")
+            if bucket_type != "NON_DATA_PARTY":
+                raise self._invalid(f"items[{index}].bucket_type", "前端只允许提交 NON_DATA_PARTY 比例项")
+            party_id = item.get("party_id")
+            party = self.repository.get_party(party_id) if party_id else None
+            if not party:
+                raise ApiError(
+                    "DVAS_CONTRACT_RATIO_INVALID",
+                    "合同比例方案不合法",
+                    field_errors=[{"field": f"items[{index}].party_id", "reason": "NON_DATA_PARTY 的 party_id 必须存在"}],
+                )
+            if self._is_data_provider_party(party):
+                raise ApiError(
+                    "DVAS_CONTRACT_RATIO_INVALID",
+                    "合同比例方案不合法",
+                    field_errors=[{"field": f"items[{index}].party_id", "reason": "NON_DATA_PARTY 的 party_id 不能是数据源主体"}],
+                )
+            if party_id in seen_party_ids:
+                raise ApiError(
+                    "DVAS_CONTRACT_RATIO_INVALID",
+                    "合同比例方案不合法",
+                    field_errors=[{"field": f"items[{index}].party_id", "reason": "同一非数据主体不能重复配置"}],
+                )
+            seen_party_ids.add(party_id)
+            ratio = self._decimal(item.get("ratio"), f"items[{index}].ratio", scale="ratio", required=True)
+            if ratio < 0:
+                raise self._invalid(f"items[{index}].ratio", "ratio 必须大于等于 0")
+            amount = self._amount(total_revenue * ratio)
+            non_data_items.append(
+                {
+                    "party": party,
+                    "ratio": ratio,
+                    "calculated_amount": amount,
+                    "basis_text": item.get("basis_text") or "合同约定",
+                }
+            )
+
+        ratio_sum = self._ratio(pool_ratio + sum((item["ratio"] for item in non_data_items), Decimal("0")))
+        if ratio_sum != Decimal("1.000000"):
+            raise ApiError(
+                "DVAS_CONTRACT_RATIO_INVALID",
+                "合同比例合计必须等于 100.0000%。",
+                field_errors=[
+                    {
+                        "field": "ratio_sum",
+                        "reason": f"当前比例合计为 {self._format_ratio(ratio_sum)}",
+                    }
+                ],
+            )
+
+        existing = self.repository.latest_contract_ratio_plan(project["project_id"])
+        now = utc_now()
+        plan_id = existing["plan_id"] if existing else self.repository.next_id("contract_ratio_plan")
+        version_no = int(existing.get("version_no", 0)) + 1 if existing else 1
+        pool_amount = self._amount(total_revenue * pool_ratio)
+        plan = {
+            "plan_id": plan_id,
+            "project_id": project["project_id"],
+            "total_revenue": self._format_amount(total_revenue),
+            "currency": payload.get("currency") or "CNY",
+            "data_provider_pool_ratio": self._format_ratio(pool_ratio),
+            "ratio_sum": self._format_ratio(ratio_sum),
+            "data_provider_revenue_pool": self._format_amount(pool_amount),
+            "status": payload.get("status") if payload.get("status") in {"DRAFT", "SAVED", "LOCKED"} else "SAVED",
+            "version_no": version_no,
+            "created_by": existing.get("created_by") if existing else current_operator_id(self.repository),
+            "created_at": existing.get("created_at") if existing else now,
+            "updated_at": now,
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+        }
+        ratio_items = [
+            {
+                "item_id": f"{plan_id}_pool",
+                "plan_id": plan_id,
+                "project_id": project["project_id"],
+                "bucket_type": "DATA_PROVIDER_POOL",
+                "party_id": None,
+                "party_name": "数据源收益池",
+                "party_type": None,
+                "ratio": self._format_ratio(pool_ratio),
+                "calculated_amount": self._format_amount(pool_amount),
+                "amount_source": "MD_DSHAP_WEIGHT",
+                "basis_text": "数据源主体收益池，后续按 MD-DShap 权重分配",
+                "sort_no": 1,
+            }
+        ]
+        for index, item in enumerate(non_data_items, start=2):
+            party = item["party"]
+            ratio_items.append(
+                {
+                    "item_id": f"{plan_id}_item_{index - 1:03d}",
+                    "plan_id": plan_id,
+                    "project_id": project["project_id"],
+                    "bucket_type": "NON_DATA_PARTY",
+                    "party_id": party["party_id"],
+                    "party_name": party["party_name"],
+                    "party_type": party.get("party_type"),
+                    "ratio": self._format_ratio(item["ratio"]),
+                    "calculated_amount": self._format_amount(item["calculated_amount"]),
+                    "amount_source": "CONTRACT_RATIO",
+                    "basis_text": item["basis_text"],
+                    "sort_no": index,
+                }
+            )
+        self.repository.put_contract_ratio_plan(plan, ratio_items)
+        write_audit(
+            self.repository,
+            module_code="CONS",
+            menu_code="NAV_ALLOC_CONSTRAINT",
+            operation_type="SAVE_CONTRACT_RATIO_PLAN",
+            object_type="contract_ratio_plan",
+            object_id=plan_id,
+            status="SUCCESS",
+            before_value_json=existing,
+            after_value_json={"plan": plan, "items": ratio_items},
+        )
+        return self.get(project["project_id"])
+
+    def delete(self, project_id):
+        project = self._project(project_id)
+        removed = self.repository.delete_contract_ratio_plan(project["project_id"])
+        write_audit(
+            self.repository,
+            module_code="CONS",
+            menu_code="NAV_ALLOC_CONSTRAINT",
+            operation_type="DELETE_CONTRACT_RATIO_PLAN",
+            object_type="contract_ratio_plan",
+            object_id=removed[-1]["plan_id"] if removed else "",
+            status="SUCCESS",
+            before_value_json=removed,
+        )
+        return self.get(project["project_id"])
+
+    def summary(self, project_id):
+        project = self._project(project_id)
+        plan = self.repository.latest_contract_ratio_plan(project["project_id"])
+        md_status = self._md_dshap_status()
+        if not plan:
+            total_revenue, currency = self._current_total_revenue()
+            return {
+                "total_revenue": self._format_amount(total_revenue) if total_revenue is not None else "",
+                "currency": currency,
+                "contract_ratio_configured": False,
+                "contract_ratio_sum": "0.000000",
+                "data_provider_pool_ratio": "",
+                "data_provider_revenue_pool": "",
+                "non_data_contract_amount": "0.00",
+                "weight_source": "MD_DSHAP",
+                "weight_task_id": md_status["latest_success_task_id"],
+                "weight_sum": md_status["weight_sum"],
+                "data_provider_count": md_status["data_provider_count"],
+                "non_data_party_count": self._non_data_party_count(),
+                "md_dshap_status": md_status,
+                "can_simulate": False,
+                "blocking_reasons": ["请先配置并保存合同比例分配方案"],
+            }
+        total_revenue = self._decimal(plan["total_revenue"], "total_revenue", scale="amount", required=True)
+        data_provider_pool = self._decimal(
+            plan["data_provider_revenue_pool"],
+            "data_provider_revenue_pool",
+            scale="amount",
+            required=True,
+        )
+        non_data_amount = self._amount(total_revenue - data_provider_pool)
+        blocking_reasons = self._blocking_reasons(plan, md_status=md_status)
+        return {
+            "total_revenue": plan["total_revenue"],
+            "currency": plan.get("currency", "CNY"),
+            "contract_ratio_configured": plan.get("status") in {"SAVED", "LOCKED"},
+            "contract_ratio_sum": plan["ratio_sum"],
+            "data_provider_pool_ratio": plan["data_provider_pool_ratio"],
+            "data_provider_revenue_pool": plan["data_provider_revenue_pool"],
+            "non_data_contract_amount": self._format_amount(non_data_amount),
+            "weight_source": "MD_DSHAP",
+            "weight_task_id": md_status["latest_success_task_id"],
+            "weight_sum": md_status["weight_sum"],
+            "data_provider_count": md_status["data_provider_count"],
+            "non_data_party_count": self._non_data_party_count(),
+            "md_dshap_status": md_status,
+            "can_simulate": not blocking_reasons,
+            "blocking_reasons": blocking_reasons,
+        }
+
+    def _blocking_reasons(self, plan, md_status=None):
+        reasons = []
+        if not plan or plan.get("status") not in {"SAVED", "LOCKED"}:
+            reasons.append("请先配置并保存合同比例分配方案")
+        elif plan.get("ratio_sum") != "1.000000":
+            reasons.append("合同比例合计必须等于 100.0000%")
+        md_status = md_status or self._md_dshap_status()
+        if not md_status["latest_success_task_id"]:
+            reasons.append("请先完成 MD-DShap 权重计算")
+        elif md_status["weight_sum"] != "1.000000":
+            reasons.append("MD-DShap 归一化权重合计必须为 1.000000")
+        return reasons
+
+    def _md_dshap_status(self):
+        tasks = [
+            task for task in self.repository.list_md_dshap_tasks()
+            if task.get("status") in {"COMPLETED", "SUCCESS"}
+        ]
+        task = tasks[-1] if tasks else None
+        results = self.repository.list_md_dshap_results(task["task_id"]) if task else []
+        weight_sum = self._ratio(
+            sum((self._decimal(item.get("normalized_weight"), "normalized_weight", scale="ratio") for item in results), Decimal("0"))
+        ) if results else Decimal("0")
+        return {
+            "latest_success_task_id": task["task_id"] if task else "",
+            "weight_sum": self._format_ratio(weight_sum),
+            "data_provider_count": len(results),
+            "status": "SUCCESS" if task and weight_sum == Decimal("1.000000") else ("MISSING" if not task else "INVALID"),
+        }
+
+    def _current_total_revenue(self):
+        drafts = self.repository.list_business_drafts("ALLOCATION_REVENUE_POOL")
+        if drafts:
+            content = drafts[-1].get("content_json") or {}
+            total = content.get("total_revenue")
+            currency = content.get("currency", "CNY")
+            if total is not None and total != "":
+                return self._decimal(total, "total_revenue", scale="amount"), currency
+
+        project = self.repository.get_project()
+        allocation_id = project.get("current_allocation_id")
+        allocation = self.repository.get_allocation_scenario(allocation_id) if allocation_id else None
+        if allocation and allocation.get("total_revenue") is not None:
+            return self._decimal(allocation["total_revenue"], "total_revenue", scale="amount"), allocation.get("currency", "CNY")
+
+        snapshot_id = project.get("current_input_snapshot_id")
+        snapshot = self.repository.get_input_snapshot(snapshot_id) if snapshot_id else None
+        content = (snapshot or {}).get("content_json")
+        content = content if isinstance(content, dict) else {}
+        for field in ("total_revenue", "revenue_pool", "data_provider_revenue_pool"):
+            if content.get(field) is not None and content.get(field) != "":
+                return self._decimal(content[field], field, scale="amount"), "CNY"
+        return None, "CNY"
+
+    def _project(self, project_id):
+        project = self.repository.get_project()
+        if project_id not in {project.get("project_id"), "current"}:
+            raise ApiError("DVAS_NOT_FOUND", "项目不存在", status=404)
+        return project
+
+    def _non_data_party_count(self):
+        return len([
+            party for party in self.repository.list_parties()
+            if not self._is_data_provider_party(party)
+            and party.get("status") in {"ACTIVE", "ENABLED"}
+        ])
+
+    def _is_data_provider_party(self, party):
+        return bool(party.get("is_data_provider", party.get("party_type") == "DATA_PROVIDER"))
+
+    def _decimal(self, raw_value, field, scale, required=False):
+        if raw_value is None or raw_value == "":
+            if required:
+                raise self._invalid(field, f"{field} 为必填字段")
+            raw_value = "0"
+        try:
+            value = Decimal(str(raw_value))
+        except (InvalidOperation, ValueError) as exc:
+            raise self._invalid(field, f"{field} 必须是 Decimal 字符串") from exc
+        return self._amount(value) if scale == "amount" else self._ratio(value)
+
+    def _amount(self, value):
+        return Decimal(value).quantize(self.AMOUNT_QUANT, rounding=ROUND_HALF_UP)
+
+    def _ratio(self, value):
+        return Decimal(value).quantize(self.RATIO_QUANT, rounding=ROUND_HALF_UP)
+
+    def _format_amount(self, value):
+        return f"{self._amount(value):.2f}"
+
+    def _format_ratio(self, value):
+        return f"{self._ratio(value):.6f}"
+
+    def _invalid(self, field, reason):
+        return ApiError(
+            "DVAS_CONTRACT_RATIO_INVALID",
+            "合同比例方案不合法",
+            field_errors=[{"field": field, "reason": reason}],
+        )
+
+
+class AllocationService:
+    PRIORITY_CAP_TYPES = {"CAP_AMOUNT", "MAX_AMOUNT"}
+    RATIO_QUANT = Decimal("0.000001")
+    AMOUNT_QUANT = Decimal("0.01")
+
+    def __init__(self, repository):
+        self.repository = repository
+
+    def simulate_contract_ratio(self, project_id):
+        ProjectStateMachine(self.repository).require_allocation_allowed()
+        project = self.repository.get_project()
+        if project_id not in {project.get("project_id"), "current"}:
+            raise ApiError("DVAS_NOT_FOUND", "项目不存在", status=404)
+        plan = self.repository.latest_contract_ratio_plan(project["project_id"])
+        if not plan or plan.get("status") not in {"SAVED", "LOCKED"}:
+            raise ApiError(
+                "DVAS_CONTRACT_RATIO_REQUIRED",
+                "请先配置并保存合同比例分配方案后再执行收益分配模拟。",
+                field_errors=[
+                    {
+                        "field": "contract_ratio_plan",
+                        "reason": "请先配置并保存合同比例分配方案",
+                    }
+                ],
+            )
+        if plan.get("ratio_sum") != "1.000000":
+            raise ApiError(
+                "DVAS_CONTRACT_RATIO_INVALID",
+                "合同比例合计必须等于 100.0000%。",
+                field_errors=[{"field": "ratio_sum", "reason": f"当前比例合计为 {plan.get('ratio_sum')}"}],
+            )
+
+        task = self._resolve_weight_task(None, project)
+        weight_results = self._weight_results(task["task_id"])
+        total_revenue = self._decimal_amount(plan["total_revenue"])
+        data_provider_pool = self._decimal_amount(plan["data_provider_revenue_pool"])
+        items = self.repository.list_contract_ratio_items(plan["plan_id"])
+        non_data_items = [item for item in items if item.get("bucket_type") == "NON_DATA_PARTY"]
+        non_data_total = sum(
+            (self._decimal_amount(item["calculated_amount"]) for item in non_data_items),
+            Decimal("0.00"),
+        )
+
+        now = utc_now()
+        allocation_id = self.repository.next_id("allocation")
+        version_no = 1
+        result_snapshot_id = self.repository.next_id("snapshot")
+        data_amounts = self._weighted_amounts(data_provider_pool, weight_results)
+        final_amount_sum = non_data_total + sum(data_amounts.values(), Decimal("0.00"))
+        tail_delta = self._decimal_round_amount(total_revenue - final_amount_sum)
+        if tail_delta:
+            target = max(weight_results, key=lambda item: Decimal(str(item["normalized_weight"])))
+            data_amounts[target["party_id"]] = self._decimal_round_amount(data_amounts[target["party_id"]] + tail_delta)
+
+        allocation = {
+            "allocation_id": allocation_id,
+            "project_id": project["project_id"],
+            "total_revenue": float(total_revenue),
+            "currency": plan.get("currency", "CNY"),
+            "priority_allocation_amount": float(non_data_total),
+            "total_contract_priority_amount": float(non_data_total),
+            "non_data_contract_amount": float(non_data_total),
+            "data_provider_revenue_pool": float(data_provider_pool),
+            "data_provider_pool_ratio": plan["data_provider_pool_ratio"],
+            "contract_ratio_plan_id": plan["plan_id"],
+            "contract_ratio_sum": plan["ratio_sum"],
+            "contract_priority_allocations": [
+                {
+                    "party_id": item["party_id"],
+                    "party_name": item["party_name"],
+                    "subject_track": "CONTRACT_RATIO",
+                    "value_type": "RATIO",
+                    "priority_amount": None,
+                    "priority_ratio": float(Decimal(item["ratio"])),
+                    "requested_amount": float(self._decimal_amount(item["calculated_amount"])),
+                    "cap_amount": float(self._decimal_amount(item["calculated_amount"])),
+                    "actual_priority_amount": float(self._decimal_amount(item["calculated_amount"])),
+                    "basis_text": item.get("basis_text") or "合同约定",
+                    "priority": item.get("sort_no", 0),
+                    "status": "APPLIED",
+                    "source_draft_id": None,
+                    "source_constraint_id": None,
+                    "simulation_disclaimer": SIMULATION_DISCLAIMER,
+                }
+                for item in non_data_items
+            ],
+            "allocation_mode": AllocationMode.MD_DSHAP_WEIGHT_WITH_CONSTRAINTS.value,
+            "weight_task_id": task["task_id"],
+            "status": "ALLOCATED",
+            "locked_by": None,
+            "locked_at": None,
+            "version_no": version_no,
+            "created_by": current_operator_id(self.repository),
+            "created_at": now,
+            "updated_at": now,
+            "result_snapshot_id": result_snapshot_id,
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+        }
+
+        non_data_results = []
+        for item in non_data_items:
+            party = self.repository.get_party(item["party_id"]) or {}
+            amount = self._decimal_amount(item["calculated_amount"])
+            non_data_results.append(
+                {
+                    "result_id": self.repository.next_id("allocation_result"),
+                    "allocation_id": allocation_id,
+                    "project_id": project["project_id"],
+                    "party_id": item["party_id"],
+                    "party_name": item["party_name"],
+                    "party_type": item.get("party_type") or party.get("party_type", "CONTRACT_PARTY"),
+                    "is_data_provider": False,
+                    "include_in_md_dshap": False,
+                    "subject_track": "CONTRACT_RATIO",
+                    "amount_source": "CONTRACT_RATIO",
+                    "contract_ratio": float(Decimal(item["ratio"])),
+                    "total_revenue": float(total_revenue),
+                    "priority_allocation_amount": float(non_data_total),
+                    "total_contract_priority_amount": float(non_data_total),
+                    "data_provider_revenue_pool": float(data_provider_pool),
+                    "base_pool_amount": float(total_revenue),
+                    "currency": plan.get("currency", "CNY"),
+                    "allocation_mode": allocation["allocation_mode"],
+                    "raw_weight": 0.0,
+                    "normalized_weight": 0.0,
+                    "pre_constraint_amount": float(amount),
+                    "post_constraint_amount": float(amount),
+                    "final_amount": float(amount),
+                    "constraint_adjustment_amount": 0.0,
+                    "constraint_adjustment_reason": f"合同比例分配：{item.get('basis_text') or '合同约定'}",
+                    "rounding_delta": 0.0,
+                    "rounding_note": "按已保存合同比例方案计算金额。",
+                    "weight_source": "CONTRACT_RATIO",
+                    "version_no": version_no,
+                    "result_snapshot_id": result_snapshot_id,
+                    "created_at": now,
+                    "explanation": "非数据主体按合同比例从总收益中优先确定金额。",
+                    "simulation_disclaimer": SIMULATION_DISCLAIMER,
+                }
+            )
+
+        data_provider_results = []
+        for weight in weight_results:
+            party_id = weight["party_id"]
+            party = self.repository.get_party(party_id) or {}
+            final_amount = data_amounts[party_id]
+            raw_amount = self._decimal_round_amount(data_provider_pool * Decimal(str(weight["normalized_weight"])))
+            rounding_delta = self._decimal_round_amount(final_amount - raw_amount)
+            data_provider_results.append(
+                {
+                    "result_id": self.repository.next_id("allocation_result"),
+                    "allocation_id": allocation_id,
+                    "project_id": project["project_id"],
+                    "party_id": party_id,
+                    "party_name": weight["party_name"],
+                    "party_type": party.get("party_type", "DATA_PROVIDER"),
+                    "is_data_provider": True,
+                    "include_in_md_dshap": True,
+                    "subject_track": "DATA_PROVIDER_POOL",
+                    "amount_source": "MD_DSHAP_WEIGHT",
+                    "contract_ratio": None,
+                    "total_revenue": float(total_revenue),
+                    "priority_allocation_amount": float(non_data_total),
+                    "total_contract_priority_amount": float(non_data_total),
+                    "data_provider_revenue_pool": float(data_provider_pool),
+                    "base_pool_amount": float(data_provider_pool),
+                    "currency": plan.get("currency", "CNY"),
+                    "allocation_mode": allocation["allocation_mode"],
+                    "raw_weight": round(float(weight["participant_weight"]), 6),
+                    "normalized_weight": round(float(weight["normalized_weight"]), 6),
+                    "pre_constraint_amount": float(final_amount),
+                    "post_constraint_amount": float(final_amount),
+                    "final_amount": float(final_amount),
+                    "constraint_adjustment_amount": 0.0,
+                    "constraint_adjustment_reason": "按 MD-DShap 归一化权重分配数据源收益池",
+                    "rounding_delta": float(rounding_delta),
+                    "rounding_note": "金额保留 0.01 元，尾差写入 rounding_delta。",
+                    "weight_source": "MD_DSHAP",
+                    "version_no": version_no,
+                    "result_snapshot_id": result_snapshot_id,
+                    "created_at": now,
+                    "explanation": "数据源主体按数据源收益池与 MD-DShap normalized_weight 计算最终金额。",
+                    "simulation_disclaimer": SIMULATION_DISCLAIMER,
+                }
+            )
+
+        final_results = non_data_results + data_provider_results
+        snapshot = self._snapshot(
+            result_snapshot_id,
+            "RESULT",
+            {
+                "allocation": allocation,
+                "contract_ratio_plan": plan,
+                "contract_ratio_items": items,
+                "results": final_results,
+                "data_provider_allocations": data_provider_results,
+                "constraint_traces": [],
+            },
+            now,
+        )
+        self.repository.put_snapshot(snapshot)
+        self.repository.put_allocation_scenario(allocation)
+        self.repository.put_allocation_results(final_results, [])
+        updated_project = self.repository.update_project(
+            project_status=ProjectStatus.ALLOCATED.value,
+            current_allocation_id=allocation_id,
+        )
+        write_audit(
+            self.repository,
+            module_code="ALLOC",
+            menu_code="NAV_ALLOC_SIMULATION",
+            operation_type="SIMULATE_CONTRACT_RATIO_ALLOCATION",
+            object_type="allocation_scenario",
+            object_id=allocation_id,
+            status="SUCCESS",
+            result_snapshot_id=result_snapshot_id,
+            after_value_json={
+                "allocation": allocation,
+                "contract_ratio_plan": plan,
+                "results": final_results,
+            },
+        )
+        return {
+            "project_id": updated_project["project_id"],
+            "project_status": updated_project["project_status"],
+            "summary": self._allocation_summary(allocation),
+            "allocation": allocation,
+            "contract_ratio_plan": plan,
+            "contract_ratio_items": items,
+            "contract_priority_allocations": allocation.get("contract_priority_allocations", []),
+            "data_provider_allocations": data_provider_results,
+            "results": final_results,
+            "final_allocations": final_results,
+            "constraint_traces": [],
+            "constraints": [],
+            "rounding_delta": round(sum(item.get("rounding_delta", 0.0) for item in final_results), 2),
+            "disclaimer": SIMULATION_DISCLAIMER,
+        }
+
     def run(self, payload):
         ProjectStateMachine(self.repository).require_allocation_allowed()
         payload = payload or {}
-        allocation_id = payload.get("allocation_id") or self.repository.get_project().get(
-            "current_allocation_id"
+        explicit_allocation_id = payload.get("allocation_id")
+        has_new_scenario_input = any(
+            key in payload
+            for key in (
+                "total_revenue",
+                "priority_allocation_amount",
+                "priority_items",
+                "allocation_priority_items",
+                "contract_priority_allocations",
+                "currency",
+                "allocation_mode",
+            )
+        )
+        allocation_id = explicit_allocation_id or (
+            None
+            if has_new_scenario_input
+            else self.repository.get_project().get("current_allocation_id")
         )
         if allocation_id:
             return self.simulate(allocation_id)
@@ -3569,12 +6090,13 @@ class AllocationService:
             "locked_by": None,
             "locked_at": None,
             "version_no": 0,
-            "created_by": LOCAL_OPERATOR,
+            "created_by": current_operator_id(self.repository),
             "created_at": now,
             "updated_at": now,
             "simulation_disclaimer": SIMULATION_DISCLAIMER,
         }
         self.repository.put_allocation_scenario(allocation)
+        self._persist_allocation_priority_items(allocation, contract_priority_allocations)
         write_audit(
             self.repository,
             module_code="ALLOC",
@@ -3597,6 +6119,7 @@ class AllocationService:
             item
             for item in self.repository.list_contract_constraints()
             if item["status"] == "ACTIVE"
+            and item["constraint_type"] != ContractConstraintType.PRIORITY_ALLOCATION.value
         ]
         next_version = int(allocation["version_no"]) + 1
         amounts = {
@@ -3623,23 +6146,28 @@ class AllocationService:
         )
         now = utc_now()
         result_snapshot_id = self.repository.next_id("snapshot")
-        results = []
+        data_provider_results = []
         for weight in weight_results:
             party_id = weight["party_id"]
+            party = self.repository.get_party(party_id) or {}
             reason = "；".join(adjustment_reasons[party_id]) or "无约束调整"
             rounding_delta = rounding_delta_by_party.get(party_id, 0.0)
             if rounding_delta:
                 reason = f"{reason}；四舍五入差额调整"
             pre_constraint_amount = round(pool * float(weight["normalized_weight"]), 2)
             post_constraint_amount = rounded_amounts[party_id]
-            results.append(
+            data_provider_results.append(
                 {
                     "result_id": self.repository.next_id("allocation_result"),
                     "allocation_id": allocation_id,
                     "project_id": allocation["project_id"],
                     "party_id": party_id,
                     "party_name": weight["party_name"],
+                    "party_type": party.get("party_type", "DATA_PROVIDER"),
+                    "is_data_provider": True,
+                    "include_in_md_dshap": True,
                     "subject_track": "DATA_PROVIDER_POOL",
+                    "amount_source": "MD_DSHAP_RESIDUAL_POOL",
                     "total_revenue": allocation["total_revenue"],
                     "priority_allocation_amount": allocation["priority_allocation_amount"],
                     "total_contract_priority_amount": allocation.get(
@@ -3653,19 +6181,35 @@ class AllocationService:
                     "normalized_weight": round(float(weight["normalized_weight"]), 6),
                     "pre_constraint_amount": pre_constraint_amount,
                     "post_constraint_amount": post_constraint_amount,
+                    "final_amount": post_constraint_amount,
                     "constraint_adjustment_amount": round(post_constraint_amount - pre_constraint_amount, 2),
                     "constraint_adjustment_reason": reason,
                     "rounding_delta": rounding_delta,
+                    "rounding_note": "四舍五入到 0.01 元，尾差计入 rounding_delta。",
+                    "weight_source": "MD-DShap",
                     "version_no": next_version,
                     "result_snapshot_id": result_snapshot_id,
                     "created_at": now,
                     "simulation_disclaimer": SIMULATION_DISCLAIMER,
                 }
             )
+        priority_results = self._contract_priority_result_rows(
+            allocation,
+            next_version,
+            result_snapshot_id,
+            now,
+        )
+        final_results = priority_results + data_provider_results
         snapshot = self._snapshot(
             result_snapshot_id,
             "RESULT",
-            {"allocation": allocation, "results": results, "constraint_traces": traces},
+            {
+                "allocation": allocation,
+                "results": final_results,
+                "data_provider_allocations": data_provider_results,
+                "contract_priority_allocations": allocation.get("contract_priority_allocations", []),
+                "constraint_traces": traces,
+            },
             now,
         )
         updated_allocation = {
@@ -3677,7 +6221,7 @@ class AllocationService:
         }
         self.repository.put_snapshot(snapshot)
         self.repository.put_allocation_scenario(updated_allocation)
-        self.repository.put_allocation_results(results, traces)
+        self.repository.put_allocation_results(final_results, traces)
         updated_project = self.repository.update_project(
             project_status=ProjectStatus.ALLOCATED.value,
             current_allocation_id=allocation_id,
@@ -3691,7 +6235,12 @@ class AllocationService:
             object_id=allocation_id,
             status="SUCCESS",
             result_snapshot_id=result_snapshot_id,
-            after_value_json={"allocation": updated_allocation, "results": results, "constraint_traces": traces},
+            after_value_json={
+                "allocation": updated_allocation,
+                "results": final_results,
+                "data_provider_allocations": data_provider_results,
+                "constraint_traces": traces,
+            },
         )
         return {
             "project_id": updated_project["project_id"],
@@ -3699,10 +6248,12 @@ class AllocationService:
             "summary": self._allocation_summary(updated_allocation),
             "allocation": updated_allocation,
             "contract_priority_allocations": updated_allocation.get("contract_priority_allocations", []),
-            "data_provider_allocations": results,
-            "results": results,
+            "data_provider_allocations": data_provider_results,
+            "results": final_results,
+            "final_allocations": final_results,
             "constraint_traces": traces,
             "constraints": constraints,
+            "rounding_delta": round(sum(item.get("rounding_delta", 0.0) for item in final_results), 2),
             "disclaimer": SIMULATION_DISCLAIMER,
         }
 
@@ -3744,13 +6295,22 @@ class AllocationService:
     def results(self, allocation_id):
         allocation = self._allocation(allocation_id)
         rows = self.repository.list_allocation_results(allocation_id)
+        data_provider_rows = [item for item in rows if item.get("subject_track") == "DATA_PROVIDER_POOL"]
+        constraint_traces = self._latest_version_rows(
+            self.repository.list_constraint_apply_traces(allocation_id)
+        )
         page = table_page(rows)
         page.update(
             {
                 "allocation": allocation,
                 "summary": self._allocation_summary(allocation),
                 "contract_priority_allocations": allocation.get("contract_priority_allocations", []),
-                "data_provider_allocations": rows,
+                "data_provider_allocations": data_provider_rows,
+                "final_allocations": rows,
+                "constraints": self._active_constraints(),
+                "constraint_traces": constraint_traces,
+                "constraint_apply_trace": constraint_traces,
+                "rounding_delta": round(sum(item.get("rounding_delta", 0.0) for item in rows), 2),
                 "disclaimer": SIMULATION_DISCLAIMER,
             }
         )
@@ -3809,11 +6369,116 @@ class AllocationService:
             ),
             "priority_allocation_amount": allocation.get("priority_allocation_amount", 0),
             "data_provider_revenue_pool": allocation["data_provider_revenue_pool"],
+            "contract_ratio_plan_id": allocation.get("contract_ratio_plan_id"),
+            "contract_ratio_sum": allocation.get("contract_ratio_sum"),
+            "data_provider_pool_ratio": allocation.get("data_provider_pool_ratio"),
+            "non_data_contract_amount": allocation.get(
+                "non_data_contract_amount",
+                allocation.get("total_contract_priority_amount", allocation.get("priority_allocation_amount", 0)),
+            ),
             "currency": allocation.get("currency", "CNY"),
+            "weight_source": "MD-DShap",
+            "priority_items_count": len(allocation.get("contract_priority_allocations", [])),
         }
+
+    def _contract_priority_result_rows(self, allocation, version_no, result_snapshot_id, now):
+        rows = []
+        priority_by_party = {
+            priority["party_id"]: priority
+            for priority in allocation.get("contract_priority_allocations", [])
+        }
+        non_data_parties = [
+            party
+            for party in self.repository.list_parties()
+            if not self._is_data_provider_party(party)
+            and party.get("status") in {"ACTIVE", "ENABLED"}
+        ]
+        for party in non_data_parties:
+            priority = priority_by_party.get(
+                party["party_id"],
+                {
+                    "party_id": party["party_id"],
+                    "party_name": party["party_name"],
+                    "actual_priority_amount": 0,
+                    "basis_text": "未配置合同优先分配，金额为 0",
+                },
+            )
+            amount = round(float(priority["actual_priority_amount"]), 2)
+            rows.append(
+                {
+                    "result_id": self.repository.next_id("allocation_result"),
+                    "allocation_id": allocation["allocation_id"],
+                    "project_id": allocation["project_id"],
+                    "party_id": priority["party_id"],
+                    "party_name": priority["party_name"],
+                    "party_type": party.get("party_type", "CONTRACT_PARTY"),
+                    "is_data_provider": False,
+                    "include_in_md_dshap": False,
+                    "subject_track": "CONTRACT_PRIORITY",
+                    "amount_source": "CONTRACT_PRIORITY",
+                    "total_revenue": allocation["total_revenue"],
+                    "priority_allocation_amount": allocation["priority_allocation_amount"],
+                    "total_contract_priority_amount": allocation.get(
+                        "total_contract_priority_amount",
+                        allocation["priority_allocation_amount"],
+                    ),
+                    "data_provider_revenue_pool": allocation["data_provider_revenue_pool"],
+                    "currency": allocation["currency"],
+                    "allocation_mode": allocation["allocation_mode"],
+                    "raw_weight": 0.0,
+                    "normalized_weight": 0.0,
+                    "pre_constraint_amount": amount,
+                    "post_constraint_amount": amount,
+                    "final_amount": amount,
+                    "constraint_adjustment_amount": 0.0,
+                    "constraint_adjustment_reason": f"合同优先分配：{priority.get('basis_text') or '合同约定'}",
+                    "rounding_delta": 0.0,
+                    "rounding_note": "合同优先金额先于数据源收益池扣除。",
+                    "weight_source": "CONTRACT_PRIORITY",
+                    "version_no": version_no,
+                    "result_snapshot_id": result_snapshot_id,
+                    "created_at": now,
+                    "simulation_disclaimer": SIMULATION_DISCLAIMER,
+                }
+            )
+        return rows
+
+    def _persist_allocation_priority_items(self, allocation, priority_allocations):
+        now = utc_now()
+        items = []
+        for index, priority in enumerate(priority_allocations):
+            items.append(
+                {
+                    "item_id": self.repository.next_id("allocation_priority_item"),
+                    "allocation_id": allocation["allocation_id"],
+                    "project_id": allocation["project_id"],
+                    "party_id": priority["party_id"],
+                    "value_type": priority["value_type"],
+                    "priority_amount": priority.get("priority_amount"),
+                    "priority_ratio": priority.get("priority_ratio"),
+                    "requested_amount": priority["requested_amount"],
+                    "cap_amount": priority["cap_amount"],
+                    "actual_priority_amount": priority["actual_priority_amount"],
+                    "basis_text": priority.get("basis_text"),
+                    "priority_order": priority.get("priority", index + 1),
+                    "status": priority.get("status", "APPLIED"),
+                    "source_draft_id": priority.get("source_draft_id"),
+                    "source_constraint_id": priority.get("source_constraint_id"),
+                    "created_at": now,
+                    "updated_at": now,
+                    "simulation_disclaimer": SIMULATION_DISCLAIMER,
+                }
+            )
+        self.repository.put_allocation_priority_items(
+            items,
+            allocation_id=allocation["allocation_id"],
+        )
+        return items
 
     def _contract_priority_allocations(self, payload, total_revenue, constraints):
         raw_items = self._priority_items(payload)
+        if raw_items is None:
+            raw_items = self._priority_items_from_constraints(constraints)
         if raw_items is None:
             raw_items = self._latest_priority_draft_items()
         if raw_items is None:
@@ -3853,12 +6518,20 @@ class AllocationService:
                     "party_name": party["party_name"],
                     "subject_track": "CONTRACT_PRIORITY",
                     "value_type": item.get("value_type", "AMOUNT"),
+                    "priority_amount": requested_amount
+                    if item.get("value_type", "AMOUNT") == "AMOUNT"
+                    else None,
+                    "priority_ratio": item.get("priority_ratio")
+                    if item.get("value_type", "AMOUNT") == "RATIO"
+                    else None,
                     "requested_amount": requested_amount,
                     "cap_amount": cap_amount,
                     "actual_priority_amount": actual_amount,
                     "basis_text": item.get("basis_text") or "合同优先分配",
                     "priority": int(item.get("priority", item.get("priority_order", index + 1))),
                     "status": "APPLIED",
+                    "source_draft_id": item.get("source_draft_id"),
+                    "source_constraint_id": item.get("source_constraint_id"),
                     "simulation_disclaimer": SIMULATION_DISCLAIMER,
                 }
             )
@@ -3891,6 +6564,31 @@ class AllocationService:
         latest = drafts[-1]
         content = latest.get("content_json")
         return content if isinstance(content, list) else None
+
+    def _priority_items_from_constraints(self, constraints):
+        priority_constraints = [
+            item
+            for item in constraints
+            if item["constraint_type"] == ContractConstraintType.PRIORITY_ALLOCATION.value
+        ]
+        if not priority_constraints:
+            return None
+        items = []
+        for constraint in sorted(priority_constraints, key=lambda item: (item["priority"], item["constraint_id"])):
+            value_type = constraint.get("value_type", "AMOUNT")
+            item = {
+                "party_id": constraint["party_id"],
+                "value_type": value_type,
+                "basis_text": constraint.get("description") or constraint["constraint_name"],
+                "priority": constraint.get("priority", 1),
+                "source_constraint_id": constraint["constraint_id"],
+            }
+            if value_type == "RATIO":
+                item["priority_ratio"] = constraint["constraint_value"]
+            else:
+                item["priority_amount"] = constraint["constraint_value"]
+            items.append(item)
+        return items
 
     def _legacy_priority_item(self, amount):
         non_data_party = next(
@@ -3999,6 +6697,8 @@ class AllocationService:
         locked_lower = set()
         locked_exact = set()
         for constraint in constraints:
+            if constraint["constraint_type"] == ContractConstraintType.PRIORITY_ALLOCATION.value:
+                continue
             party_id = constraint["party_id"]
             if party_id not in amounts:
                 continue
@@ -4027,11 +6727,16 @@ class AllocationService:
                     "trace_id": self.repository.next_id("constraint_trace"),
                     "allocation_id": allocation_id,
                     "constraint_id": constraint["constraint_id"],
+                    "constraint_name": constraint["constraint_name"],
+                    "constraint_type": constraint_type,
                     "party_id": party_id,
+                    "party_name": self.repository.get_party(party_id)["party_name"],
                     "before_amount": round(before, 2),
                     "after_amount": round(after, 2),
                     "adjustment_amount": round(after - before, 2),
+                    "constraint_adjustment_amount": round(after - before, 2),
                     "reason": f"{constraint_type}: {constraint['constraint_name']}",
+                    "adjustment_reason": f"{constraint_type}: {constraint['constraint_name']}",
                     "version_no": version_no,
                     "created_at": utc_now(),
                 }
@@ -4118,6 +6823,29 @@ class AllocationService:
             )
         return round(value, 2)
 
+    def _decimal_amount(self, value):
+        return Decimal(str(value)).quantize(self.AMOUNT_QUANT, rounding=ROUND_HALF_UP)
+
+    def _decimal_round_amount(self, value):
+        return Decimal(str(value)).quantize(self.AMOUNT_QUANT, rounding=ROUND_HALF_UP)
+
+    def _weighted_amounts(self, pool, weight_results):
+        amounts = {
+            item["party_id"]: self._decimal_round_amount(pool * Decimal(str(item["normalized_weight"])))
+            for item in weight_results
+        }
+        delta = self._decimal_round_amount(pool - sum(amounts.values(), Decimal("0.00")))
+        if delta:
+            target = max(weight_results, key=lambda item: Decimal(str(item["normalized_weight"])))
+            amounts[target["party_id"]] = self._decimal_round_amount(amounts[target["party_id"]] + delta)
+        return amounts
+
+    def _latest_version_rows(self, rows):
+        if not rows:
+            return []
+        latest_version = max(int(row.get("version_no", 0)) for row in rows)
+        return [row for row in rows if int(row.get("version_no", 0)) == latest_version]
+
     def _snapshot(self, snapshot_id, snapshot_type, content, now):
         return {
             "snapshot_id": snapshot_id,
@@ -4125,7 +6853,7 @@ class AllocationService:
             "snapshot_type": snapshot_type,
             "content_json": copy.deepcopy(content),
             "checksum": stable_checksum(content),
-            "created_by": LOCAL_OPERATOR,
+            "created_by": current_operator_id(self.repository),
             "created_at": now,
         }
 
@@ -4158,9 +6886,9 @@ class ReportService:
         content = self._markdown_content(context)
         return self._persist_report(
             report_type="P0_MARKDOWN_REPORT",
-            primary_file_name="p0_simulation_reference_report.md",
+            primary_file_name="allocation_summary.md",
             file_format=ReportFormat.MARKDOWN.value,
-            files=[("p0_simulation_reference_report.md", content)],
+            files=[("allocation_summary.md", content)],
             context=context,
             operation_type="GENERATE_MARKDOWN_REPORT",
         )
@@ -4185,12 +6913,104 @@ class ReportService:
         content = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
         return self._persist_report(
             report_type="P0_JSON_EXPORT",
-            primary_file_name="p0_simulation_reference_export.json",
+            primary_file_name="allocation_result.json",
             file_format=ReportFormat.JSON.value,
-            files=[("p0_simulation_reference_export.json", content)],
+            files=[("allocation_result.json", content)],
             context=context,
             operation_type="GENERATE_JSON_EXPORT",
         )
+
+    def generate_pdf(self):
+        context = self._final_export_context()
+        context["project"] = self.repository.update_project(project_status=ProjectStatus.EXPORTED.value)
+        markdown = self._markdown_content(context)
+        pdf_content = self._pdf_bytes(markdown)
+        result = self._persist_report(
+            report_type="P1_PDF_REPORT",
+            primary_file_name="p1_simulation_reference_report.pdf",
+            file_format="PDF",
+            files=[("p1_simulation_reference_report.pdf", pdf_content)],
+            context=context,
+            operation_type="GENERATE_PDF_REPORT",
+        )
+        manifest = self._persist_report_manifest(result["report"], result["export_files"], context)
+        return {**result, "manifest": manifest}
+
+    def detail(self, report_id):
+        report = self.repository.get_report_record(report_id)
+        if not report:
+            raise ApiError("DVAS_NOT_FOUND", "报告不存在", status=404)
+        return {
+            "report": report,
+            "export_files": self.repository.list_export_files(report_id),
+            "manifest": self.repository.get_report_manifest(report_id),
+        }
+
+    def files(self, report_id):
+        if not self.repository.get_report_record(report_id):
+            raise ApiError("DVAS_NOT_FOUND", "报告不存在", status=404)
+        return table_page(self.repository.list_export_files(report_id))
+
+    def manifest(self, report_id):
+        manifest = self.repository.get_report_manifest(report_id)
+        if not manifest:
+            report = self.repository.get_report_record(report_id)
+            if not report:
+                raise ApiError("DVAS_NOT_FOUND", "报告不存在", status=404)
+            manifest = self._persist_report_manifest(
+                report,
+                self.repository.list_export_files(report_id),
+                self._optional_export_context(),
+            )
+        return manifest
+
+    def download(self, report_id, file_id=None):
+        report = self.repository.get_report_record(report_id)
+        if not report:
+            raise ApiError("DVAS_NOT_FOUND", "报告不存在", status=404)
+        export_files = self.repository.list_export_files(report_id)
+        if file_id:
+            export_files = [item for item in export_files if item["export_file_id"] == file_id]
+        if not export_files:
+            raise ApiError("DVAS_NOT_FOUND", "报告文件不存在", status=404)
+        export_file = export_files[0]
+        file_path = Path(export_file["file_path"])
+        if not file_path.exists():
+            raise ApiError(
+                "DVAS_NOT_FOUND",
+                "报告文件不存在",
+                status=404,
+                field_errors=[{"field": "file_path", "reason": "本地文件缺失"}],
+            )
+        raw_content = file_path.read_bytes()
+        checksum = hashlib.sha256(raw_content).hexdigest()
+        return {
+            "report_id": report_id,
+            "export_file_id": export_file["export_file_id"],
+            "file_name": export_file["file_name"],
+            "file_format": export_file["file_format"],
+            "byte_size": len(raw_content),
+            "checksum": checksum,
+            "checksum_verified": checksum == export_file["checksum"],
+            "content_base64": base64.b64encode(raw_content).decode("ascii"),
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+        }
+
+    def archive(self, report_id, payload=None):
+        report = self.repository.update_report_record(report_id, status="ARCHIVED", archived_at=utc_now())
+        if not report:
+            raise ApiError("DVAS_NOT_FOUND", "报告不存在", status=404)
+        write_audit(
+            self.repository,
+            module_code="REP",
+            menu_code="NAV_REPORT_EXPORT",
+            operation_type="ARCHIVE_REPORT",
+            object_type="report_record",
+            object_id=report_id,
+            status="SUCCESS",
+            after_value_json={"report_id": report_id, "status": "ARCHIVED"},
+        )
+        return report
 
     def export_audit_log(self):
         audit_logs = self.repository.list_audit_logs()
@@ -4274,9 +7094,22 @@ class ReportService:
             if allocation
             else []
         )
+        data_provider_allocations = [
+            item for item in allocation_results if item.get("subject_track") == "DATA_PROVIDER_POOL"
+        ]
         constraint_traces = self._latest_version_rows(
             self.repository.list_constraint_apply_traces(allocation["allocation_id"])
             if allocation
+            else []
+        )
+        contract_ratio_plan = (
+            self.repository.get_contract_ratio_plan(allocation.get("contract_ratio_plan_id"))
+            if allocation and allocation.get("contract_ratio_plan_id")
+            else None
+        )
+        contract_ratio_items = (
+            self.repository.list_contract_ratio_items(contract_ratio_plan["plan_id"])
+            if contract_ratio_plan
             else []
         )
         return {
@@ -4298,8 +7131,15 @@ class ReportService:
             "md_task": md_task,
             "md_results": self.repository.list_md_dshap_results(md_task["task_id"]) if md_task else [],
             "allocation": allocation,
+            "contract_ratio_plan": contract_ratio_plan,
+            "contract_ratio_items": contract_ratio_items,
             "contract_priority_allocations": (allocation or {}).get("contract_priority_allocations", []),
+            "allocation_priority_items": self.repository.list_allocation_priority_items(
+                allocation["allocation_id"] if allocation else None
+            ),
             "allocation_results": allocation_results,
+            "data_provider_allocations": data_provider_allocations,
+            "constraints": self.repository.list_contract_constraints(),
             "constraint_traces": constraint_traces,
             "snapshots": self.repository.list_snapshots(),
         }
@@ -4323,6 +7163,7 @@ class ReportService:
         audit_menu_code="NAV_REPORT_EXPORT",
     ):
         now = utc_now()
+        operator_id = current_operator_id(self.repository)
         project = context["project"]
         report_id = self.repository.next_id("report")
         report_dir = self._prepare_report_dir(report_id)
@@ -4330,7 +7171,7 @@ class ReportService:
         for file_name, content in files:
             file_path = report_dir / file_name
             file_path.parent.mkdir(parents=True, exist_ok=True)
-            raw_content = content.encode("utf-8")
+            raw_content = content if isinstance(content, bytes) else content.encode("utf-8")
             file_path.write_bytes(raw_content)
             export_files.append(
                 {
@@ -4342,7 +7183,7 @@ class ReportService:
                     "file_path": str(file_path),
                     "checksum": hashlib.sha256(raw_content).hexdigest(),
                     "byte_size": len(raw_content),
-                    "created_by": LOCAL_OPERATOR,
+                    "created_by": operator_id,
                     "created_at": now,
                     "simulation_disclaimer": SIMULATION_DISCLAIMER,
                 }
@@ -4369,11 +7210,12 @@ class ReportService:
             "file_format": file_format,
             "file_path": primary["file_path"],
             "checksum": primary["checksum"],
-            "created_by": LOCAL_OPERATOR,
+            "created_by": operator_id,
             "created_at": now,
             "source_snapshot_id": source_snapshot_id,
             "report_snapshot_id": report_snapshot_id,
             "export_file_ids": [item["export_file_id"] for item in export_files],
+            "status": "ACTIVE",
             "simulation_disclaimer": SIMULATION_DISCLAIMER,
         }
         self.repository.put_snapshot(report_snapshot)
@@ -4397,6 +7239,32 @@ class ReportService:
             "report": report,
             "export_files": export_files,
         }
+
+    def _persist_report_manifest(self, report, export_files, context):
+        manifest = {
+            "report_id": report["report_id"],
+            "project_id": report["project_id"],
+            "report_type": report["report_type"],
+            "file_format": report["file_format"],
+            "status": report.get("status", "ACTIVE"),
+            "created_at": report["created_at"],
+            "source_snapshot_id": report.get("source_snapshot_id"),
+            "report_snapshot_id": report.get("report_snapshot_id"),
+            "export_files": [
+                {
+                    "export_file_id": item["export_file_id"],
+                    "file_name": item["file_name"],
+                    "file_format": item["file_format"],
+                    "checksum": item["checksum"],
+                    "byte_size": item["byte_size"],
+                }
+                for item in export_files
+            ],
+            "allocation_id": (context.get("allocation") or {}).get("allocation_id"),
+            "algorithm_task_id": (context.get("md_task") or {}).get("task_id"),
+            "simulation_disclaimer": SIMULATION_DISCLAIMER,
+        }
+        return self.repository.put_report_manifest(manifest)
 
     def _resolve_md_dshap_task(self, context, task_id=None):
         resolved_task_id = task_id or context["project"].get("current_algorithm_task_id")
@@ -4534,6 +7402,8 @@ class ReportService:
         utility = context["utility"] or {}
         md_task = context["md_task"] or {}
         allocation = context["allocation"] or {}
+        contract_ratio_plan = context["contract_ratio_plan"] or {}
+        contract_ratio_items = context["contract_ratio_items"]
         lines = [
             "# 数据收益分配系统 P0 模拟参考报告",
             "",
@@ -4567,6 +7437,7 @@ class ReportService:
             "## MD-DShap 权重摘要",
             f"- 任务ID: {md_task.get('task_id', 'N/A')}",
             f"- 算法版本: {md_task.get('algorithm_version', 'N/A')}",
+            "- 权重来源: MD-DShap，用于数据源主体收益池分配；非数据源主体不进入权重池。",
         ]
         for result in context["md_results"]:
             lines.append(
@@ -4577,32 +7448,64 @@ class ReportService:
                 "",
                 "## 收益分配模拟结果摘要",
                 f"- 模拟方案ID: {allocation.get('allocation_id', 'N/A')}",
-                "- 分配顺序: 总收益先按合同约定向非数据源主体执行优先分配并受上限约束；扣除后形成数据源主体收益池，再按 MD-DShap 权重对数据源主体分配。",
                 f"- 总收益: {self._amount_text(allocation.get('total_revenue'))}",
-                f"- 非数据源主体合同优先分配合计: {self._amount_text(allocation.get('priority_allocation_amount'))}",
-                f"- 数据源收益池: {self._amount_text(allocation.get('data_provider_revenue_pool'))}",
             ]
         )
-        for priority in context["contract_priority_allocations"]:
-            lines.append(
-                f"- 合同优先/{priority['party_name']}: requested={self._amount_text(priority['requested_amount'])}, "
-                f"cap={self._amount_text(priority['cap_amount'])}, actual={self._amount_text(priority['actual_priority_amount'])}"
+        if contract_ratio_plan:
+            lines.extend(
+                [
+                    "- 分配顺序: 总收益先按已保存合同比例方案划分非数据主体合同金额与数据源收益池；数据源收益池再按 MD-DShap 归一化权重分配给数据源主体。",
+                    f"- 合同比例方案ID: {contract_ratio_plan.get('plan_id', 'N/A')}",
+                    f"- 合同比例合计: {contract_ratio_plan.get('ratio_sum', 'N/A')}",
+                    f"- 数据源收益池比例: {contract_ratio_plan.get('data_provider_pool_ratio', 'N/A')}",
+                    f"- 非数据主体合同金额: {self._amount_text(allocation.get('non_data_contract_amount', allocation.get('priority_allocation_amount')))}",
+                    f"- 数据源收益池: {self._amount_text(allocation.get('data_provider_revenue_pool'))}",
+                ]
             )
+            for item in contract_ratio_items:
+                lines.append(
+                    f"- 合同比例/{item['party_name']}: ratio={item['ratio']}, "
+                    f"amount={self._amount_text(item['calculated_amount'])}, amount_source={item['amount_source']}"
+                )
+        else:
+            lines.extend(
+                [
+                    "- 分配顺序: 总收益先按合同约定向非数据源主体执行优先分配并受上限约束；扣除后形成数据源主体收益池，再按 MD-DShap 权重对数据源主体分配。",
+                    f"- 非数据源主体合同优先分配合计: {self._amount_text(allocation.get('priority_allocation_amount'))}",
+                    f"- 数据源收益池: {self._amount_text(allocation.get('data_provider_revenue_pool'))}",
+                    f"- 普通合同约束调整记录数: {len(context['constraint_traces'])}",
+                ]
+            )
+            for priority in context["contract_priority_allocations"]:
+                lines.append(
+                    f"- 合同优先/{priority['party_name']}: requested={self._amount_text(priority['requested_amount'])}, "
+                    f"cap={self._amount_text(priority['cap_amount'])}, actual={self._amount_text(priority['actual_priority_amount'])}"
+                )
         for result in context["allocation_results"]:
             lines.append(
                 f"- {result['party_name']}: {float(result['post_constraint_amount']):.2f}"
             )
-        lines.extend(
-            [
-                "",
-                "## 合同约束调整追踪摘要",
-                f"- 约束调整记录数: {len(context['constraint_traces'])}",
-            ]
-        )
-        for trace in context["constraint_traces"]:
-            lines.append(
-                f"- {trace['party_id']}: {trace['reason']}，调整 {float(trace['adjustment_amount']):.2f}"
+        if contract_ratio_plan:
+            lines.extend(
+                [
+                    "",
+                    "## 合同分配规则追踪摘要",
+                    "- 合同分配规则路径不生成 constraint_apply_trace；金额来源以 allocation_result.amount_source 标识。",
+                    f"- 后端约束调整记录数: {len(context['constraint_traces'])}",
+                ]
             )
+        else:
+            lines.extend(
+                [
+                    "",
+                    "## 合同约束调整追踪摘要",
+                    f"- 约束调整记录数: {len(context['constraint_traces'])}",
+                ]
+            )
+            for trace in context["constraint_traces"]:
+                lines.append(
+                    f"- {trace['party_id']}: {trace['reason']}，调整 {float(trace['adjustment_amount']):.2f}"
+                )
         lines.extend(
             [
                 "",
@@ -4616,35 +7519,54 @@ class ReportService:
         return "\n".join(lines)
 
     def _csv_files(self, context):
+        allocation_headers = [
+            "allocation_id",
+            "project_id",
+            "scenario_id",
+            "party_id",
+            "party_name",
+            "party_type",
+            "is_data_provider",
+            "raw_weight",
+            "normalized_weight",
+            "contract_ratio",
+            "base_pool_amount",
+            "pre_constraint_amount",
+            "post_constraint_amount",
+            "final_amount",
+            "amount_source",
+            "constraint_adjustment_reason",
+        ]
+        allocation_rows = [
+            {
+                "allocation_id": row["allocation_id"],
+                "project_id": row["project_id"],
+                "scenario_id": row["allocation_id"],
+                "party_id": row["party_id"],
+                "party_name": row["party_name"],
+                "party_type": row.get("party_type", ""),
+                "is_data_provider": str(bool(row.get("is_data_provider"))).lower(),
+                "raw_weight": self._weight_text(row["raw_weight"]),
+                "normalized_weight": self._weight_text(row["normalized_weight"]),
+                "contract_ratio": self._optional_weight_text(row.get("contract_ratio")),
+                "base_pool_amount": self._amount_text(row.get("base_pool_amount")),
+                "pre_constraint_amount": self._amount_text(row["pre_constraint_amount"]),
+                "post_constraint_amount": self._amount_text(row["post_constraint_amount"]),
+                "final_amount": self._amount_text(row.get("final_amount", row["post_constraint_amount"])),
+                "amount_source": row.get("amount_source", ""),
+                "constraint_adjustment_reason": row["constraint_adjustment_reason"],
+            }
+            for row in context["allocation_results"]
+        ]
         files = [
             (
                 "source_level_allocation.csv",
-                self._csv_content(
-                    [
-                        "allocation_id",
-                        "party_id",
-                        "party_name",
-                        "raw_weight",
-                        "normalized_weight",
-                        "pre_constraint_amount",
-                        "post_constraint_amount",
-                        "constraint_adjustment_reason",
-                    ],
-                    [
-                        {
-                            "allocation_id": row["allocation_id"],
-                            "party_id": row["party_id"],
-                            "party_name": row["party_name"],
-                            "raw_weight": self._weight_text(row["raw_weight"]),
-                            "normalized_weight": self._weight_text(row["normalized_weight"]),
-                            "pre_constraint_amount": self._amount_text(row["pre_constraint_amount"]),
-                            "post_constraint_amount": self._amount_text(row["post_constraint_amount"]),
-                            "constraint_adjustment_reason": row["constraint_adjustment_reason"],
-                        }
-                        for row in context["allocation_results"]
-                    ],
-                ),
-            )
+                self._csv_content(allocation_headers, allocation_rows),
+            ),
+            (
+                "allocation_result.csv",
+                self._csv_content(allocation_headers, allocation_rows),
+            ),
         ]
         if context["quality"]:
             files.append(
@@ -4768,6 +7690,18 @@ class ReportService:
             "allocation_id": allocation["allocation_id"] if allocation else None,
             "generated_at": utc_now(),
             "project_status": project["project_status"],
+            "total_revenue": allocation["total_revenue"] if allocation else None,
+            "contract_ratio_plan": context["contract_ratio_plan"],
+            "contract_ratio_items": context["contract_ratio_items"],
+            "priority_allocation": context["contract_priority_allocations"],
+            "priority_allocation_amount": allocation.get("priority_allocation_amount") if allocation else None,
+            "non_data_contract_amount": allocation.get("non_data_contract_amount") if allocation else None,
+            "data_provider_revenue_pool": allocation["data_provider_revenue_pool"] if allocation else None,
+            "allocation_mode": allocation.get("allocation_mode") if allocation else None,
+            "weight_source": "MD-DShap",
+            "results": context["allocation_results"],
+            "constraints": context["constraints"],
+            "rounding_note": "金额保留 2 位小数；尾差写入 result.rounding_delta。",
             "input_snapshot_refs": self._snapshot_refs(context, {"INPUT"}),
             "parameter_snapshot_refs": self._snapshot_refs(context, {"PARAMETER"}),
             "result_snapshot_refs": self._snapshot_refs(
@@ -4792,16 +7726,24 @@ class ReportService:
             },
             "allocation_summary": {
                 "total_revenue": allocation["total_revenue"] if allocation else None,
+                "priority_allocation_amount": allocation.get("priority_allocation_amount") if allocation else None,
                 "total_contract_priority_amount": allocation.get("priority_allocation_amount") if allocation else None,
+                "contract_ratio_plan_id": allocation.get("contract_ratio_plan_id") if allocation else None,
+                "contract_ratio_sum": allocation.get("contract_ratio_sum") if allocation else None,
+                "data_provider_pool_ratio": allocation.get("data_provider_pool_ratio") if allocation else None,
+                "non_data_contract_amount": allocation.get("non_data_contract_amount") if allocation else None,
                 "data_provider_revenue_pool": allocation["data_provider_revenue_pool"] if allocation else None,
+                "weight_source": "MD-DShap",
                 "currency": allocation.get("currency") if allocation else None,
             },
             "contract_priority_allocations": context["contract_priority_allocations"],
+            "allocation_priority_items": context["allocation_priority_items"],
+            "data_provider_allocations": context["data_provider_allocations"],
             "allocation_result": context["allocation_results"],
             "constraint_trace": context["constraint_traces"],
             "assumptions": [
                 "P0 本地演示使用确定性骨架公式和本地 JSON 状态。",
-                "非数据源主体先按合同优先和上限处理，扣除后形成数据源主体收益池。",
+                "合同分配规则路径下，非数据主体金额与数据源收益池来自已保存合同比例方案。",
                 "MD-DShap 为数据源主体权重层输出，不直接处理非数据源合同主体或总收益金额。",
             ],
             "disclaimer": self.EXTENDED_DISCLAIMER,
@@ -4823,6 +7765,61 @@ class ReportService:
         writer.writeheader()
         for row in rows:
             writer.writerow(row)
+        return output.getvalue()
+
+    def _pdf_bytes(self, markdown):
+        lines = [
+            "DVAS P1 Simulation Reference Report",
+            "Simulation reference only; not legal settlement or payment instruction.",
+            "Chinese disclaimer is embedded in the PDF metadata/comment for audit trace.",
+            self.EXTENDED_DISCLAIMER,
+            "",
+        ]
+        for line in markdown.splitlines():
+            normalized = line.replace("#", "").replace("*", "").strip()
+            if normalized:
+                lines.append(normalized)
+            if len(lines) >= 36:
+                break
+        text = "\n".join(lines)
+        safe_lines = [
+            line.encode("latin-1", errors="ignore").decode("latin-1") or "DVAS simulation reference"
+            for line in text.splitlines()
+        ]
+        content_lines = ["BT", "/F1 10 Tf", "72 760 Td"]
+        for index, line in enumerate(safe_lines[:42]):
+            escaped = line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+            if index:
+                content_lines.append("0 -16 Td")
+            content_lines.append(f"({escaped}) Tj")
+        content_lines.append("ET")
+        stream = "\n".join(content_lines).encode("latin-1")
+        chinese_comment = f"% {self.EXTENDED_DISCLAIMER}\n".encode("utf-8")
+        objects = [
+            b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n",
+            b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n",
+            b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj\n",
+            b"4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n",
+            b"5 0 obj << /Length " + str(len(stream)).encode("ascii") + b" >> stream\n" + stream + b"\nendstream endobj\n",
+        ]
+        output = io.BytesIO()
+        output.write(b"%PDF-1.4\n")
+        output.write(chinese_comment)
+        offsets = [0]
+        for obj in objects:
+            offsets.append(output.tell())
+            output.write(obj)
+        xref_pos = output.tell()
+        output.write(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+        output.write(b"0000000000 65535 f \n")
+        for offset in offsets[1:]:
+            output.write(f"{offset:010d} 00000 n \n".encode("ascii"))
+        output.write(
+            (
+                f"trailer << /Size {len(objects) + 1} /Root 1 0 R >>\n"
+                f"startxref\n{xref_pos}\n%%EOF\n"
+            ).encode("ascii")
+        )
         return output.getvalue()
 
     def _latest(self, items):
@@ -4890,7 +7887,7 @@ class ReportService:
             "snapshot_type": snapshot_type,
             "content_json": copy.deepcopy(content),
             "checksum": stable_checksum(content),
-            "created_by": LOCAL_OPERATOR,
+            "created_by": current_operator_id(self.repository),
             "created_at": now,
         }
 
@@ -4919,6 +7916,8 @@ class ReportService:
             return ReportFormat.JSON.value
         if suffix == ".jsonl":
             return ReportFormat.JSONL.value
+        if suffix == ".pdf":
+            return "PDF"
         return default
 
     def _amount_text(self, value):

@@ -9,6 +9,78 @@ info:
 servers:
   - url: http://127.0.0.1:8000/api/v1
 paths:
+  /auth/login:
+    post:
+      summary: Local development login
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "401":
+          $ref: "#/components/responses/StandardError"
+  /auth/logout:
+    post:
+      summary: Local development logout
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "401":
+          $ref: "#/components/responses/StandardError"
+  /auth/me:
+    get:
+      summary: Get current authenticated user and permissions
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "401":
+          $ref: "#/components/responses/StandardError"
+  /auth/permissions:
+    get:
+      summary: Get current permission summary
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "401":
+          $ref: "#/components/responses/StandardError"
+  /my/projects:
+    get:
+      summary: List projects visible to the current user
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "401":
+          $ref: "#/components/responses/StandardError"
+  /my/uploads:
+    get:
+      summary: List uploads visible to the current user
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "401":
+          $ref: "#/components/responses/StandardError"
+  /my/jobs:
+    get:
+      summary: List jobs visible to the current user
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "401":
+          $ref: "#/components/responses/StandardError"
+  /my/reports:
+    get:
+      summary: List reports visible to the current user
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "401":
+          $ref: "#/components/responses/StandardError"
+  /my/workbench:
+    get:
+      summary: Get current-user workbench summary
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "401":
+          $ref: "#/components/responses/StandardError"
   /projects/current:
     get:
       summary: Get current P0 local project
@@ -41,11 +113,90 @@ paths:
           $ref: "#/components/responses/StandardSuccess"
   /dashboard/actions/quick-run:
     post:
-      summary: Run the real P0 one-click calculation pipeline
+      summary: Run the real P0 one-click calculation pipeline with a saved contract-ratio plan
       responses:
         "200":
           $ref: "#/components/responses/StandardSuccess"
         "409":
+          $ref: "#/components/responses/StandardError"
+  /projects/{project_id}/jobs:
+    post:
+      summary: Start a local asynchronous complete-chain job
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "409":
+          $ref: "#/components/responses/StandardError"
+    get:
+      summary: List local asynchronous jobs for a project
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "401":
+          $ref: "#/components/responses/StandardError"
+  /jobs/{job_id}:
+    get:
+      summary: Get a local asynchronous job detail
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "404":
+          $ref: "#/components/responses/StandardError"
+  /jobs/{job_id}/cancel:
+    post:
+      summary: Cancel a cancellable local asynchronous job
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "409":
+          $ref: "#/components/responses/StandardError"
+  /projects/{project_id}/md-dshap/tasks:
+    post:
+      summary: Start an asynchronous MD-DShap task for a project
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "409":
+          $ref: "#/components/responses/StandardError"
+  /projects/{project_id}/md-dshap/tasks/{task_id}/progress:
+    get:
+      summary: Get asynchronous MD-DShap task progress
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "404":
+          $ref: "#/components/responses/StandardError"
+  /import-templates/csv:
+    get:
+      summary: Download the CSV import template
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "401":
+          $ref: "#/components/responses/StandardError"
+  /import-templates/xlsx:
+    get:
+      summary: Download the XLSX import template
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "401":
+          $ref: "#/components/responses/StandardError"
+  /projects/{project_id}/data-packages/import/csv:
+    post:
+      summary: Import a data package from the CSV template
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "422":
+          $ref: "#/components/responses/StandardError"
+  /projects/{project_id}/data-packages/import/xlsx:
+    post:
+      summary: Import a data package from the XLSX template
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "422":
           $ref: "#/components/responses/StandardError"
   /demo-cases/{demo_case_id}/initialize:
     post:
@@ -528,6 +679,44 @@ paths:
           $ref: "#/components/responses/StandardSuccess"
         "404":
           $ref: "#/components/responses/StandardError"
+  /projects/{project_id}/allocation/summary:
+    get:
+      summary: Get project-level contract-ratio allocation summary
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "404":
+          $ref: "#/components/responses/StandardError"
+  /projects/{project_id}/allocation/simulate:
+    post:
+      summary: Simulate allocation from the saved project contract-ratio plan
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "409":
+          $ref: "#/components/responses/StandardError"
+  /projects/{project_id}/allocation/contract-ratio:
+    get:
+      summary: Get the saved project contract-ratio plan
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "404":
+          $ref: "#/components/responses/StandardError"
+    put:
+      summary: Save the project contract-ratio plan
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "422":
+          $ref: "#/components/responses/StandardError"
+    delete:
+      summary: Clear the saved project contract-ratio plan
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "404":
+          $ref: "#/components/responses/StandardError"
   /reports:
     get:
       summary: List generated P0 report and export records
@@ -573,6 +762,62 @@ paths:
         "200":
           $ref: "#/components/responses/StandardSuccess"
         "409":
+          $ref: "#/components/responses/StandardError"
+  /projects/{project_id}/reports/pdf:
+    post:
+      summary: Generate a local P1 PDF report artifact
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "409":
+          $ref: "#/components/responses/StandardError"
+  /projects/{project_id}/reports:
+    get:
+      summary: List project report history records
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "401":
+          $ref: "#/components/responses/StandardError"
+  /reports/{report_id}:
+    get:
+      summary: Get report history detail
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "404":
+          $ref: "#/components/responses/StandardError"
+  /reports/{report_id}/files:
+    get:
+      summary: List files associated with a report
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "404":
+          $ref: "#/components/responses/StandardError"
+  /reports/{report_id}/manifest:
+    get:
+      summary: Get report export manifest
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "404":
+          $ref: "#/components/responses/StandardError"
+  /reports/{report_id}/download:
+    get:
+      summary: Download a report or report file as base64 content
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "404":
+          $ref: "#/components/responses/StandardError"
+  /reports/{report_id}/archive:
+    patch:
+      summary: Archive a report history record
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "404":
           $ref: "#/components/responses/StandardError"
   /system/parameters:
     get:
@@ -631,6 +876,162 @@ paths:
           $ref: "#/components/responses/StandardError"
         "422":
           $ref: "#/components/responses/StandardError"
+  /system/users:
+    get:
+      summary: List local P1 user accounts without password fields
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "403":
+          $ref: "#/components/responses/StandardError"
+    post:
+      summary: Create a local P1 user account and return one-time initial password only in this response
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "403":
+          $ref: "#/components/responses/StandardError"
+  /system/users/{user_id}:
+    get:
+      summary: Get a local P1 user public profile without password fields
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "403":
+          $ref: "#/components/responses/StandardError"
+        "404":
+          $ref: "#/components/responses/StandardError"
+    patch:
+      summary: Update a local P1 user account
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "404":
+          $ref: "#/components/responses/StandardError"
+  /system/users/{user_id}/disable:
+    post:
+      summary: Disable another local P1 user account with SYSTEM_ADMIN or USER_DISABLE permission
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "403":
+          $ref: "#/components/responses/StandardError"
+        "409":
+          $ref: "#/components/responses/StandardError"
+        "404":
+          $ref: "#/components/responses/StandardError"
+  /system/users/{user_id}/reset-password:
+    post:
+      summary: Reset a local P1 user password and return one-time temporary password only in this response
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "403":
+          $ref: "#/components/responses/StandardError"
+        "404":
+          $ref: "#/components/responses/StandardError"
+  /users:
+    get:
+      summary: Alias of /system/users; returns UserPublic records only
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "403":
+          $ref: "#/components/responses/StandardError"
+    post:
+      summary: Alias of /system/users for administrator user creation
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "403":
+          $ref: "#/components/responses/StandardError"
+  /users/me:
+    get:
+      summary: Get current authenticated user's public account security profile
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "401":
+          $ref: "#/components/responses/StandardError"
+  /users/me/password:
+    put:
+      summary: Change current authenticated user's password with current password verification
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "401":
+          $ref: "#/components/responses/StandardError"
+        "403":
+          $ref: "#/components/responses/StandardError"
+        "409":
+          $ref: "#/components/responses/StandardError"
+        "422":
+          $ref: "#/components/responses/StandardError"
+  /users/{user_id}:
+    get:
+      summary: Alias for reading a public user profile without password fields
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "403":
+          $ref: "#/components/responses/StandardError"
+        "404":
+          $ref: "#/components/responses/StandardError"
+    patch:
+      summary: Alias for updating a local P1 user account
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "403":
+          $ref: "#/components/responses/StandardError"
+        "404":
+          $ref: "#/components/responses/StandardError"
+  /users/{user_id}/disable:
+    post:
+      summary: Alias for disabling another user with backend permission checks
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "403":
+          $ref: "#/components/responses/StandardError"
+        "409":
+          $ref: "#/components/responses/StandardError"
+        "404":
+          $ref: "#/components/responses/StandardError"
+  /users/{user_id}/reset-password:
+    post:
+      summary: Alias for administrator password reset with one-time temporary password response
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "403":
+          $ref: "#/components/responses/StandardError"
+        "404":
+          $ref: "#/components/responses/StandardError"
+  /system/roles:
+    get:
+      summary: List local P1 roles
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "403":
+          $ref: "#/components/responses/StandardError"
+  /system/roles/{role_id}/permissions:
+    put:
+      summary: Replace permissions for a local P1 role
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "404":
+          $ref: "#/components/responses/StandardError"
+  /system/permissions:
+    get:
+      summary: List local P1 permission records
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "403":
+          $ref: "#/components/responses/StandardError"
   /audit-logs:
     get:
       summary: Query P0 audit logs
@@ -675,6 +1076,38 @@ paths:
         "200":
           $ref: "#/components/responses/StandardSuccess"
         "404":
+          $ref: "#/components/responses/StandardError"
+  /audit/logs:
+    get:
+      summary: Query P1 audit logs alias
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "403":
+          $ref: "#/components/responses/StandardError"
+  /audit/logs/{log_id}:
+    get:
+      summary: Get P1 audit log detail alias
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "404":
+          $ref: "#/components/responses/StandardError"
+  /audit/snapshots/{snapshot_id}:
+    get:
+      summary: Get audit snapshot payload
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "404":
+          $ref: "#/components/responses/StandardError"
+  /audit/export:
+    post:
+      summary: Export audit log data
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
+        "409":
           $ref: "#/components/responses/StandardError"
   /navigation/menus:
     get:
@@ -886,6 +1319,11 @@ paths:
         "404":
           $ref: "#/components/responses/StandardError"
   /metering/shuyuan/parameters:
+    get:
+      summary: Read current shuyuan metering parameters
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
     put:
       summary: Persist shuyuan metering parameters with parameter versions
       responses:
@@ -916,6 +1354,11 @@ paths:
         "200":
           $ref: "#/components/responses/StandardSuccess"
   /metering/utility/function:
+    get:
+      summary: Read current utility-function draft or default formula
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
     put:
       summary: Persist utility-function runtime draft with snapshot and audit
       responses:
@@ -945,6 +1388,11 @@ paths:
         "200":
           $ref: "#/components/responses/StandardSuccess"
   /allocation/md-dshap/tasks:
+    get:
+      summary: List MD-DShap tasks for the current project
+      responses:
+        "200":
+          $ref: "#/components/responses/StandardSuccess"
     post:
       summary: Run MD-DShap task
       responses:
