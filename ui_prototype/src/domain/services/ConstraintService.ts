@@ -12,6 +12,14 @@ export const ConstraintService: MockDomainService = {
   readPage: readPageFromStore,
   handleAction(store, action, payload) {
     if (action.id === "CONS-002") {
+      if (payload?.kind === "contract-ratio-save") {
+        return mutateBackendAndRefresh(
+          store,
+          () => dvasApi.saveCurrentContractRatio(toContractRatioPayload(payload)),
+          "合同比例分配方案已由后端保存，合同页和模拟页已刷新。",
+          "contract ratio save",
+        );
+      }
       const constraint = requireConstraintUpsertPayload(payload);
       return mutateBackendAndRefresh(
         store,
@@ -22,6 +30,14 @@ export const ConstraintService: MockDomainService = {
     }
 
     if (action.id === "CONS-003") {
+      if (payload?.kind === "contract-ratio-save") {
+        return mutateBackendAndRefresh(
+          store,
+          () => dvasApi.saveCurrentContractRatio(toContractRatioPayload(payload)),
+          "合同比例分配方案已由后端保存，合同页和模拟页已刷新。",
+          "contract ratio save",
+        );
+      }
       const constraint = requireConstraintUpsertPayload(payload);
       if (!constraint.constraintId) {
         throw new Error("编辑合同约束缺少 constraint_id");
@@ -39,6 +55,14 @@ export const ConstraintService: MockDomainService = {
     }
 
     if (action.id === "CONS-004") {
+      if (payload?.kind === "contract-ratio-clear") {
+        return mutateBackendAndRefresh(
+          store,
+          () => dvasApi.clearCurrentContractRatio(),
+          "合同比例分配方案已由后端清空，合同页和模拟页已刷新。",
+          "contract ratio clear",
+        );
+      }
       if (!payload || payload.kind !== "constraint-status") {
         throw new Error("合同约束启停缺少 constraint_id/status");
       }
@@ -82,5 +106,21 @@ function toConstraintWritePayload(
     priority: payload.priority,
     status: payload.status ?? "ACTIVE",
     description: payload.description,
+  };
+}
+
+function toContractRatioPayload(
+  payload: Extract<ActionPayload, { kind: "contract-ratio-save" }>,
+) {
+  return {
+    total_revenue: payload.totalRevenue,
+    currency: payload.currency,
+    data_provider_pool_ratio: payload.dataProviderPoolRatio,
+    items: payload.items.map((item) => ({
+      bucket_type: item.bucketType,
+      party_id: item.partyId,
+      ratio: item.ratio,
+      basis_text: item.basisText,
+    })),
   };
 }

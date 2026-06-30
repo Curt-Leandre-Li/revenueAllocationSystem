@@ -39,6 +39,8 @@ export const knownActionHandlers = new Set<ActionHandlerName>(
   Object.keys(actionHandlerRegistry) as ActionHandlerName[],
 );
 
+const silentDisabledActionIds = new Set(["REP-009"]);
+
 export function dispatchWorkbenchAction(
   store: WorkbenchStore,
   action: ActionDefinition,
@@ -57,6 +59,12 @@ export function dispatchWorkbenchAction(
     store.snapshot.backend?.disabledActions,
   );
   if (disabledReason) {
+    if (silentDisabledActionIds.has(action.id)) {
+      return {
+        ...store,
+        lastMessage: "",
+      };
+    }
     return {
       ...store,
       lastMessage: `${action.label} 未执行：${disabledReason}`,

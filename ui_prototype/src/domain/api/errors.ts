@@ -20,6 +20,10 @@ export interface ApiErrorEnvelope {
   message?: string;
   trace_id?: string | null;
   field_errors?: ApiFieldError[];
+  error_code?: string;
+  error_field?: string | null;
+  error_message?: string;
+  detail_json?: unknown;
   disabled_reason?: string;
   error?: {
     code?: string;
@@ -46,20 +50,20 @@ export function apiErrorFromEnvelope(
 ): ApiError {
   const firstFieldError = envelope.field_errors?.[0];
   const retryable = status === 0 || status >= 500;
-  const nestedMessage = envelope.error?.message;
+  const nestedMessage = envelope.error?.message ?? envelope.error_message;
   const topLevelMessage = envelope.message;
   const disabledReason = envelope.disabled_reason;
   const traceDetail = envelope.trace_id ? `trace_id=${envelope.trace_id}` : "";
   const nestedDetail =
-    envelope.error?.detail === undefined
+    (envelope.error?.detail ?? envelope.detail_json) === undefined
       ? ""
-      : `error.detail=${JSON.stringify(envelope.error.detail)}`;
+      : `error.detail=${JSON.stringify(envelope.error?.detail ?? envelope.detail_json)}`;
   const detail = [traceDetail, nestedDetail].filter(Boolean).join(" ");
 
   return {
-    errorCode: envelope.error?.code || envelope.code || "DVAS_API_ERROR",
+    errorCode: envelope.error?.code || envelope.error_code || envelope.code || "DVAS_API_ERROR",
     errorMessage: nestedMessage || topLevelMessage || disabledReason || "后端请求失败",
-    errorField: envelope.error?.field ?? firstFieldError?.field,
+    errorField: envelope.error?.field ?? envelope.error_field ?? firstFieldError?.field,
     detail: detail || undefined,
     repairSuggestion: firstFieldError?.reason || disabledReason,
     raw,

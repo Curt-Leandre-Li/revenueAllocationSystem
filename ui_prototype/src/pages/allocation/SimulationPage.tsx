@@ -1,86 +1,33 @@
-import { useState } from "react";
 import { actionRegistry } from "../../domain/actionRegistry";
+import type { DataRow, RoutePath } from "../../domain/types";
 import {
-  ChartArea,
   CompactPageHeader,
-  DetailDrawer,
-  DrawerSection,
-  EmptyGuide,
-  ExportFieldList,
   InlineNotice,
-  PreconditionPanel,
-  ProductDonutChart,
-  ProductFlowChart,
-  ProgressiveDisclosure,
   SummaryStrip,
-  TraceDrawer,
-  WorkspaceLayout,
 } from "../../ui";
 import {
-  amountCell,
-  cellText,
-  hasBackendRows,
-  numericCellValue,
-  optionalCellText,
-  pageMetrics,
   pageRows,
-  percentCell,
-  weightCell,
 } from "../backendPageData";
 import type { PageProps } from "../pageTypes";
+import {
+  formatInteger,
+  formatPercent,
+  formatYuan,
+  formatWeight,
+  useAllocationContext,
+} from "./allocationContext";
 
-export function SimulationPage({ route, snapshot, onAction, onNavigate }: PageProps) {
-  const [drawer, setDrawer] = useState<"" | "revenue" | "priority" | "mode" | "compare" | "export" | "trace">("");
-  const [totalRevenueInput, setTotalRevenueInput] = useState("");
-  const [priorityAmountInput, setPriorityAmountInput] = useState("");
-  const [allocationMode, setAllocationMode] = useState("MD_DSHAP_WEIGHT_WITH_CONSTRAINTS");
+export function SimulationPage({ snapshot, onAction, onNavigate }: PageProps) {
+  const allocation = useAllocationContext(snapshot);
   const pageData = snapshot.pages["/allocation/simulation"];
-  const rows = pageRows(pageData);
-  const dataProviderRows = rows.filter((row) => cellText(row, "subject_track", "DATA_PROVIDER_POOL") === "DATA_PROVIDER_POOL");
-  const contractPriorityRows = parseContractPriorityRows(pageData.technicalDetails.contract_priority_allocations_json);
-  const firstRow = rows[0];
-  const metricMap = new Map(pageMetrics(pageData).map((item) => [item.label, item]));
-  const currentAllocationId = optionalCellText(pageData.technicalDetails, "current_allocation_id");
-  const canRunSimulation = totalRevenueInput.trim() !== "";
   const connected = snapshot.backend?.connected !== false;
-  const summaryItems = [
-    metricMap.get("总收益") ?? {
-      label: "总收益",
-      value: amountCell(firstRow, "total_revenue"),
-      hint: "系统结果",
-      tone: "neutral" as const,
-    },
-    metricMap.get("非数据合同优先") ?? metricMap.get("优先分配") ?? {
-      label: "非数据合同优先",
-      value: amountCell(firstRow, "priority_allocation_amount"),
-      hint: "合同优先合计",
-      tone: "neutral" as const,
-    },
-    metricMap.get("数据源收益池") ?? {
-      label: "数据源收益池",
-      value: amountCell(firstRow, "data_provider_revenue_pool"),
-      hint: "系统结果",
-      tone: "neutral" as const,
-    },
-    metricMap.get("参与方数量") ?? {
-      label: "参与方数量",
-      value: optionalCellText(pageData.technicalDetails, "participant_count") || "暂无",
-      hint: "系统摘要",
-      tone: "neutral" as const,
-    },
-  ];
-  const allocationPoints = dataProviderRows.map((row) => ({
-    label: cellText(row, "party_name"),
-    value: amountCell(row, "post_constraint_amount"),
-    numeric: numericCellValue(row.post_constraint_amount),
-    meta: cellText(row, "scenario_status"),
-  }));
-  const sharePoints = dataProviderRows.map((row) => ({
-    label: cellText(row, "party_name"),
-    value: percentCell(row, "normalized_weight"),
-    numeric: numericCellValue(row.normalized_weight),
-    meta: amountCell(row, "post_constraint_amount"),
-  }));
+  const canRunSimulation = connected && allocation.readiness.canSimulate;
+  const runBlockReasons = connected
+    ? allocation.readiness.simulateBlockReasons
+    : ["系统未连接，无法提交收益分配模拟"];
+  const resultRows = pageRows(pageData);
+  const hasResults = resultRows.length > 0;
+  const contractRatioConfigured = Boolean(allocation.readiness.contractRatioConfigured);
 
   function runSimulation() {
     if (!canRunSimulation) {
@@ -88,24 +35,52 @@ export function SimulationPage({ route, snapshot, onAction, onNavigate }: PagePr
     }
     onAction(actionRegistry["ALLOC-011"], {
       kind: "allocation-run",
-      totalRevenue: Number(totalRevenueInput),
-      priorityAllocationAmount: priorityAmountInput.trim()
-        ? Number(priorityAmountInput)
-        : undefined,
-      allocationMode,
     });
   }
 
+  const summaryItems = [
+    {
+      label: "总收益",
+      value: formatYuan(allocation.readiness.totalRevenue),
+      hint: "来自后端 allocation summary",
+      tone: allocation.readiness.totalRevenue !== null ? "success" as const : "warning" as const,
+    },
+    {
+      label: "合同比例方案",
+      value: contractRatioConfigured ? "已配置" : "未配置",
+      hint: `比例合计 ${formatPercent(allocation.readiness.contractRatioSum, "后端未返回")}`,
+      tone: contractRatioConfigured ? "success" as const : "warning" as const,
+    },
+    {
+      label: "数据源收益池",
+      value: formatYuan(allocation.readiness.dataProviderRevenuePool),
+      hint: "后端 data_provider_revenue_pool",
+      tone: allocation.readiness.dataProviderRevenuePool !== null ? "success" as const : "warning" as const,
+    },
+    {
+      label: "非数据主体合同金额",
+      value: formatYuan(allocation.readiness.priorityTotalAmount, "0 元"),
+      hint: "后端 non_data_contract_amount",
+      tone: "neutral" as const,
+    },
+    {
+      label: "MD-DShap 权重",
+      value: allocation.readiness.hasMdsWeights ? "已完成" : "待完成",
+      hint: `权重合计 ${formatWeight(allocation.readiness.weightSum, "待计算")}`,
+      tone: allocation.readiness.hasMdsWeights ? "success" as const : "warning" as const,
+    },
+  ];
+
   return (
-    <div className="pageWorkspace leanPage simulationPage">
+    <div className="pageWorkspace leanPage simulationPage allocationRefinePage contractSimulationPage">
       <CompactPageHeader
-        title="模拟收益分配"
-        description="先执行非数据源主体合同优先分配并受上限约束，再用 MD-DShap 权重分配数据源主体收益池。"
+        title="收益分配模拟"
+        description="读取已保存的合同比例方案：总收益先划分为非数据主体合同金额与数据源收益池，数据源收益池再按 MD-DShap 权重分配给数据源主体。"
         primaryAction={
           <button
             className="actionButton primary"
             disabled={!canRunSimulation}
-            title={canRunSimulation ? "提交本次模拟请求" : "请先输入总收益；页面不使用默认收益兜底。"}
+            title={canRunSimulation ? "执行收益分配模拟" : runBlockReasons.join("；")}
             type="button"
             onClick={runSimulation}
           >
@@ -113,403 +88,263 @@ export function SimulationPage({ route, snapshot, onAction, onNavigate }: PagePr
           </button>
         }
         secondaryActions={
-          <>
-            <button className="actionButton secondary" type="button" onClick={() => setDrawer("revenue")}>
-              配置收益
-            </button>
-            <button className="actionButton secondary" type="button" onClick={() => setDrawer("priority")}>
-              配置合同优先
-            </button>
-            <button className="actionButton secondary" type="button" onClick={() => setDrawer("trace")}>
-              约束详情
-            </button>
-          </>
+          <button className="actionButton secondary" type="button" onClick={() => onNavigate("/allocation/constraints" as RoutePath)}>
+            去配置合同分配规则
+          </button>
         }
       />
 
-      {connected ? null : <InlineNotice tone="warning">系统未连接，结果刷新和操作提交暂不可用。</InlineNotice>}
+      {canRunSimulation ? null : (
+        <InlineNotice tone="warning" title="当前暂不可执行">
+          {runBlockReasons.join("；")}
+        </InlineNotice>
+      )}
+
       <SummaryStrip items={summaryItems} />
 
-      <section className="leanTableSection">
-        <div className="leanSectionHead">
-          <div>
-            <h2>总收益与合同优先分配</h2>
-            <p>非数据源主体先按合同优先项分配，实际金额和上限均以系统返回为准。</p>
+      <section className="allocationDashboardGrid contractSimulationGrid">
+        <article className="allocationPanel precheck">
+          <div className="allocationPanelHead">
+            <h2>分配前置检查</h2>
+            <span>{canRunSimulation ? "可执行" : "待处理"}</span>
           </div>
+          <ul className="allocationChecklist">
+            <CheckItem
+              ok={contractRatioConfigured}
+              label="合同比例方案"
+              value={contractRatioConfigured ? "已保存" : "请先配置并保存合同比例分配方案"}
+              actionLabel="去配置"
+              onAction={() => onNavigate("/allocation/constraints" as RoutePath)}
+            />
+            <CheckItem
+              ok={allocation.readiness.hasMdsWeights && allocation.readiness.mdsWeightSumValid}
+              label="MD-DShap 权重"
+              value={
+                allocation.readiness.hasMdsWeights
+                  ? `已完成，${formatInteger(allocation.readiness.dataProviderCount, "0")} 个主体，权重合计 ${formatWeight(allocation.readiness.weightSum)}`
+                  : "请先完成权重计算"
+              }
+              actionLabel="去 MD-DShap"
+              onAction={() => onNavigate("/allocation/md-dshap" as RoutePath)}
+            />
+            <CheckItem
+              ok={allocation.readiness.totalRevenue !== null}
+              label="总收益"
+              value={formatYuan(allocation.readiness.totalRevenue)}
+            />
+            <CheckItem
+              ok={allocation.readiness.dataProviderRevenuePool !== null}
+              label="数据源收益池"
+              value={formatYuan(allocation.readiness.dataProviderRevenuePool)}
+            />
+            <CheckItem
+              ok={hasResults}
+              label="执行状态"
+              value={hasResults ? "已生成模拟结果" : "待执行"}
+            />
+          </ul>
+        </article>
+
+        <div className="allocationSideStack simulationFlowStack">
+          <article className="allocationPanel flowPlan">
+            <div className="allocationPanelHead">
+              <h2>收益流向</h2>
+              <span>{hasResults ? "已生成结果" : "计划流向"}</span>
+            </div>
+            <div className="planFlowBlocks contractFlowBlocks">
+              <PlanBlock label="总收益" value={formatInteger(allocation.readiness.totalRevenue)} />
+              <PlanBlock label="合同比例划分" value={formatPercent(allocation.readiness.contractRatioSum, "待配置")} />
+              <PlanBlock label="数据源收益池" value={formatInteger(allocation.readiness.dataProviderRevenuePool)} />
+              <PlanBlock label="MD-DShap 权重分配" value={`${formatInteger(allocation.readiness.dataProviderCount, "0")} 个主体`} />
+              <PlanBlock label="最终结果" value={hasResults ? `${resultRows.length} 行` : "待生成"} muted={!hasResults} />
+            </div>
+          </article>
+
+          <article className="allocationPanel constraintEvidence">
+            <div className="allocationPanelHead">
+              <h2>约束与金额来源</h2>
+              <span>{allocation.constraintCheck.statusText}</span>
+            </div>
+            <div className="constraintEvidenceBody">
+              <dl>
+                <div>
+                  <dt>trace 行数</dt>
+                  <dd>
+                    {allocation.constraintCheck.hitCount === null
+                      ? "后端未返回"
+                      : formatInteger(allocation.constraintCheck.hitCount, "0")}
+                  </dd>
+                </div>
+                <div>
+                  <dt>调整金额</dt>
+                  <dd>
+                    {allocation.constraintCheck.adjustmentAmount === null
+                      ? "后端未返回"
+                      : formatYuan(allocation.constraintCheck.adjustmentAmount, "0 元")}
+                  </dd>
+                </div>
+                <div>
+                  <dt>识别状态</dt>
+                  <dd>{constraintStateLabel(allocation.constraintCheck.state)}</dd>
+                </div>
+              </dl>
+            </div>
+          </article>
         </div>
-        <dl className="businessDetail compact">
-          <div><dt>总收益</dt><dd>{amountCell(firstRow, "total_revenue")}</dd></div>
-          <div><dt>非数据源合同优先合计</dt><dd>{amountCell(firstRow, "priority_allocation_amount")}</dd></div>
-          <div><dt>剩余数据源收益池</dt><dd>{amountCell(firstRow, "data_provider_revenue_pool")}</dd></div>
-        </dl>
-        {contractPriorityRows.length ? (
+      </section>
+
+      <section className="allocationPanel tablePanel">
+        <div className="allocationPanelHead">
+          <h2>模拟结果</h2>
+          <span>{hasResults ? "后端返回" : "待执行后生成"}</span>
+        </div>
+        {hasResults ? (
           <div className="tableWrap">
             <table className="dataTable phase2Table">
               <thead>
                 <tr>
-                  <th>非数据源主体</th>
-                  <th>请求金额</th>
-                  <th>合同上限</th>
-                  <th>实际优先分配</th>
-                  <th>依据</th>
-                  <th>状态</th>
+                  <th>主体名称</th>
+                  <th>主体类型</th>
+                  <th>金额来源</th>
+                  <th>合同比例</th>
+                  <th>归一化权重</th>
+                  <th>基础金额池</th>
+                  <th>最终金额</th>
+                  <th>说明</th>
                 </tr>
               </thead>
               <tbody>
-                {contractPriorityRows.map((row) => (
-                  <tr key={row.key}>
-                    <td><strong>{row.partyName}</strong></td>
-                    <td>{row.requestedAmount}</td>
-                    <td>{row.capAmount}</td>
-                    <td>{row.actualPriorityAmount}</td>
-                    <td>{row.basisText}</td>
-                    <td><span className="tag success">{row.status}</span></td>
-                  </tr>
+                {resultRows.map((row, index) => (
+                  <ResultRow key={`${readRow(row, "party_id")}-${index}`} row={row} />
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <EmptyGuide
-            title="暂无合同优先明细"
-            description="执行模拟后展示后端返回的非数据源主体合同优先金额、上限和实际分配。"
-          />
+          <div className="operationEmptyState">
+            <strong>当前尚未生成收益分配模拟结果。</strong>
+            <p>保存合同比例方案并完成 MD-DShap 权重后，可执行模拟并查看所有主体最终金额。</p>
+            <div>
+              <button className="actionButton secondary" type="button" onClick={() => onNavigate("/allocation/constraints" as RoutePath)}>
+                去配置合同分配规则
+              </button>
+              <button className="actionButton primary" disabled={!canRunSimulation} type="button" onClick={runSimulation}>
+                执行分配模拟
+              </button>
+            </div>
+          </div>
         )}
       </section>
 
-      <section className="resultChartGrid primary">
-        <ChartArea title="收益流向" source={hasBackendRows(pageData) ? "rows" : pageData.chart?.chart_id}>
-          <ProductFlowChart
-            total={amountCell(firstRow, "total_revenue")}
-            priority={amountCell(firstRow, "priority_allocation_amount")}
-            pool={amountCell(firstRow, "data_provider_revenue_pool")}
-            parties={allocationPoints}
-          />
-        </ChartArea>
-        <ChartArea title="参与方收益占比" source={hasBackendRows(pageData) ? "rows" : pageData.chart?.chart_id}>
-          <ProductDonutChart points={sharePoints} />
-        </ChartArea>
-      </section>
-
-      <WorkspaceLayout
-        main={
-          <>
-            <section className="simulationLeanInputs" aria-label="收益分配模拟请求参数">
-              <label>
-                <span>总收益</span>
-                <input
-                  value={totalRevenueInput}
-                  type="number"
-                  min="0"
-                  placeholder="输入后提交"
-                  onChange={(event) => setTotalRevenueInput(event.target.value)}
-                />
-              </label>
-              <label>
-                <span>合同优先分配</span>
-                <input
-                  value={priorityAmountInput}
-                  type="number"
-                  min="0"
-                  placeholder="可选"
-                  onChange={(event) => setPriorityAmountInput(event.target.value)}
-                />
-              </label>
-              <label>
-                <span>分配模式</span>
-                <select
-                  value={allocationMode}
-                  onChange={(event) => setAllocationMode(event.target.value)}
-                >
-                  <option value="MD_DSHAP_WEIGHT_WITH_CONSTRAINTS">MD-DShap 权重分配</option>
-                </select>
-              </label>
-            </section>
-
-            <section className="leanTableSection">
-              <div className="leanSectionHead">
-                <div>
-                  <h2>数据源主体收益池分配</h2>
-                  <p>只展示数据源主体，金额按后端 MD-DShap 归一化权重和约束结果返回。</p>
-                </div>
-                <button className="textLinkButton" type="button" onClick={() => setDrawer("compare")}>
-                  查看方案对比
-                </button>
-              </div>
-          {dataProviderRows.length ? (
-            <div className="tableWrap">
-              <table className="dataTable phase2Table">
-                <thead>
-                  <tr>
-                    <th>参与方</th>
-                    <th>权重</th>
-                    <th>约束前金额</th>
-                    <th>约束后金额</th>
-                    <th>调整金额</th>
-                    <th>状态</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dataProviderRows.map((row, index) => (
-                    <tr key={`${cellText(row, "party_name", "party")}-${index}`}>
-                      <td><strong>{cellText(row, "party_name")}</strong></td>
-                      <td>{weightCell(row, "normalized_weight")}</td>
-                      <td>{amountCell(row, "pre_constraint_amount")}</td>
-                      <td>{amountCell(row, "post_constraint_amount")}</td>
-                      <td>{amountCell(row, "constraint_adjustment_amount")}</td>
-                      <td><span className="tag success">{cellText(row, "scenario_status")}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      <footer className="allocationNextStep">
+        <div>
+          <strong>下一步建议</strong>
+          <p>执行模拟后检查 amount_source、最终金额合计和报告导出字段。</p>
+        </div>
+        <div className={canRunSimulation ? "nextStepStatus success" : "nextStepStatus warning"}>
+          <strong>
+            {hasResults
+              ? "分配结果已生成，可锁定方案或导出报告。"
+              : canRunSimulation
+                ? "当前已满足执行条件，可执行收益分配模拟。"
+                : `当前暂不可执行，请先完成：${runBlockReasons.join("；")}`}
+          </strong>
+          {hasResults ? (
+            <div className="nextStepActions">
+              <button type="button" onClick={() => onAction(actionRegistry["ALLOC-015"])}>锁定方案</button>
+              <button type="button" onClick={() => onAction(actionRegistry["ALLOC-016"])}>导出报告</button>
             </div>
           ) : (
-            <EmptyGuide
-              title="暂无分配结果"
-              description="请先完成 MD-DShap 权重计算并执行收益分配模拟；页面不会使用示例金额。"
-            />
+            <button
+              disabled={!canRunSimulation}
+              title={canRunSimulation ? "执行收益分配模拟" : runBlockReasons.join("；")}
+              type="button"
+              onClick={runSimulation}
+            >
+              执行分配模拟
+            </button>
           )}
-            </section>
-          </>
-        }
-        aside={
-          <>
-            <ProgressiveDisclosure title="合同约束与最终结果" summary="默认折叠">
-              <div className="progressiveStack">
-                <PreconditionPanel items={pageData.preconditions} onNavigate={onNavigate} />
-                <p>合同约束、尾差、收益池和调整原因以系统返回记录为准。</p>
-                <dl className="businessDetail compact">
-                  <div><dt>当前方案</dt><dd>{currentAllocationId || "暂无"}</dd></div>
-                  <div><dt>分配模式</dt><dd>{cellText(firstRow, "allocation_mode")}</dd></div>
-                </dl>
-                <button className="textLinkButton" type="button" onClick={() => setDrawer("trace")}>
-                  打开约束轨迹
-                </button>
-              </div>
-            </ProgressiveDisclosure>
-          </>
-        }
-      />
-
-      <DetailDrawer
-        dirty={Boolean(totalRevenueInput)}
-        footerNote="总收益必须大于等于 0；实际校验和收益池计算由系统完成。"
-        objectType="收益输入"
-        open={drawer === "revenue"}
-        size="md"
-        title="配置总收益"
-        variant="form"
-        actions={[
-          { label: "取消", onClick: () => setDrawer("") },
-          { label: "应用到本次模拟请求", type: "primary", onClick: () => setDrawer("") },
-        ]}
-        onClose={() => setDrawer("")}
-      >
-        <DrawerSection title="收益输入">
-          <div className="formGrid">
-            <label>
-              总收益
-              <input
-                value={totalRevenueInput}
-                type="number"
-                min="0"
-                onChange={(event) => setTotalRevenueInput(event.target.value)}
-              />
-            </label>
-          </div>
-        </DrawerSection>
-      </DetailDrawer>
-
-      <DetailDrawer
-        dirty={Boolean(priorityAmountInput)}
-        footerNote="优先分配金额、上限和剩余数据源收益池均由系统计算并返回；页面不自行扣减。"
-        objectType="合同优先"
-        open={drawer === "priority"}
-        size="md"
-        title="配置合同优先分配"
-        variant="form"
-        actions={[
-          { label: "取消", onClick: () => setDrawer("") },
-          { label: "应用到本次模拟请求", type: "primary", onClick: () => setDrawer("") },
-        ]}
-        onClose={() => setDrawer("")}
-      >
-        <DrawerSection title="合同优先分配">
-          <div className="formGrid">
-            <label>
-              非数据源合同优先请求金额
-              <input
-                value={priorityAmountInput}
-                type="number"
-                min="0"
-                onChange={(event) => setPriorityAmountInput(event.target.value)}
-              />
-            </label>
-          </div>
-        </DrawerSection>
-      </DetailDrawer>
-
-      <DetailDrawer
-        footerNote="MD-DShap 是默认模式，基础 Shapley 仅作为小规模 baseline_check。"
-        objectType="分配模式"
-        open={drawer === "mode"}
-        size="md"
-        title="选择分配模式"
-        variant="form"
-        actions={[
-          { label: "取消", onClick: () => setDrawer("") },
-          { label: "应用到本次模拟请求", type: "primary", onClick: () => setDrawer("") },
-        ]}
-        onClose={() => setDrawer("")}
-      >
-        <DrawerSection title="模式选择">
-          <div className="checkList">
-            <label>
-              <input
-                checked={allocationMode === "MD_DSHAP_WEIGHT_WITH_CONSTRAINTS"}
-                name="mode"
-                type="radio"
-                onChange={() => setAllocationMode("MD_DSHAP_WEIGHT_WITH_CONSTRAINTS")}
-              />
-              <span>MD-DShap 权重分配</span>
-            </label>
-          </div>
-        </DrawerSection>
-      </DetailDrawer>
-
-      <DetailDrawer
-        footerNote="方案对比用于解释约束影响，不构成付款指令。"
-        objectType="方案对比"
-        open={drawer === "compare"}
-        size="lg"
-        title="分配方案对比"
-        variant="detail"
-        onClose={() => setDrawer("")}
-      >
-        <DrawerSection title="约束前后金额">
-          {dataProviderRows.length ? (
-            <div className="tableWrap">
-              <table className="dataTable phase2Table">
-                <thead>
-                  <tr>
-                    <th>参与方</th>
-                    <th>约束前金额</th>
-                    <th>约束后金额</th>
-                    <th>调整金额</th>
-                    <th>调整原因</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dataProviderRows.map((row, index) => (
-                    <tr key={`${cellText(row, "party_name", "party")}-${index}`}>
-                      <td>{cellText(row, "party_name")}</td>
-                      <td>{amountCell(row, "pre_constraint_amount")}</td>
-                      <td>{amountCell(row, "post_constraint_amount")}</td>
-                      <td>{amountCell(row, "constraint_adjustment_amount")}</td>
-                      <td>{cellText(row, "adjustment_reason")}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <EmptyGuide
-              title="暂无对比数据"
-              description="执行收益分配模拟后展示结果行；调整金额字段需要系统返回。"
-            />
-          )}
-        </DrawerSection>
-      </DetailDrawer>
-
-      <TraceDrawer
-        footerNote="约束轨迹写入 constraint_apply_trace；当前页面不从结果行推导 trace。"
-        objectType="约束轨迹"
-        open={drawer === "trace"}
-        output={{ 轨迹状态: "暂无页面级约束轨迹" }}
-        title="约束应用轨迹"
-        technicalDetails={pageData.technicalDetails}
-        onClose={() => setDrawer("")}
-      />
-
-      <DetailDrawer
-        footerNote="导出文件包含模拟参考免责声明，不覆盖历史文件。"
-        objectType="导出说明"
-        open={drawer === "export"}
-        size="md"
-        title="导出分配结果"
-        variant="export"
-        onClose={() => setDrawer("")}
-      >
-        <ExportFieldList
-          fields={[
-            { key: "subject_track", label: "主体轨道" },
-            { key: "party_name", label: "参与方" },
-            { key: "normalized_weight", label: "归一化权重" },
-            { key: "pre_constraint_amount", label: "约束前金额" },
-            { key: "post_constraint_amount", label: "约束后金额" },
-            { key: "constraint_adjustment_amount", label: "调整金额" },
-          ]}
-        />
-        <DrawerSection title="导出 metadata">
-          <p>report_id、checksum、生成时间以系统导出响应和报告记录为准。</p>
-        </DrawerSection>
-      </DetailDrawer>
+        </div>
+      </footer>
     </div>
   );
 }
 
-interface ContractPriorityRow {
-  key: string;
-  partyName: string;
-  requestedAmount: string;
-  capAmount: string;
-  actualPriorityAmount: string;
-  basisText: string;
-  status: string;
+function constraintStateLabel(state: string) {
+  const labels: Record<string, string> = {
+    not_run: "待执行",
+    contract_ratio: "合同比例路径",
+    no_hits: "普通约束未命中",
+    has_hits: "普通约束已命中",
+    unknown: "后端未返回 trace",
+  };
+  return labels[state] ?? "后端未返回";
 }
 
-function parseContractPriorityRows(raw: unknown): ContractPriorityRow[] {
-  const text = typeof raw === "string" ? raw : "";
-  if (!text) {
-    return [];
-  }
-  try {
-    const parsed = JSON.parse(text);
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-    return parsed.map((item, index) => {
-      const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
-      const partyId = stringFromUnknown(row.party_id);
-      const partyName = stringFromUnknown(row.party_name) || "非数据源主体";
-      return {
-        key: partyId || `${partyName}-${index}`,
-        partyName,
-        requestedAmount: amountFromUnknown(row.requested_amount),
-        capAmount: amountFromUnknown(row.cap_amount),
-        actualPriorityAmount: amountFromUnknown(row.actual_priority_amount),
-        basisText: stringFromUnknown(row.basis_text) || "合同优先分配",
-        status: stringFromUnknown(row.status) || "APPLIED",
-      };
-    });
-  } catch {
-    return [];
-  }
+function CheckItem({
+  ok,
+  label,
+  value,
+  actionLabel,
+  onAction,
+}: {
+  ok: boolean;
+  label: string;
+  value: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <li className={ok ? "ok" : "warn"}>
+      <i>{ok ? "✓" : "!"}</i>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      {actionLabel && onAction ? <button type="button" onClick={onAction}>{actionLabel}</button> : null}
+    </li>
+  );
 }
 
-function stringFromUnknown(value: unknown) {
-  if (typeof value === "string") {
+function PlanBlock({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
+  return (
+    <div className={muted ? "muted" : ""}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function ResultRow({ row }: { row: DataRow }) {
+  const ratio = numberValue(row.contract_ratio);
+  const weight = numberValue(row.normalized_weight);
+  return (
+    <tr>
+      <td><strong>{readRow(row, "party_name", "主体")}</strong></td>
+      <td>{readRow(row, "party_type", "-")}</td>
+      <td>{readRow(row, "amount_source", "-")}</td>
+      <td>{ratio === null ? "-" : formatPercent(ratio)}</td>
+      <td>{weight === null ? "-" : formatWeight(weight)}</td>
+      <td>{formatYuan(numberValue(row.base_pool_amount), "后端未返回")}</td>
+      <td><strong>{formatYuan(numberValue(row.final_amount), "后端未返回")}</strong></td>
+      <td>{readRow(row, "explanation", readRow(row, "adjustment_reason", "-"))}</td>
+    </tr>
+  );
+}
+
+function readRow(row: DataRow, key: string, fallback = "") {
+  const value = row[key];
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+  return String(value);
+}
+
+function numberValue(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
     return value;
   }
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
+  if (typeof value === "string" && value.trim()) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
   }
-  return "";
-}
-
-function amountFromUnknown(value: unknown) {
-  const numeric = numericCellValue(value);
-  return numeric !== null
-    ? numeric.toLocaleString("zh-CN", { maximumFractionDigits: 2, minimumFractionDigits: 2 })
-    : stringFromUnknown(value) || "暂无";
+  return null;
 }

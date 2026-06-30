@@ -18,6 +18,7 @@ import {
   projectStatusLabel,
   type BackendPreconditionDto,
 } from "../api";
+import { contractRatioStatusLabel } from "../status";
 import type {
   ActionId,
   BackendOptionalReadIssue,
@@ -1191,11 +1192,12 @@ function buildConstraintsPage(data: BackendWorkspaceData): PageWorkspaceData {
   const blockingReasons = Array.isArray(contractRatio.blocking_reasons)
     ? contractRatio.blocking_reasons.map((item) => stringValue(item)).filter(Boolean)
     : [];
+  const contractStatus = stringValue(contractRatio.status, "EMPTY");
   return {
     summary: "合同比例分配方案来自后端 contract-ratio；没有保存方案时不显示示例合同规则。",
     primaryTask: configured ? "查看或调整已保存的合同比例分配方案。" : "配置数据源收益池比例并新增非数据主体比例。",
     metrics: [
-      metric("合同规则状态", stringValue(contractRatio.status, "EMPTY"), "contract-ratio status", configured ? "success" : "warning"),
+      metric("合同规则状态", contractRatioStatusLabel(contractStatus), "contract-ratio status", configured ? "success" : "warning"),
       metric("合同比例合计", stringValue(contractRatio.ratio_sum, "0.000000"), "ratio_sum", stringValue(contractRatio.ratio_sum) === "1.000000" ? "success" : "warning"),
       metric(
         "数据源收益池比例",
@@ -1226,7 +1228,7 @@ function buildConstraintsPage(data: BackendWorkspaceData): PageWorkspaceData {
       project_status: stringValue(contractRatio.project_status ?? data.overview.status),
       configured: String(configured),
       plan_id: stringValue(contractRatio.plan_id),
-      status: stringValue(contractRatio.status, "EMPTY"),
+      status: contractStatus,
       total_revenue: stringValue(totalRevenueValue),
       currency: stringValue(contractRatio.currency, "CNY"),
       ratio_sum: stringValue(contractRatio.ratio_sum, "0.000000"),
@@ -1260,6 +1262,12 @@ function buildReportsPage(data: BackendWorkspaceData): PageWorkspaceData {
       checksum: item.checksum,
       created_at: item.createdAt,
       field_scope: item.fieldScope,
+      export_files_json: stringifyJson(item.exportFiles.map((file) => ({
+        export_file_id: file.exportFileId,
+        file_name: file.fileName,
+        file_type: file.fileType,
+        status: file.status,
+      }))),
     })),
     technicalDetails: {
       project_id: data.overview.projectId,

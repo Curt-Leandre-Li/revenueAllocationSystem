@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { actionRegistry } from "../../domain/actionRegistry";
-import { dvasApi } from "../../domain/api";
+import { dvasApi, formatApiError } from "../../domain/api";
 import type { DataRow } from "../../domain/types";
+import { PageTitleHint } from "../../ui/PageTitleHint";
 import { cellText, hasBackendRows, pageMetrics, pageRows } from "../backendPageData";
 import type { PageProps } from "../pageTypes";
 
@@ -185,10 +186,6 @@ export function QualityPage({ snapshot, onAction }: PageProps) {
   }
 
   async function saveWeights() {
-    if (Math.abs(primaryWeightTotal - 1) > 0.000001 || Math.abs(secondaryWeightTotal - 1) > 0.000001) {
-      setWeightStatus("权重合计需为 1");
-      return;
-    }
     setWeightSaving(true);
     setWeightStatus("");
     try {
@@ -202,8 +199,8 @@ export function QualityPage({ snapshot, onAction }: PageProps) {
       setWeights(parsed);
       setWeightDraft(parsed);
       setWeightStatus("配置已保存");
-    } catch {
-      setWeightStatus("保存失败，请稍后重试");
+    } catch (error) {
+      setWeightStatus(`保存失败：${formatApiError(error)}`);
     } finally {
       setWeightSaving(false);
     }
@@ -227,8 +224,10 @@ export function QualityPage({ snapshot, onAction }: PageProps) {
     <div className="pageWorkspace qualityManagePage">
       <header className="qualityPageHeader">
         <div>
-          <h1>评估数据质量</h1>
-          <p>查看整体质量评分、每个数据资源的评分，以及一级/二级指标明细。</p>
+          <PageTitleHint
+            title="评估数据质量"
+            description="查看整体质量评分、每个数据资源的评分，以及一级/二级指标明细。"
+          />
         </div>
         <div className="qualityHeaderActions">
           <button type="button" onClick={() => openEvidence()}>
@@ -443,7 +442,7 @@ export function QualityPage({ snapshot, onAction }: PageProps) {
                   selectedCode={selectedPrimary?.metricCode ?? ""}
                 />
                 <p className={Math.abs(primaryWeightTotal - 1) > 0.000001 ? "weightHint invalid" : "weightHint"}>
-                  一级指标权重合计必须为 1
+                  一级指标权重合计建议为 1；最终校验以后端返回为准
                 </p>
               </section>
               <section className="qualityWeightBlock">
@@ -697,7 +696,7 @@ function QualityHeatmap({
                   className={value === "暂无" ? "empty" : ""}
                   data-tooltip={`${resource.resourceName} · ${metric.metricName} · ${value}`}
                   key={`${resource.key}-${metric.metricCode}`}
-                  style={{ opacity: heatOpacity(value, heatMin, heatMax) }}
+                  style={{ backgroundColor: heatColor(value, heatMin, heatMax) }}
                   title={`${resource.resourceName} · ${metric.metricName} · ${value}`}
                   type="button"
                   onClick={() => onSelect(resource)}
@@ -991,14 +990,36 @@ function readMetricScore(row: DataRow, metricCode: string) {
   return "暂无";
 }
 
-function heatOpacity(value: string, minValue: number, maxValue: number) {
+const heatPalette = [
+  [255, 247, 243],
+  [254, 226, 214],
+  [252, 187, 161],
+  [252, 141, 111],
+  [239, 85, 66],
+  [215, 48, 39],
+  [179, 24, 43],
+  [127, 6, 18],
+];
+
+function heatColor(value: string, minValue: number, maxValue: number) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {
-    return 0.16;
+    return "#e5edf7";
   }
   const range = maxValue - minValue;
-  if (range > 0 && range <= 15) {
-    return Math.max(0.32, Math.min(1, 0.32 + ((numeric - minValue) / range) * 0.68));
-  }
-  return Math.max(0.26, Math.min(1, numeric / 100));
+  const normalized = range > 0 && range <= 18
+    ? (numeric - minValue) / range
+    : numeric / 100;
+  const clamped = Math.max(0, Math.min(1, normalized));
+  const contrasted = clamped < 0.5
+    ? Math.pow(clamped * 2, 1.18) / 2
+    : 1 - Math.pow((1 - clamped) * 2, 1.18) / 2;
+  const scaled = contrasted * (heatPalette.length - 1);
+  const startIndex = Math.floor(scaled);
+  const endIndex = Math.min(startIndex + 1, heatPalette.length - 1);
+  const mix = scaled - startIndex;
+  const rgb = heatPalette[startIndex].map((channel, index) =>
+    Math.round(channel + (heatPalette[endIndex][index] - channel) * mix),
+  );
+  return `rgb(${rgb.join(", ")})`;
 }

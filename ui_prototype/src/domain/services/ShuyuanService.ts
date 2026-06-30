@@ -9,7 +9,46 @@ import {
 
 export const ShuyuanService: MockDomainService = {
   readPage: readPageFromStore,
-  handleAction(store, action) {
+  handleAction(store, action, payload) {
+    if (action.id === "DU-002") {
+      if (payload?.kind !== "shuyuan-parameters") {
+        return backendUnavailableStore(
+          store,
+          action.label,
+          "shuyuan parameters save requires backend DTO payload",
+        );
+      }
+      return mutateBackendAndRefresh(
+        store,
+        () =>
+          dvasApi.saveShuyuanParameters({
+            base_price: payload.basePrice,
+            scenario_coefficient: payload.scenarioCoefficient,
+            technology_coefficient: payload.technologyCoefficient,
+            expert_coefficient: payload.expertCoefficient,
+            development_coefficient: payload.developmentCoefficient,
+          }),
+        "数元参数已由后端保存，项目状态已刷新。",
+        "shuyuan parameters save",
+      );
+    }
+
+    if (action.id === "DU-003") {
+      if (payload?.kind !== "shuyuan-call-counts") {
+        return backendUnavailableStore(
+          store,
+          action.label,
+          "shuyuan call-count save requires backend DTO payload",
+        );
+      }
+      return mutateBackendAndRefresh(
+        store,
+        () => dvasApi.saveShuyuanCallCounts({ call_counts: payload.callCounts }),
+        "资源调用量已由后端保存，项目状态已刷新。",
+        "shuyuan call-count save",
+      );
+    }
+
     if (action.id === "DU-009") {
       return mutateBackendAndRefresh(
         store,

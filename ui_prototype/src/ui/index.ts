@@ -11,6 +11,7 @@ export * from "./ExportFieldList";
 export * from "./MetricCard";
 export * from "./PageHeader";
 export * from "./PageShell";
+export * from "./PageTitleHint";
 export * from "./PreconditionPanel";
 export * from "./RiskNotice";
 export * from "./SectionCard";

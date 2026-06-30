@@ -58,11 +58,10 @@ export function AuditPage({ route, snapshot, onAction }: PageProps) {
         ]}
       />
 
-      <section className="chartGrid two">
+      <section className="chartGrid">
         <ChartArea title="操作时间线">
           <ProductTimeline items={timelineItems} />
         </ChartArea>
-        <ChartArea title="模块操作分布" />
       </section>
 
       <section className="leanTableSection">

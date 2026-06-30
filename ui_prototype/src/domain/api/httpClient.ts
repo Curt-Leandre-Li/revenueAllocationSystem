@@ -22,18 +22,38 @@ export interface ApiRequestOptions extends Omit<RequestInit, "body"> {
   bodyJson?: unknown;
 }
 
+export const dvasAuthTokenKey = "dvas_auth_token";
+
+export function getStoredAuthToken() {
+  return window.localStorage.getItem(dvasAuthTokenKey) ?? "";
+}
+
+export function setStoredAuthToken(token: string) {
+  window.localStorage.setItem(dvasAuthTokenKey, token);
+}
+
+export function clearStoredAuthToken() {
+  window.localStorage.removeItem(dvasAuthTokenKey);
+}
+
 export async function apiRequest<T>(
   endpoint: string,
   options: ApiRequestOptions = {},
 ): Promise<T> {
   const { bodyJson, headers, ...requestOptions } = options;
+  const requestBody = bodyJson === undefined ? options.body : JSON.stringify(bodyJson);
+  const requestHeaders = new Headers(headers);
+  if (bodyJson !== undefined) {
+    requestHeaders.set("Content-Type", "application/json");
+  }
+  const authToken = getStoredAuthToken();
+  if (authToken) {
+    requestHeaders.set("Authorization", `Bearer ${authToken}`);
+  }
   const response = await fetch(`${getDvasApiRootUrl()}${endpoint}`, {
     ...requestOptions,
-    body: bodyJson === undefined ? options.body : JSON.stringify(bodyJson),
-    headers: {
-      "Content-Type": "application/json",
-      ...headers,
-    },
+    body: requestBody,
+    headers: requestHeaders,
   });
   const contentType = response.headers.get("content-type") ?? "";
   const responseText = await response.text();

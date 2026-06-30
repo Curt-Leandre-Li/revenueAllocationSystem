@@ -106,7 +106,6 @@ export function SideNav({
           <div className="brandMark">DV</div>
           <div className="sideNavBrandText">
             <strong>数据收益分配系统</strong>
-            <span>模拟与审计说明工作区</span>
           </div>
           <button
             aria-label={collapsed ? "展开左侧导航" : "收起左侧导航"}

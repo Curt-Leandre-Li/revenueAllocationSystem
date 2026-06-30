@@ -1,4 +1,13 @@
 export const endpoints = {
+  authLogin: "/auth/login",
+  authLogout: "/auth/logout",
+  authMe: "/auth/me",
+  authPermissions: "/auth/permissions",
+  myProjects: "/my/projects",
+  myUploads: "/my/uploads",
+  myJobs: "/my/jobs",
+  myReports: "/my/reports",
+  myWorkbench: "/my/workbench",
   projectCurrent: "/projects/current",
   projectCurrentStatus: "/projects/current/status",
   navigationMenus: "/navigation/menus",
@@ -9,9 +18,17 @@ export const endpoints = {
   initializeDemoCase: (demoCaseId: string) =>
     `/demo-cases/${encodeURIComponent(demoCaseId)}/select`,
   uploadDataPackage: "/data/packages/upload",
+  csvImportTemplate: "/import-templates/csv",
+  xlsxImportTemplate: "/import-templates/xlsx",
+  importCsvPackage: (projectId: string) =>
+    `/projects/${encodeURIComponent(projectId)}/data-packages/import/csv`,
+  importXlsxPackage: (projectId: string) =>
+    `/projects/${encodeURIComponent(projectId)}/data-packages/import/xlsx`,
   dataPackages: "/data/packages",
   dataPackageDetail: (packageId: string) =>
     `/data/packages/${encodeURIComponent(packageId)}/preview`,
+  deleteDataPackage: (packageId: string) =>
+    `/data/packages/${encodeURIComponent(packageId)}`,
   uploadValidationResult: (packageId: string) =>
     `/data-packages/${encodeURIComponent(packageId)}/validation-result`,
   dataResources: "/data/resources",
@@ -49,6 +66,10 @@ export const endpoints = {
   mdDshapConfig: "/allocation/md-dshap/config",
   mdDshapParticipantPool: "/allocation/md-dshap/participant-pool",
   mdDshapTasks: "/allocation/md-dshap/tasks",
+  projectMdDshapTasks: (projectId: string) =>
+    `/projects/${encodeURIComponent(projectId)}/md-dshap/tasks`,
+  mdDshapTaskProgress: (projectId: string, taskId: string) =>
+    `/projects/${encodeURIComponent(projectId)}/md-dshap/tasks/${encodeURIComponent(taskId)}/progress`,
   mdDshapTask: (taskId: string) =>
     `/allocation/md-dshap/tasks/${encodeURIComponent(taskId)}`,
   mdDshapTaskResults: (taskId: string) =>
@@ -61,6 +82,12 @@ export const endpoints = {
   allocationPriorityItems: "/allocation/simulation/priority-items",
   allocationMode: "/allocation/simulation/mode",
   allocationRun: "/allocation/simulation/run",
+  projectAllocationSummary: (projectId: string) =>
+    `/projects/${encodeURIComponent(projectId)}/allocation/summary`,
+  projectAllocationSimulate: (projectId: string) =>
+    `/projects/${encodeURIComponent(projectId)}/allocation/simulate`,
+  contractRatio: (projectId: string) =>
+    `/projects/${encodeURIComponent(projectId)}/allocation/contract-ratio`,
   allocationResults: (allocationId: string) =>
     `/allocation-scenarios/${encodeURIComponent(allocationId)}/results`,
   allocationLock: (allocationId: string) =>
@@ -79,12 +106,43 @@ export const endpoints = {
   reportJson: "/reports/json",
   reportAuditLog: "/reports/audit-log",
   reportMdDshapAudit: "/reports/md-dshap-audit",
+  projectJobs: (projectId: string) =>
+    `/projects/${encodeURIComponent(projectId)}/jobs`,
+  jobDetail: (jobId: string) => `/jobs/${encodeURIComponent(jobId)}`,
+  jobCancel: (jobId: string) => `/jobs/${encodeURIComponent(jobId)}/cancel`,
+  projectReports: (projectId: string) =>
+    `/projects/${encodeURIComponent(projectId)}/reports`,
+  projectReportPdf: (projectId: string) =>
+    `/projects/${encodeURIComponent(projectId)}/reports/pdf`,
+  reportDetail: (reportId: string) => `/reports/${encodeURIComponent(reportId)}`,
+  reportFiles: (reportId: string) => `/reports/${encodeURIComponent(reportId)}/files`,
+  reportManifest: (reportId: string) =>
+    `/reports/${encodeURIComponent(reportId)}/manifest`,
+  reportDownload: (reportId: string) =>
+    `/reports/${encodeURIComponent(reportId)}/download`,
+  reportArchive: (reportId: string) =>
+    `/reports/${encodeURIComponent(reportId)}/archive`,
   systemParameters: "/system/parameters",
   systemParameter: (parameterCode: string) =>
     `/system/parameters/${encodeURIComponent(parameterCode)}`,
   systemParameterRestoreDefault: (parameterCode: string) =>
     `/system/parameters/${encodeURIComponent(parameterCode)}/restore-default`,
   auditLogs: "/audit-logs",
+  p1AuditLogs: "/audit/logs",
+  auditSnapshot: (snapshotId: string) =>
+    `/audit/snapshots/${encodeURIComponent(snapshotId)}`,
+  auditExport: "/audit/export",
   systemAuditLogs: "/system/audit/logs",
   auditLogDetail: (logId: string) => `/audit-logs/${encodeURIComponent(logId)}`,
+  users: "/system/users",
+  user: (userId: string) => `/system/users/${encodeURIComponent(userId)}`,
+  usersMe: "/users/me",
+  usersMePassword: "/users/me/password",
+  userDisable: (userId: string) => `/system/users/${encodeURIComponent(userId)}/disable`,
+  userResetPassword: (userId: string) =>
+    `/system/users/${encodeURIComponent(userId)}/reset-password`,
+  roles: "/system/roles",
+  rolePermissions: (roleId: string) =>
+    `/system/roles/${encodeURIComponent(roleId)}/permissions`,
+  permissions: "/system/permissions",
 } as const;

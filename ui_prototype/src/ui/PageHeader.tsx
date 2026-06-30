@@ -1,5 +1,5 @@
 import type { AppRoute, WorkbenchSnapshot } from "../domain/types";
-import { userFacingText } from "./displayText";
+import { PageTitleHint } from "./PageTitleHint";
 
 interface PageHeaderProps {
   route: AppRoute;
@@ -11,8 +11,7 @@ export function PageHeader({ route, snapshot }: PageHeaderProps) {
   return (
     <header className="pageHeader compactPageHeader">
       <div>
-        <h1>{userFacingText(route.label)}</h1>
-        <p className="pageSummary">{userFacingText(route.responsibility)}</p>
+        <PageTitleHint title={route.label} description={route.responsibility} />
       </div>
     </header>
   );

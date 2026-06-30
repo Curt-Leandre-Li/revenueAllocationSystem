@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { actionRegistry } from "../../domain/actionRegistry";
+import { dvasApi } from "../../domain/api";
 import type { DataRow } from "../../domain/types";
+import { ActionButton } from "../../ui";
 import { userFacingText } from "../../ui/displayText";
 import type { PageProps } from "../pageTypes";
 
@@ -19,8 +22,17 @@ interface ChartPoint {
   status?: string;
 }
 
-export function OverviewPage({ route, snapshot, onNavigate }: PageProps) {
+interface MyWorkbenchSummary {
+  project_count: number;
+  upload_count: number;
+  job_count: number;
+  report_count: number;
+  recent_operation_count: number;
+}
+
+export function OverviewPage({ route, snapshot, onAction, onNavigate }: PageProps) {
   const [activeParty, setActiveParty] = useState("");
+  const [myWorkbench, setMyWorkbench] = useState<MyWorkbenchSummary | null>(null);
   const pageData = snapshot.pages[route.path];
   const dashboardMetrics = new Map(pageData.metrics.map((item) => [item.label, item.value]));
   const shuyuanPage = snapshot.pages["/metering/shuyuan"];
@@ -28,6 +40,7 @@ export function OverviewPage({ route, snapshot, onNavigate }: PageProps) {
   const mdsPage = snapshot.pages["/allocation/md-dshap"];
   const firstAllocation = allocationPage.rows[0];
   const shuyuanTotal = metricValue(shuyuanPage.metrics, "项目总计量金额");
+  const currentRevenuePool = dashboardMetrics.get("收益池");
   const reportCount = dashboardMetrics.get("报告状态");
   const coreMetrics: CoreMetric[] = [
     {
@@ -40,7 +53,7 @@ export function OverviewPage({ route, snapshot, onNavigate }: PageProps) {
       label: "参与方数量",
       value: formatDisplayValue(dashboardMetrics.get("参与方"), "number"),
       route: "/data/parties",
-      tooltip: "当前项目维护的参与主体数量。",
+      tooltip: "当前数据包输入快照中的参与方数量，含数据源主体与非数据主体。",
     },
     {
       label: "数元统计总额",
@@ -50,9 +63,11 @@ export function OverviewPage({ route, snapshot, onNavigate }: PageProps) {
     },
     {
       label: "当前收益池",
-      value: formatDisplayValue(firstAllocation?.data_provider_revenue_pool, "amount"),
+      value: formatDisplayValue(firstAllocation?.data_provider_revenue_pool ?? currentRevenuePool, "amount"),
       route: "/allocation/simulation",
-      tooltip: "当前分配模拟结果中的数据源收益池。",
+      tooltip: firstAllocation?.data_provider_revenue_pool
+        ? "当前分配模拟结果中的数据源收益池。"
+        : "当前输入快照或后端分配结果返回的收益池。",
     },
     {
       label: "已生成报告数",
@@ -64,6 +79,7 @@ export function OverviewPage({ route, snapshot, onNavigate }: PageProps) {
   const allocationPoints = allocationPage.rows
     .map((row) => toChartPoint(row, ["party_name"], "post_constraint_amount", "amount"))
     .filter(isChartPoint)
+    .sort(sortChartPointDescending)
     .slice(0, 6);
   const allocationSharePoints = allocationPage.rows
     .flatMap((row) => {
@@ -76,15 +92,44 @@ export function OverviewPage({ route, snapshot, onNavigate }: PageProps) {
           }
         : [];
     })
+    .sort(sortChartPointDescending)
     .slice(0, 6);
   const shuyuanPoints = shuyuanPage.rows
     .map((row) => toChartPoint(row, ["resource_name", "party_name"], "metering_amount", "amount"))
     .filter(isChartPoint)
+    .sort(sortChartPointDescending)
     .slice(0, 6);
   const weightPoints = mdsPage.rows
     .map((row) => toChartPoint(row, ["party_name"], "normalized_weight", "percent"))
     .filter(isChartPoint)
+    .sort(sortChartPointDescending)
     .slice(0, 6);
+
+  useEffect(() => {
+    let mounted = true;
+    void dvasApi.getMyWorkbench().then(
+      (response) => {
+        const summary = response.summary as Partial<MyWorkbenchSummary> | undefined;
+        if (mounted && summary) {
+          setMyWorkbench({
+            project_count: Number(summary.project_count ?? 0),
+            upload_count: Number(summary.upload_count ?? 0),
+            job_count: Number(summary.job_count ?? 0),
+            report_count: Number(summary.report_count ?? 0),
+            recent_operation_count: Number(summary.recent_operation_count ?? 0),
+          });
+        }
+      },
+      () => {
+        if (mounted) {
+          setMyWorkbench(null);
+        }
+      },
+    );
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   return (
     <div className="pageWorkspace overviewPage dashboardResultsPage">
@@ -101,6 +146,40 @@ export function OverviewPage({ route, snapshot, onNavigate }: PageProps) {
             <strong>{item.value}</strong>
           </button>
         ))}
+      </section>
+
+      <section className="myWorkbenchPanel" aria-label="我的工作台">
+        <div>
+          <h2>我的工作台</h2>
+          <span>按当前登录用户和角色权限汇总可见内容。</span>
+        </div>
+        <button type="button" onClick={() => onNavigate("/dashboard")}>
+          我创建的项目 <strong>{myWorkbench?.project_count ?? 0}</strong>
+        </button>
+        <button type="button" onClick={() => onNavigate("/data/ingestion")}>
+          我上传的数据包 <strong>{myWorkbench?.upload_count ?? 0}</strong>
+        </button>
+        <button type="button" onClick={() => onNavigate("/allocation/md-dshap")}>
+          我发起的计算任务 <strong>{myWorkbench?.job_count ?? 0}</strong>
+        </button>
+        <button type="button" onClick={() => onNavigate("/reports")}>
+          我生成的报告 <strong>{myWorkbench?.report_count ?? 0}</strong>
+        </button>
+        <button type="button" onClick={() => onNavigate("/system/audit")}>
+          最近操作记录 <strong>{myWorkbench?.recent_operation_count ?? 0}</strong>
+        </button>
+      </section>
+
+      <section className="dashboardActionPanel" aria-label="完整链路操作">
+        <div>
+          <h2>完整链路入口</h2>
+          <span>选择演示数据、执行完整链路计算，并查看模拟参考边界。</span>
+        </div>
+        <div className="dashboardActionButtons">
+          <ActionButton action={actionRegistry["SYS-002"]} onClick={(action) => onAction(action)} />
+          <ActionButton action={actionRegistry["SYS-004"]} onClick={(action) => onAction(action)} />
+          <ActionButton action={actionRegistry["SYS-005"]} onClick={(action) => onAction(action)} />
+        </div>
       </section>
 
       <section className="resultChartGrid primary" aria-label="核心图表">
@@ -171,7 +250,7 @@ function RevenueFlowChart({
   const hasFlow = total !== "暂无" || priority !== "暂无" || pool !== "暂无" || parties.length > 0;
 
   if (!hasFlow) {
-    return <EmptyChart />;
+    return <EmptyChart message="待执行收益分配模拟后生成收益流向" />;
   }
 
   return (
@@ -184,7 +263,7 @@ function RevenueFlowChart({
           </linearGradient>
         </defs>
         <path className="flowPath wide" d="M135 120 C250 120 290 70 398 70">
-          <title>合同优先 · {priority} · 合同优先</title>
+          <title>非数据主体合同金额 · {priority} · 合同比例</title>
         </path>
         <path className="flowPath" d="M135 120 C250 120 292 172 398 172">
           <title>数据源收益池 · {pool} · 收益池</title>
@@ -219,10 +298,10 @@ function RevenueFlowChart({
           </div>
           <div
             className="flowNode priority dashboardInteractiveTip"
-            data-tooltip={`合同优先 · ${priority}`}
+            data-tooltip={`非数据主体合同金额 · ${priority}`}
             tabIndex={0}
           >
-            <span>合同优先</span>
+            <span>非数据主体合同金额</span>
             <strong>{priority}</strong>
           </div>
           <div
@@ -260,7 +339,7 @@ function DonutChart({
   onActiveParty: (party: string) => void;
 }) {
   if (!points.length) {
-    return <EmptyChart />;
+    return <EmptyChart message="待执行收益分配模拟后生成参与方收益占比" />;
   }
 
   let offset = 25;
@@ -368,8 +447,8 @@ function BarRankChart({
   );
 }
 
-function EmptyChart() {
-  return <div className="resultChartEmpty">暂无</div>;
+function EmptyChart({ message = "暂无" }: { message?: string }) {
+  return <div className="resultChartEmpty">{message}</div>;
 }
 
 function metricValue(metrics: Array<{ label: string; value: string }>, label: string) {
@@ -456,6 +535,11 @@ function numericValue(value: unknown) {
   }
   const parsed = Number(String(value).replace(/,/g, ""));
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function sortChartPointDescending(left: ChartPoint, right: ChartPoint) {
+  const diff = right.numeric - left.numeric;
+  return diff || left.label.localeCompare(right.label, "zh-CN");
 }
 
 function isChartPoint(value: ChartPoint | null): value is ChartPoint {

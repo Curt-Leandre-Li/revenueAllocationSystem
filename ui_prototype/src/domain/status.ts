@@ -30,6 +30,23 @@ export const checkStatusLabels: Record<CheckStatus, string> = {
   PENDING: "待处理",
 };
 
+export function contractRatioStatusLabel(value: unknown) {
+  const raw = value === undefined || value === null ? "" : String(value).trim();
+  switch (raw.toUpperCase()) {
+    case "SAVED":
+      return "已保存";
+    case "UNSAVED":
+    case "DRAFT":
+    case "EMPTY":
+    case "":
+      return "未保存";
+    case "LOCKED":
+      return "已锁定";
+    default:
+      return raw;
+  }
+}
+
 export function isLockedStatus(status: StatusCode) {
   return status === "CONFIRMED" || status === "EXPORTED";
 }

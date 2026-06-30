@@ -63,6 +63,9 @@ export type ActionId =
   | "DATA-007"
   | "DATA-008"
   | "DATA-009"
+  | "DATA-010"
+  | "DATA-011"
+  | "DATA-012"
   | "RES-002"
   | "RES-005"
   | "RES-007"
@@ -96,6 +99,7 @@ export type ActionId =
   | "MDS-016"
   | "MDS-017"
   | "MDS-018"
+  | "MDS-019"
   | "ALLOC-003"
   | "ALLOC-005"
   | "ALLOC-007"
@@ -115,11 +119,19 @@ export type ActionId =
   | "REP-005"
   | "REP-006"
   | "REP-009"
+  | "REP-010"
+  | "REP-011"
+  | "REP-012"
   | "USER-001"
   | "USER-002"
+  | "USER-003"
+  | "USER-004"
+  | "USER-005"
   | "USER-007"
   | "USER-008"
   | "USER-009"
+  | "USER-010"
+  | "USER-011"
   | "AUD-002"
   | "AUD-006"
   | "AUD-007";
@@ -129,8 +141,38 @@ export type DataRow = Record<string, string | number | boolean>;
 export type ActionPayload =
   | {
       kind: "data-package-upload";
-      payload: unknown;
+      file: File;
       fileName: string;
+    }
+  | {
+      kind: "data-package-delete";
+      packageId: string;
+      packageName: string;
+    }
+  | {
+      kind: "data-package-template-import";
+      file: File;
+      fileName: string;
+      templateType: "CSV" | "XLSX";
+    }
+  | {
+      kind: "download-file";
+      fileName?: string;
+      reportId?: string;
+      exportFileId?: string;
+    }
+  | {
+      kind: "job-cancel";
+      jobId: string;
+    }
+  | {
+      kind: "user-update";
+      userId?: string;
+      username?: string;
+      displayName?: string;
+      status?: string;
+      roles?: string[];
+      password?: string;
     }
   | {
       kind: "resource-binding";
@@ -146,6 +188,35 @@ export type ActionPayload =
   | {
       kind: "resource-detail";
       resourceKey: string;
+    }
+  | {
+      kind: "quality-weights";
+      items: Array<{
+        metricCode: string;
+        weight: number;
+      }>;
+    }
+  | {
+      kind: "shuyuan-parameters";
+      basePrice?: number;
+      scenarioCoefficient?: number;
+      technologyCoefficient?: number;
+      expertCoefficient?: number;
+      developmentCoefficient?: number;
+    }
+  | {
+      kind: "shuyuan-call-counts";
+      callCounts: Record<string, number>;
+    }
+  | {
+      kind: "contribution-factors";
+      usageWeight?: number;
+      coverageWeight?: number;
+      scarcityWeight?: number;
+    }
+  | {
+      kind: "utility-function";
+      payload: Record<string, unknown>;
     }
   | {
       kind: "mds-parameters";
@@ -193,6 +264,21 @@ export type ActionPayload =
       description?: string;
     }
   | {
+      kind: "contract-ratio-save";
+      totalRevenue: string;
+      currency: string;
+      dataProviderPoolRatio: string;
+      items: Array<{
+        bucketType: "NON_DATA_PARTY";
+        partyId: string;
+        ratio: string;
+        basisText?: string;
+      }>;
+    }
+  | {
+      kind: "contract-ratio-clear";
+    }
+  | {
       kind: "parameter-update";
       values: Array<{
         parameterCode: string;
@@ -202,6 +288,28 @@ export type ActionPayload =
   | {
       kind: "parameter-restore";
       parameterCode: string;
+    }
+  | {
+      kind: "allocation-revenue-pool";
+      totalRevenue: number;
+      priorityAllocationAmount?: number;
+      currency?: string;
+    }
+  | {
+      kind: "allocation-priority-items";
+      items: Array<{
+        partyId: string;
+        valueType?: string;
+        priorityAmount?: number;
+        priorityRatio?: number;
+        capAmount?: number;
+        basisText?: string;
+        priorityOrder?: number;
+      }>;
+    }
+  | {
+      kind: "allocation-mode";
+      allocationMode: string;
     }
   | {
       kind: "allocation-run";
@@ -291,6 +399,13 @@ export interface PreconditionItem {
   status: CheckStatus;
   targetPath?: RoutePath;
   message: string;
+}
+
+export interface BackendOptionalReadIssue {
+  label: string;
+  errorCode: string;
+  errorMessage: string;
+  errorField?: string;
 }
 
 export interface PageWorkspaceData {
@@ -422,6 +537,7 @@ export interface WorkbenchSnapshot {
     apiBaseUrl: string;
     availableActions: ActionId[];
     disabledActions: Array<{ button_code: string; reason: string }>;
+    optionalReadIssues?: BackendOptionalReadIssue[];
     connected: boolean;
     lastSyncedAt: string;
   };

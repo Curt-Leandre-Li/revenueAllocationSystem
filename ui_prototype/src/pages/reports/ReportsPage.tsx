@@ -1,13 +1,12 @@
 import { useState } from "react";
 import { actionRegistry } from "../../domain/actionRegistry";
+import { dvasApi } from "../../domain/api";
 import {
-  ActionButton,
   ChartArea,
   CompactPageHeader,
   DetailDrawer,
   DrawerSection,
   EmptyGuide,
-  ExportFieldList,
   ProductBarChart,
   ProductTimeline,
   SummaryStrip,
@@ -15,52 +14,105 @@ import {
 import { cellText, numericCellValue, pageMetrics, pageRows } from "../backendPageData";
 import type { PageProps } from "../pageTypes";
 
+interface ReportDownloadFile {
+  exportFileId: string;
+  name: string;
+  type: string;
+}
+
+interface DownloadedReportFile {
+  fileName: string;
+  contentBase64: string;
+  mimeType: string;
+}
+
 export function ReportsPage({ route, snapshot, onAction }: PageProps) {
-  const [drawer, setDrawer] = useState<"" | "fields" | "record">("");
+  const [drawer, setDrawer] = useState<"" | "record">("");
+  const [selectedReportId, setSelectedReportId] = useState("");
+  const [selectedDownloadTypes, setSelectedDownloadTypes] = useState<Set<string>>(() => new Set());
+  const [downloading, setDownloading] = useState(false);
   const pageData = snapshot.pages[route.path];
   const reportRows = pageRows(pageData);
+  const availableDownloadTypes = buildDownloadTypes(reportRows);
+  const visibleReportRows = reportRows;
+  const downloadTargets = selectedDownloadTypes.size
+    ? buildDownloadTargets(reportRows, selectedDownloadTypes)
+    : [];
   const metrics = pageMetrics(pageData);
-  const latestReport = reportRows[0];
-  const hasReports = reportRows.length > 0;
+  const latestReport = visibleReportRows[0];
+  const selectedReport =
+    visibleReportRows.find((row) => cellText(row, "report_id") === selectedReportId) ?? latestReport;
+  const hasReports = visibleReportRows.length > 0;
   const metricMap = new Map(metrics.map((item) => [item.label, item]));
   const summaryItems = [
-    metricMap.get("报告数量") ?? { label: "报告数量", value: hasReports ? String(reportRows.length) : "暂无", hint: "系统结果", tone: "neutral" as const },
+    {
+      label: "报告数量",
+      value: String(visibleReportRows.length),
+      hint: "全部报告",
+      tone: "neutral" as const,
+    },
     metricMap.get("导出文件数") ?? { label: "导出文件数", value: cellText(pageData.technicalDetails, "export_file_count", "暂无"), hint: "系统摘要", tone: "neutral" as const },
     metricMap.get("最近生成时间") ?? { label: "最近生成时间", value: cellText(latestReport, "created_at", "暂无"), hint: "系统字段", tone: "neutral" as const },
     metricMap.get("已确认方案") ?? { label: "已确认方案", value: cellText(pageData.technicalDetails, "confirmed_allocation_count", "暂无"), hint: "系统摘要", tone: "neutral" as const },
     metricMap.get("checksum 记录") ?? { label: "checksum 记录", value: cellText(pageData.technicalDetails, "checksum_count", "暂无"), hint: "系统摘要", tone: "neutral" as const },
   ];
-  const fileTypePoints = reportRows.map((row) => ({
-    label: cellText(row, "report_type"),
-    value: "1",
-    numeric: numericCellValue(1),
-    meta: cellText(row, "report_status"),
-  }));
-  const timelineItems = reportRows.map((row) => ({
+  const exportedFilePoints = buildExportedFilePoints(visibleReportRows);
+  const timelineItems = visibleReportRows.map((row) => ({
     label: cellText(row, "report_name"),
     value: cellText(row, "created_at"),
     numeric: null,
     meta: cellText(row, "report_status"),
   }));
 
+  function toggleDownloadType(type: string) {
+    setSelectedDownloadTypes((current) => {
+      const next = new Set(current);
+      if (next.has(type)) {
+        next.delete(type);
+      } else {
+        next.add(type);
+      }
+      return next;
+    });
+  }
+
+  async function downloadSelectedTypes() {
+    if (!downloadTargets.length || downloading) {
+      return;
+    }
+    setDownloading(true);
+    try {
+      const files: DownloadedReportFile[] = [];
+      for (const target of downloadTargets) {
+        const file = await dvasApi.downloadReport(target.reportId, target.exportFileId || undefined);
+        files.push({
+          fileName: file.file_name,
+          contentBase64: file.content_base64,
+          mimeType: file.mime_type ?? "application/octet-stream",
+        });
+      }
+      if (files.length === 1) {
+        downloadBase64File(files[0].fileName, files[0].contentBase64, files[0].mimeType);
+        return;
+      }
+      downloadBlob(downloadName("dvas_selected_reports", "zip"), createZipBlob(files));
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   return (
     <div className="pageWorkspace leanPage reportsPage">
       <CompactPageHeader
         title="报告导出"
-        description="生成说明报告，披露先合同优先、后数据源收益池分配的模拟参考口径。"
-        primaryAction={<ActionButton action={actionRegistry["REP-001"]} onClick={(action) => onAction(action)} />}
-        secondaryActions={
-          <button className="actionButton secondary" type="button" onClick={() => setDrawer("fields")}>
-            导出字段
-          </button>
-        }
+        description="生成说明报告，披露合同比例划分与数据源收益池分配的模拟参考口径。"
       />
 
       <SummaryStrip items={summaryItems} />
 
       <section className="resultChartGrid secondary">
-        <ChartArea title="导出文件类型" source={hasReports ? "rows" : undefined}>
-          <ProductBarChart points={fileTypePoints} unit="文件" />
+        <ChartArea title="导出文件统计" source={exportedFilePoints.length ? "export_files" : undefined}>
+          <ProductBarChart points={exportedFilePoints} unit="次" emptyText="暂无导出文件记录" />
         </ChartArea>
         <ChartArea title="报告生成时间线" source={hasReports ? "rows" : undefined}>
           <ProductTimeline items={timelineItems} />
@@ -73,22 +125,43 @@ export function ReportsPage({ route, snapshot, onAction }: PageProps) {
             <h2>报告列表</h2>
             <p>报告编号、校验摘要和生成时间以系统记录为准。</p>
           </div>
-          <div className="cardActions">
-            {(["REP-002", "REP-004", "REP-005", "REP-006", "REP-009"] as const).map((id) => (
-              <ActionButton
-                action={actionRegistry[id]}
-                key={id}
-                onClick={(action) => {
-                  onAction(action);
-                  setDrawer("fields");
-                }}
-              />
-            ))}
-            <ActionButton
-              action={actionRegistry["REP-003"]}
-              disabledReason="P1 暂未启用"
-              onClick={(action) => onAction(action)}
-            />
+          <div className="reportDownloadFilters" aria-label="批量下载类型筛选">
+            <div className="downloadTypeOptions">
+              {availableDownloadTypes.map((type) => (
+                <label key={type}>
+                  <input
+                    checked={selectedDownloadTypes.has(type)}
+                    type="checkbox"
+                    onChange={() => toggleDownloadType(type)}
+                  />
+                  <span>{type}</span>
+                </label>
+              ))}
+            </div>
+            <div className="downloadFilterActions">
+              <button
+                disabled={!availableDownloadTypes.length}
+                type="button"
+                onClick={() => setSelectedDownloadTypes(new Set(availableDownloadTypes))}
+              >
+                全选
+              </button>
+              <button
+                disabled={!selectedDownloadTypes.size}
+                type="button"
+                onClick={() => setSelectedDownloadTypes(new Set())}
+              >
+                清空
+              </button>
+              <button
+                className="actionButton primary"
+                disabled={!downloadTargets.length || downloading}
+                type="button"
+                onClick={() => void downloadSelectedTypes()}
+              >
+                {downloading ? "下载中" : "下载"}
+              </button>
+            </div>
           </div>
         </div>
         {hasReports ? (
@@ -96,15 +169,46 @@ export function ReportsPage({ route, snapshot, onAction }: PageProps) {
             <table className="dataTable phase2Table">
               <thead><tr><th>报告名称</th><th>类型</th><th>状态</th><th>生成时间</th><th>report_id</th><th>checksum</th><th>操作</th></tr></thead>
               <tbody>
-                {reportRows.map((item) => (
-                  <tr key={`${cellText(item, "report_name")}-${cellText(item, "created_at")}`}>
+                {visibleReportRows.map((item, index) => (
+                  <tr key={`${cellText(item, "report_id", "report")}-${index}`}>
                     <td><strong>{cellText(item, "report_name")}</strong></td>
                     <td>{cellText(item, "report_type")}</td>
                     <td>{cellText(item, "report_status")}</td>
                     <td>{cellText(item, "created_at")}</td>
                     <td>{cellText(item, "report_id")}</td>
                     <td>{cellText(item, "checksum")}</td>
-                    <td><button type="button" onClick={() => setDrawer("record")}>详情</button></td>
+                    <td>
+                      <div className="tableActions">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedReportId(cellText(item, "report_id"));
+                            setDrawer("record");
+                          }}
+                        >
+                          详情
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onAction(actionRegistry["REP-011"], {
+                            kind: "download-file",
+                            reportId: cellText(item, "report_id"),
+                          })}
+                        >
+                          下载
+                        </button>
+                        <button
+                          className="dangerAction"
+                          type="button"
+                          onClick={() => onAction(actionRegistry["REP-012"], {
+                            kind: "download-file",
+                            reportId: cellText(item, "report_id"),
+                          })}
+                        >
+                          归档
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -119,33 +223,6 @@ export function ReportsPage({ route, snapshot, onAction }: PageProps) {
       </section>
 
       <DetailDrawer
-        footerNote="报告需说明：先根据合同约定向非数据源主体执行优先分配并受上限约束，扣除后形成数据源主体收益池，再按 MD-DShap 权重分配。"
-        objectType="导出字段"
-        open={drawer === "fields"}
-        size="md"
-        title="导出字段清单"
-        variant="export"
-        onClose={() => setDrawer("")}
-      >
-        <DrawerSection title="本次导出字段">
-          <ExportFieldList
-            fields={[
-              { key: "project_name", label: "项目名称" },
-              { key: "resource_name", label: "资源名称" },
-              { key: "party_name", label: "参与方" },
-              { key: "subject_track", label: "主体轨道" },
-              { key: "contract_priority_allocations", label: "合同优先明细" },
-              { key: "data_provider_revenue_pool", label: "数据源收益池" },
-              { key: "normalized_weight", label: "分配权重" },
-              { key: "allocation_amount", label: "模拟分配金额" },
-              { key: "disclaimer", label: "模拟参考声明" },
-            ]}
-            note="工程字段、敏感原文和内部快照编号不进入主导出文件。"
-          />
-        </DrawerSection>
-      </DetailDrawer>
-
-      <DetailDrawer
         footerNote="历史报告文件不静默覆盖，重复导出会生成新记录。"
         objectType="导出记录"
         open={drawer === "record"}
@@ -155,14 +232,14 @@ export function ReportsPage({ route, snapshot, onAction }: PageProps) {
         onClose={() => setDrawer("")}
       >
         <DrawerSection title="文件说明">
-          {latestReport ? (
+          {selectedReport ? (
             <dl className="businessDetail compact">
-              <div><dt>文件名称</dt><dd>{cellText(latestReport, "report_name")}</dd></div>
-              <div><dt>文件类型</dt><dd>{cellText(latestReport, "report_type")}</dd></div>
-              <div><dt>状态</dt><dd>{cellText(latestReport, "report_status")}</dd></div>
-              <div><dt>生成时间</dt><dd>{cellText(latestReport, "created_at")}</dd></div>
-              <div><dt>report_id</dt><dd>{cellText(latestReport, "report_id")}</dd></div>
-              <div><dt>checksum</dt><dd>{cellText(latestReport, "checksum")}</dd></div>
+              <div><dt>文件名称</dt><dd>{cellText(selectedReport, "report_name")}</dd></div>
+              <div><dt>文件类型</dt><dd>{cellText(selectedReport, "report_type")}</dd></div>
+              <div><dt>状态</dt><dd>{cellText(selectedReport, "report_status")}</dd></div>
+              <div><dt>生成时间</dt><dd>{cellText(selectedReport, "created_at")}</dd></div>
+              <div><dt>report_id</dt><dd>{cellText(selectedReport, "report_id")}</dd></div>
+              <div><dt>checksum</dt><dd>{cellText(selectedReport, "checksum")}</dd></div>
             </dl>
           ) : (
             <EmptyGuide title="暂无导出记录" description="页面不会用默认文件名或已生成状态伪造导出成功。" />
@@ -171,4 +248,245 @@ export function ReportsPage({ route, snapshot, onAction }: PageProps) {
       </DetailDrawer>
     </div>
   );
+}
+
+function buildExportedFilePoints(rows: ReturnType<typeof pageRows>) {
+  const stats = new Map<string, { count: number; types: Set<string> }>();
+  for (const row of rows) {
+    const files = exportFilesFromRow(row);
+    for (const file of files) {
+      const current = stats.get(file.name) ?? { count: 0, types: new Set<string>() };
+      current.count += 1;
+      if (file.type) {
+        current.types.add(file.type);
+      }
+      stats.set(file.name, current);
+    }
+  }
+  return Array.from(stats.entries())
+    .sort((left, right) => right[1].count - left[1].count || left[0].localeCompare(right[0], "zh-CN"))
+    .map(([name, item]) => ({
+      label: name,
+      value: String(item.count),
+      numeric: numericCellValue(item.count),
+      meta: Array.from(item.types).join(" / "),
+    }));
+}
+
+function buildDownloadTypes(rows: ReturnType<typeof pageRows>) {
+  return Array.from(new Set(rows.flatMap((row) => exportFilesFromRow(row).map((file) => file.type)).filter(Boolean)))
+    .sort((left, right) => left.localeCompare(right, "zh-CN"));
+}
+
+function buildDownloadTargets(rows: ReturnType<typeof pageRows>, selectedTypes: Set<string>) {
+  const targets = new Map<string, { reportId: string; exportFileId: string }>();
+  for (const row of rows) {
+    const reportId = cellText(row, "report_id");
+    if (!reportId || reportId === "暂无") {
+      continue;
+    }
+    for (const file of exportFilesFromRow(row)) {
+      if (!selectedTypes.has(file.type)) {
+        continue;
+      }
+      const key = `${reportId}:${file.exportFileId}`;
+      targets.set(key, { reportId, exportFileId: file.exportFileId });
+    }
+  }
+  return Array.from(targets.values());
+}
+
+function exportFilesFromRow(row: ReturnType<typeof pageRows>[number]): ReportDownloadFile[] {
+  const parsed = parseExportFiles(cellText(row, "export_files_json"));
+  if (parsed.length) {
+    return parsed;
+  }
+  const fallbackName = cellText(row, "report_name");
+  const fallbackType = cellText(row, "report_type", "");
+  return fallbackName === "暂无"
+    ? []
+    : [{ exportFileId: "", name: fallbackName, type: fallbackType }];
+}
+
+function parseExportFiles(raw: string): ReportDownloadFile[] {
+  if (!raw || raw === "暂无") {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .map((item) => {
+        if (!item || typeof item !== "object") {
+          return null;
+        }
+        const record = item as Record<string, unknown>;
+        const exportFileId = typeof record.export_file_id === "string" ? record.export_file_id : "";
+        const name = typeof record.file_name === "string" ? record.file_name : "";
+        const type = typeof record.file_type === "string" ? record.file_type : "";
+        return name ? { exportFileId, name, type } : null;
+      })
+      .filter((item): item is ReportDownloadFile => Boolean(item));
+  } catch {
+    return [];
+  }
+}
+
+function downloadBase64File(fileName: string, contentBase64: string, mimeType: string) {
+  downloadBlob(fileName, new Blob([bytesToBlobPart(base64ToBytes(contentBase64))], { type: mimeType }));
+}
+
+function downloadBlob(fileName: string, blob: Blob) {
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  window.URL.revokeObjectURL(url);
+}
+
+function downloadName(prefix: string, extension: string) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return `${prefix}_${stamp}.${extension}`;
+}
+
+function base64ToBytes(contentBase64: string) {
+  const binary = window.atob(contentBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function createZipBlob(files: DownloadedReportFile[]) {
+  const encoder = new TextEncoder();
+  const usedNames = new Set<string>();
+  const localParts: Uint8Array[] = [];
+  const centralParts: Uint8Array[] = [];
+  let offset = 0;
+
+  files.forEach((file, index) => {
+    const entryName = uniqueZipEntryName(file.fileName || `report_${index + 1}.bin`, usedNames);
+    const nameBytes = encoder.encode(entryName);
+    const data = base64ToBytes(file.contentBase64);
+    const checksum = crc32(data);
+    const localHeader = zipLocalHeader(nameBytes, data.length, checksum);
+    const centralHeader = zipCentralHeader(nameBytes, data.length, checksum, offset);
+    localParts.push(localHeader, data);
+    centralParts.push(centralHeader);
+    offset += localHeader.length + data.length;
+  });
+
+  const centralOffset = offset;
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = zipEndRecord(files.length, centralSize, centralOffset);
+  const zipParts = [...localParts, ...centralParts, end].map(bytesToBlobPart);
+  return new Blob(zipParts, { type: "application/zip" });
+}
+
+function bytesToBlobPart(bytes: Uint8Array) {
+  const copy = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(copy).set(bytes);
+  return copy;
+}
+
+function uniqueZipEntryName(fileName: string, usedNames: Set<string>) {
+  const safeName = fileName.replace(/^[/\\]+/, "") || "report.bin";
+  if (!usedNames.has(safeName)) {
+    usedNames.add(safeName);
+    return safeName;
+  }
+
+  const dotIndex = safeName.lastIndexOf(".");
+  const base = dotIndex > 0 ? safeName.slice(0, dotIndex) : safeName;
+  const extension = dotIndex > 0 ? safeName.slice(dotIndex) : "";
+  let suffix = 2;
+  let candidate = `${base}_${suffix}${extension}`;
+  while (usedNames.has(candidate)) {
+    suffix += 1;
+    candidate = `${base}_${suffix}${extension}`;
+  }
+  usedNames.add(candidate);
+  return candidate;
+}
+
+function zipLocalHeader(nameBytes: Uint8Array, size: number, checksum: number) {
+  const header = new Uint8Array(30 + nameBytes.length);
+  const view = new DataView(header.buffer);
+  view.setUint32(0, 0x04034b50, true);
+  view.setUint16(4, 20, true);
+  view.setUint16(6, 0x0800, true);
+  view.setUint16(8, 0, true);
+  view.setUint16(10, 0, true);
+  view.setUint16(12, 0, true);
+  view.setUint32(14, checksum, true);
+  view.setUint32(18, size, true);
+  view.setUint32(22, size, true);
+  view.setUint16(26, nameBytes.length, true);
+  view.setUint16(28, 0, true);
+  header.set(nameBytes, 30);
+  return header;
+}
+
+function zipCentralHeader(nameBytes: Uint8Array, size: number, checksum: number, offset: number) {
+  const header = new Uint8Array(46 + nameBytes.length);
+  const view = new DataView(header.buffer);
+  view.setUint32(0, 0x02014b50, true);
+  view.setUint16(4, 20, true);
+  view.setUint16(6, 20, true);
+  view.setUint16(8, 0x0800, true);
+  view.setUint16(10, 0, true);
+  view.setUint16(12, 0, true);
+  view.setUint16(14, 0, true);
+  view.setUint32(16, checksum, true);
+  view.setUint32(20, size, true);
+  view.setUint32(24, size, true);
+  view.setUint16(28, nameBytes.length, true);
+  view.setUint16(30, 0, true);
+  view.setUint16(32, 0, true);
+  view.setUint16(34, 0, true);
+  view.setUint16(36, 0, true);
+  view.setUint32(38, 0, true);
+  view.setUint32(42, offset, true);
+  header.set(nameBytes, 46);
+  return header;
+}
+
+function zipEndRecord(fileCount: number, centralSize: number, centralOffset: number) {
+  const end = new Uint8Array(22);
+  const view = new DataView(end.buffer);
+  view.setUint32(0, 0x06054b50, true);
+  view.setUint16(4, 0, true);
+  view.setUint16(6, 0, true);
+  view.setUint16(8, fileCount, true);
+  view.setUint16(10, fileCount, true);
+  view.setUint32(12, centralSize, true);
+  view.setUint32(16, centralOffset, true);
+  view.setUint16(20, 0, true);
+  return end;
+}
+
+const CRC32_TABLE = buildCrc32Table();
+
+function buildCrc32Table() {
+  const table = new Uint32Array(256);
+  for (let index = 0; index < 256; index += 1) {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    }
+    table[index] = value >>> 0;
+  }
+  return table;
+}
+
+function crc32(bytes: Uint8Array) {
+  let value = 0xffffffff;
+  for (const byte of bytes) {
+    value = CRC32_TABLE[(value ^ byte) & 0xff] ^ (value >>> 8);
+  }
+  return (value ^ 0xffffffff) >>> 0;
 }

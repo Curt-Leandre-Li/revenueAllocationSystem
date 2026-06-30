@@ -7,7 +7,6 @@ export const simulationDisclaimer =
 export const p0OperatorId = "local_operator";
 
 export const backendMissingActionReasons: Partial<Record<ActionId, string>> = {
-  "DATA-009": "后端未提供数据包停用接口，P0 不显示假停用成功。",
   "RES-007": "后端未提供资源摘要导出接口，P0 不生成前端模拟导出。",
   "MDS-017": "后端未提供纯算法权重结果导出接口，可使用算法审计导出。",
   "ALLOC-014": "后端未提供复制分配方案接口，已确认/已导出版本不做前端假复制。",
@@ -15,12 +14,6 @@ export const backendMissingActionReasons: Partial<Record<ActionId, string>> = {
 };
 
 export const p1ActionReasons: Partial<Record<ActionId, string>> = {
-  "REP-003": "PDF 导出是 P1 规划能力，P0 仅支持 Markdown / CSV / JSON / JSONL。",
-  "USER-001": "登录与 RBAC 是 P1 规划能力，P0 使用本地操作员。",
-  "USER-002": "用户新增是 P1 规划能力，P0 不创建生产账号。",
-  "USER-007": "密码重置是 P1 规划能力，P0 无登录密码流程。",
-  "USER-008": "角色管理是 P1 规划能力，P0 不保存生产权限。",
-  "USER-009": "权限配置是 P1 规划能力，P0 不写 RBAC 配置。",
 };
 
 export const actionGuardNotes: Record<ActionId, string> = {
@@ -31,7 +24,10 @@ export const actionGuardNotes: Record<ActionId, string> = {
   "DATA-003": "仅提交用户选择并解析后的 JSON。",
   "DATA-007": "读取后端安全摘要或校验详情。",
   "DATA-008": "读取后端校验失败详情。",
-  "DATA-009": backendMissingActionReasons["DATA-009"]!,
+  "DATA-009": "调用后端数据包删除接口，删除后刷新数据包列表和项目状态。",
+  "DATA-010": "从后端下载 CSV 导入模板。",
+  "DATA-011": "从后端下载 XLSX 导入模板。",
+  "DATA-012": "上传 CSV/XLSX 模板并生成数据包、校验结果和输入快照。",
   "RES-002": "读取后端资源详情。",
   "RES-005": "只调用资源主体关系接口，不保存无契约开关。",
   "RES-007": backendMissingActionReasons["RES-007"]!,
@@ -65,8 +61,9 @@ export const actionGuardNotes: Record<ActionId, string> = {
   "MDS-016": "调用后端重新计算接口，生成新任务。",
   "MDS-017": backendMissingActionReasons["MDS-017"]!,
   "MDS-018": "调用后端算法审计导出接口。",
+  "MDS-019": "调用后端任务取消接口。",
   "ALLOC-003": "调用后端收益池草稿接口。",
-  "ALLOC-005": "调用后端合同优先分配接口。",
+  "ALLOC-005": "调用后端合同比例分配接口。",
   "ALLOC-007": "调用后端分配模式接口。",
   "ALLOC-011": "调用后端收益分配模拟接口。",
   "ALLOC-013": "读取后端方案结果或 trace。",
@@ -79,26 +76,42 @@ export const actionGuardNotes: Record<ActionId, string> = {
   "CONS-011": "读取后端约束应用 trace。",
   "REP-001": "读取后端报告预览。",
   "REP-002": "调用后端 Markdown 报告导出接口。",
-  "REP-003": p1ActionReasons["REP-003"]!,
+  "REP-003": "调用后端 PDF 报告生成接口。",
   "REP-004": "调用后端 CSV 导出接口。",
   "REP-005": "调用后端 JSON 导出接口。",
   "REP-006": "调用后端算法审计报告接口。",
   "REP-009": backendMissingActionReasons["REP-009"]!,
-  "USER-001": p1ActionReasons["USER-001"]!,
-  "USER-002": p1ActionReasons["USER-002"]!,
-  "USER-007": p1ActionReasons["USER-007"]!,
-  "USER-008": p1ActionReasons["USER-008"]!,
-  "USER-009": p1ActionReasons["USER-009"]!,
+  "REP-010": "读取后端历史报告列表。",
+  "REP-011": "调用后端报告下载接口并校验 checksum。",
+  "REP-012": "调用后端报告归档接口，保留文件和审计。",
+  "USER-001": "读取后端用户列表。",
+  "USER-002": "调用后端用户创建接口。",
+  "USER-003": "调用后端用户更新接口。",
+  "USER-004": "调用后端用户禁用接口。",
+  "USER-005": "调用后端用户禁用接口，由后端校验管理员权限、自禁用和最后管理员保护。",
+  "USER-007": "调用后端密码重置接口。",
+  "USER-008": "读取后端角色列表。",
+  "USER-009": "读取或更新后端权限矩阵。",
+  "USER-010": "调用后端本人密码修改接口，只提交当前密码、新密码和确认新密码。",
+  "USER-011": "读取后端本人账号安全信息，不读取已有密码。",
   "AUD-002": "读取后端审计日志。",
   "AUD-006": "读取后端审计详情和快照引用。",
   "AUD-007": "调用后端审计 JSONL 导出接口。",
 };
 
 export function getContractDisabledReason(action: ActionDefinition) {
-  return backendMissingActionReasons[action.id] ?? p1ActionReasons[action.id] ?? "";
+  return backendMissingActionReasons[action.id] ?? "";
 }
 
+const lockedStatusBypassActionIds: ActionId[] = ["SYS-002", "DATA-002", "DATA-009"];
+
 export function getReadOnlyDisabledReason(action: ActionDefinition, projectStatus: StatusCode) {
+  if (action.moduleCode === "USER") {
+    return "";
+  }
+  if (lockedStatusBypassActionIds.includes(action.id)) {
+    return "";
+  }
   if (
     isLockedStatus(projectStatus) &&
     ["CREATE", "UPDATE", "DELETE_DISABLE", "CALCULATE", "CONFIRM"].includes(
@@ -109,4 +122,3 @@ export function getReadOnlyDisabledReason(action: ActionDefinition, projectStatu
   }
   return "";
 }
-

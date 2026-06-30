@@ -90,6 +90,8 @@ class AuditService:
         button_code=None,
         checksum=None,
     ):
+        operator_id = getattr(self.repository, "current_user_id", P0_CONFIG.local_operator)
+        operator_id = operator_id or P0_CONFIG.local_operator
         audit_log = {
             "log_id": self.repository.next_id("audit"),
             "project_id": self.repository.get_project()["project_id"],
@@ -99,8 +101,8 @@ class AuditService:
             "operation_type": operation_type,
             "object_type": object_type,
             "object_id": object_id,
-            "operator_id": P0_CONFIG.local_operator,
-            "created_by": P0_CONFIG.local_operator,
+            "operator_id": operator_id,
+            "created_by": operator_id,
             "before_value_json": before_value_json,
             "after_value_json": after_value_json,
             "input_snapshot_id": input_snapshot_id,

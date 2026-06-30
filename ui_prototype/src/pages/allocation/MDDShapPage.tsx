@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { actionRegistry } from "../../domain/actionRegistry";
 import { dvasApi } from "../../domain/api";
 import type { DataRow, RoutePath } from "../../domain/types";
+import { PageTitleHint } from "../../ui/PageTitleHint";
 import {
   cellText,
   hasBackendRows,
@@ -16,6 +17,7 @@ type MdsDrawer = "" | "detail" | "marginal" | "audit";
 type MdsModal = "" | "start" | "config";
 type MdsDetailTab = "weight" | "task" | "marginal" | "audit";
 type MdsTraceFilter = "all" | string;
+type MdsTaskScope = "mine" | "project" | "permitted";
 
 interface MdsWeightRow {
   key: string;
@@ -83,6 +85,8 @@ export function MDDShapPage({ route, snapshot, onAction, onNavigate }: PageProps
   const [confirmedStart, setConfirmedStart] = useState(false);
   const [working, setWorking] = useState(false);
   const [statusText, setStatusText] = useState("");
+  const [taskScope, setTaskScope] = useState<MdsTaskScope>("project");
+  const [taskRows, setTaskRows] = useState<Record<string, unknown>[]>([]);
   const [configDraft, setConfigDraft] = useState<MdsConfigDraft>(() =>
     buildConfigDraft(technicalDetails),
   );
@@ -107,6 +111,29 @@ export function MDDShapPage({ route, snapshot, onAction, onNavigate }: PageProps
   useEffect(() => {
     setConfigDraft(buildConfigDraft(technicalDetails));
   }, [technicalDetails]);
+
+  useEffect(() => {
+    if (taskScope === "project") {
+      setTaskRows(currentProjectTaskRows(technicalDetails));
+      return undefined;
+    }
+    let mounted = true;
+    void dvasApi.listMyJobs(taskScope === "mine" ? "mine" : undefined).then(
+      (response) => {
+        if (mounted) {
+          setTaskRows(response.items);
+        }
+      },
+      () => {
+        if (mounted) {
+          setTaskRows([]);
+        }
+      },
+    );
+    return () => {
+      mounted = false;
+    };
+  }, [taskScope, technicalDetails]);
 
   function selectRow(row: MdsWeightRow) {
     setSelectedKey(row.key);
@@ -185,8 +212,10 @@ export function MDDShapPage({ route, snapshot, onAction, onNavigate }: PageProps
     <div className={`pageWorkspace mdsWorkbenchPage${overlayOpen ? " mdsOverlayActive" : ""}`}>
       <header className="mdsPageHeader">
         <div>
-          <h1>MD-DShap 权重计算</h1>
-          <p>基于效用结果只计算数据源主体归一化权重，用于分配扣除合同优先后的数据源收益池。</p>
+          <PageTitleHint
+            title="MD-DShap 权重计算"
+            description="基于效用结果只计算数据源主体归一化权重，用于分配合同比例方案划分后的数据源收益池。"
+          />
         </div>
         <div className="mdsHeaderActions">
           <button type="button" onClick={() => setDrawer("audit")}>查看审计</button>
@@ -202,6 +231,48 @@ export function MDDShapPage({ route, snapshot, onAction, onNavigate }: PageProps
         <MdsMetricCard title="计算状态" value={formatTaskStatus(summaryValue(technicalDetails, ["task_status"], "待生成"))} />
         <MdsMetricCard title="归一化权重合计" value={summaryValue(technicalDetails, ["weight_sum"], "暂无")} />
         <MdsMetricCard title="最高权重主体" value={summaryValue(technicalDetails, ["top_weight_party_name"], "暂无")} />
+      </section>
+
+      <section className="mdsPanel mdsTaskScopePanel" aria-label="任务范围">
+        <div className="mdsPanelHead">
+          <div>
+            <h2>计算任务</h2>
+            <p>按当前登录用户和权限范围查看任务记录。</p>
+          </div>
+          <div className="scopeToggle">
+            <button
+              className={taskScope === "mine" ? "active" : ""}
+              type="button"
+              onClick={() => setTaskScope("mine")}
+            >
+              我发起的任务
+            </button>
+            <button
+              className={taskScope === "project" ? "active" : ""}
+              type="button"
+              onClick={() => setTaskScope("project")}
+            >
+              当前项目任务
+            </button>
+            <button
+              className={taskScope === "permitted" ? "active" : ""}
+              type="button"
+              onClick={() => setTaskScope("permitted")}
+            >
+              全部有权限任务
+            </button>
+          </div>
+        </div>
+        <div className="taskSummaryList">
+          {taskRows.length ? taskRows.slice(0, 4).map((job) => (
+            <article key={String(job.job_id ?? job.task_id ?? job.subject_id)}>
+              <strong>{String(job.job_name ?? job.job_type ?? "MD-DShap 权重计算")}</strong>
+              <span>{String(job.status ?? "待生成")} · {String(job.job_id ?? job.task_id ?? job.subject_id ?? "-")}</span>
+            </article>
+          )) : (
+            <p className="mdsEmpty">当前范围暂无任务记录</p>
+          )}
+        </div>
       </section>
 
       <section className="mdsVisualGrid">
@@ -848,7 +919,7 @@ function MdsAuditDrawer({
             ]}
           />
           <p className="mdsDrawerNote">
-            MD-DShap 仅输出权重层结果，后续收益分配仍受合同约束和模拟方案控制。
+            MD-DShap 仅输出权重层结果，后续收益分配仍以合同比例方案和模拟结果为准。
           </p>
         </div>
         <footer>
@@ -1087,6 +1158,23 @@ function toWeightRow(row: DataRow, index: number): MdsWeightRow {
     statusText: formatTaskStatus(cellText(row, "task_status")),
     raw: row,
   };
+}
+
+function currentProjectTaskRows(details: DataRow) {
+  const taskId = rawValue(details, "current_algorithm_task_id");
+  if (!taskId) {
+    return [];
+  }
+  return [
+    {
+      job_id: taskId,
+      job_name: "MD-DShap 权重计算",
+      job_type: "MD_DSHAP_TASK",
+      status: rawValue(details, "task_status") || "COMPLETED",
+      created_at: rawValue(details, "task_created_at"),
+      subject_id: taskId,
+    },
+  ];
 }
 
 function parseTraceRows(raw: unknown): MdsTraceRow[] {

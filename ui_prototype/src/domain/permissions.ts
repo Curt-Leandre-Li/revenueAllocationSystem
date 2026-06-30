@@ -1,4 +1,4 @@
-import type { ActionDefinition, PermissionCode, Phase, StatusCode } from "./types";
+import type { ActionDefinition, PermissionCode, StatusCode } from "./types";
 import {
   getContractDisabledReason,
   getReadOnlyDisabledReason,
@@ -24,19 +24,11 @@ export const localOperatorPermissions: PermissionCode[] = [
   "EXPORT",
 ];
 
-export function isP1Only(phase: Phase) {
-  return phase === "P1";
-}
-
 export function getActionDisabledReason(
   action: ActionDefinition,
   projectStatus: StatusCode,
   backendDisabledActions: Array<{ button_code: string; reason: string }> = [],
 ) {
-  if (isP1Only(action.phase)) {
-    return "P1 能力，当前 P0 阶段仅展示规划";
-  }
-
   const contractReason = getContractDisabledReason(action);
   if (contractReason) {
     return contractReason;

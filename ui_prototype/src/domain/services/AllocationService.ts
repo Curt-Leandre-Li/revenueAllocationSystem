@@ -10,6 +10,70 @@ import {
 export const AllocationService: MockDomainService = {
   readPage: readPageFromStore,
   handleAction(store, action, payload) {
+    if (action.id === "ALLOC-003") {
+      if (payload?.kind !== "allocation-revenue-pool") {
+        return backendUnavailableStore(
+          store,
+          action.label,
+          "allocation revenue-pool save requires backend DTO payload",
+        );
+      }
+      return mutateBackendAndRefresh(
+        store,
+        () =>
+          dvasApi.saveAllocationRevenuePool({
+            total_revenue: payload.totalRevenue,
+            priority_allocation_amount: payload.priorityAllocationAmount,
+            currency: payload.currency,
+          }),
+        "总收益已由后端保存，项目状态已刷新。",
+        "allocation revenue-pool save",
+      );
+    }
+
+    if (action.id === "ALLOC-005") {
+      if (payload?.kind !== "allocation-priority-items") {
+        return backendUnavailableStore(
+          store,
+          action.label,
+          "allocation priority save requires backend DTO payload",
+        );
+      }
+      return mutateBackendAndRefresh(
+        store,
+        () =>
+          dvasApi.saveAllocationPriorityItems({
+            items: payload.items.map((item) => ({
+              party_id: item.partyId,
+              value_type: item.valueType,
+              priority_amount: item.priorityAmount,
+              priority_ratio: item.priorityRatio,
+              cap_amount: item.capAmount,
+              basis_text: item.basisText,
+              priority_order: item.priorityOrder,
+            })),
+          }),
+        "非数据主体合同比例已由后端保存，项目状态已刷新。",
+        "allocation priority save",
+      );
+    }
+
+    if (action.id === "ALLOC-007") {
+      if (payload?.kind !== "allocation-mode") {
+        return backendUnavailableStore(
+          store,
+          action.label,
+          "allocation mode save requires backend DTO payload",
+        );
+      }
+      return mutateBackendAndRefresh(
+        store,
+        () => dvasApi.saveAllocationMode({ allocation_mode: payload.allocationMode }),
+        "分配模式已由后端保存，项目状态已刷新。",
+        "allocation mode save",
+      );
+    }
+
     if (action.id === "ALLOC-011") {
       if (payload?.kind !== "allocation-run") {
         return backendUnavailableStore(
@@ -20,12 +84,7 @@ export const AllocationService: MockDomainService = {
       }
       return mutateBackendAndRefresh(
         store,
-        () =>
-          dvasApi.runAllocationSimulation({
-            total_revenue: payload.totalRevenue,
-            priority_allocation_amount: payload.priorityAllocationAmount,
-            allocation_mode: payload.allocationMode,
-          }),
+        () => dvasApi.runCurrentContractRatioSimulation(),
         "收益分配模拟已由后端完成，项目状态已刷新。",
         "allocation simulation run",
       );

@@ -4,6 +4,7 @@ DEMO_CASES = {
         "package_name": "肺癌早筛示例数据包",
         "scenario_name": "肺癌早筛数据收益分配示例项目",
         "description": "用于本地演示的脱敏示例数据，不代表真实医疗生产数据。",
+        "revenue_pool": 1200000,
         "resources": [
             {
                 "resource_name": "影像特征数据集",

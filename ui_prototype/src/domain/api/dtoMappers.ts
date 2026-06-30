@@ -78,9 +78,14 @@ export interface BackendUploadValidationResultDto extends BackendRecord {
   validation_result_id: string;
   package_id: string;
   status: string;
+  code?: string | null;
+  message?: string | null;
+  error_code?: string | null;
   error_field?: string | null;
+  error_message?: string | null;
   repair_suggestion?: string | null;
   field_errors?: Array<{ field: string; reason: string }>;
+  detail_json?: BackendRecord | null;
   created_at?: string;
 }
 
@@ -139,6 +144,7 @@ export interface BackendReportRecordDto extends BackendRecord {
   status?: string;
   created_at: string;
   export_file_ids?: string[];
+  export_files?: BackendExportFileDto[];
   simulation_disclaimer?: string;
 }
 
@@ -170,10 +176,12 @@ export interface BackendSystemParameterDto extends BackendRecord {
 
 export interface BackendExportFileDto extends BackendRecord {
   export_file_id: string;
+  file_id?: string;
   report_id: string;
   project_id: string;
   file_name: string;
   file_format: string;
+  file_type?: string;
   checksum?: string;
   byte_size?: number;
   created_at: string;
@@ -225,6 +233,7 @@ export interface DashboardSummaryModel extends ProjectModel {
     dataPackageCount: number;
     resourceCount: number;
     partyCount: number;
+    currentRevenuePool: number | null;
     reportCount: number;
     exportFileCount: number;
     auditLogCount: number;
@@ -256,6 +265,7 @@ export interface DataResourceModel extends ResourceInventoryRecord {
   resourceId: string;
   packageId: string;
   partyId: string;
+  rawModality: string;
   updatedAt: string;
   relations: ResourcePartyRelationModel[];
 }
@@ -295,6 +305,7 @@ export interface ReportModel extends ReportRecord {
   reportType: string;
   checksum: string;
   exportFileIds: string[];
+  exportFiles: ExportFileModel[];
 }
 
 export interface ExportFileModel extends ExportFileRecord {
@@ -380,6 +391,7 @@ export function mapDashboardSummaryDto(dto: BackendDashboardSummaryDto): Dashboa
       dataPackageCount: numberValue(metrics.data_package_count),
       resourceCount: numberValue(metrics.resource_count),
       partyCount: numberValue(metrics.party_count),
+      currentRevenuePool: nullableNumberValue(metrics.current_revenue_pool),
       reportCount: numberValue(metrics.report_count),
       exportFileCount: numberValue(metrics.export_file_count),
       auditLogCount: numberValue(metrics.audit_log_count),
@@ -425,9 +437,14 @@ export function mapUploadValidationResultDto(
     packageId: stringValue(dto.package_id),
     status: stringValue(dto.status),
     statusLabel: packageStatusLabel(dto.status),
+    code: stringValue(dto.code),
+    message: stringValue(dto.message),
+    errorCode: stringValue(dto.error_code ?? dto.code),
     errorField: stringValue(dto.error_field),
-    repairSuggestion: stringValue(dto.repair_suggestion),
+    errorMessage: stringValue(dto.error_message),
+    repairSuggestion: stringValue(dto.repair_suggestion ?? dto.error_message),
     fieldErrors: arrayValue(dto.field_errors).map((item) => item as BackendRecord),
+    detailJson: recordValue(dto.detail_json),
     createdAt: formatDateTime(dto.created_at ?? ""),
   };
 }
@@ -437,6 +454,7 @@ export function mapDataResourceDto(dto: BackendDataResourceDto): DataResourceMod
     mapResourcePartyRelationDto(item as BackendResourcePartyRelationDto, dto.resource_id),
   );
   const missingRate = numberValue(dto.missing_rate);
+  const rawModality = stringValue(dto.modality);
   const includeInCalculation =
     typeof dto.include_in_calculation === "boolean"
       ? dto.include_in_calculation
@@ -453,7 +471,8 @@ export function mapDataResourceDto(dto: BackendDataResourceDto): DataResourceMod
     updatedAt: formatDateTime(dto.updated_at),
     resourceKey: stringValue(dto.resource_id),
     name: stringValue(dto.resource_name, "未命名资源"),
-    modality: modalityLabel(dto.modality),
+    modality: modalityLabel(rawModality),
+    rawModality,
     fieldCount: numberValue(dto.field_count),
     sampleCount: numberValue(dto.sample_count),
     missingRate,
@@ -522,11 +541,15 @@ export function mapResourcePartyRelationDto(
 
 export function mapReportRecordDto(dto: BackendReportRecordDto): ReportModel {
   const fileFormat = stringValue(dto.file_format, reportTypeLabel(dto.report_type));
+  const exportFiles = arrayValue(dto.export_files).map((item) =>
+    mapExportFileDto(item as BackendExportFileDto),
+  );
   return {
     reportId: stringValue(dto.report_id),
     reportType: stringValue(dto.report_type),
     checksum: stringValue(dto.checksum),
     exportFileIds: stringArray(dto.export_file_ids),
+    exportFiles,
     name: stringValue(dto.file_name, reportTypeLabel(dto.report_type)),
     type: fileFormat,
     status: stringValue(dto.status, "后端未返回"),
@@ -540,12 +563,12 @@ export function mapReportRecordDto(dto: BackendReportRecordDto): ReportModel {
 
 export function mapExportFileDto(dto: BackendExportFileDto): ExportFileModel {
   return {
-    exportFileId: stringValue(dto.export_file_id),
+    exportFileId: stringValue(dto.export_file_id ?? dto.file_id),
     reportId: stringValue(dto.report_id),
     checksum: stringValue(dto.checksum),
     byteSize: numberValue(dto.byte_size),
     fileName: stringValue(dto.file_name),
-    fileType: stringValue(dto.file_format),
+    fileType: stringValue(dto.file_format ?? dto.file_type),
     status: "已生成",
     createdAt: formatDateTime(dto.created_at),
     fieldScope: stringValue(dto.simulation_disclaimer, "模拟参考，非法律结算。"),
@@ -615,6 +638,7 @@ export function mapDataResourceToRow(resource: DataResourceModel): DataRow {
     package_id: resource.packageId,
     resource_name: resource.name,
     modality: resource.modality,
+    raw_modality: resource.rawModality,
     field_count: resource.fieldCount,
     sample_count: resource.sampleCount,
     missing_rate: percentLabel(resource.missingRate),
@@ -699,6 +723,14 @@ function numberValue(value: unknown, fallback = 0) {
   return fallback;
 }
 
+function nullableNumberValue(value: unknown) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const parsed = numberValue(value, Number.NaN);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function recordValue(value: unknown): BackendRecord {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as BackendRecord)
@@ -742,13 +774,45 @@ function packageStatusLabel(value: unknown) {
 }
 
 function modalityLabel(value: unknown) {
+  const raw = stringValue(value).trim();
+  if (!raw) {
+    return "未知模态数据";
+  }
+  const normalized = raw
+    .replace(/[\s-]+/g, "_")
+    .toUpperCase();
   const labels: Record<string, string> = {
-    TABULAR: "结构化",
-    TEXT: "文本",
-    IMAGE: "影像",
-    FEATURE: "特征",
+    STRUCTURED: "结构化数据",
+    TABULAR: "结构化数据",
+    TABLE: "结构化数据",
+    CLINICAL_TABLE: "结构化数据",
+    LAB_TABLE: "结构化数据",
+    FOLLOWUP_TABLE: "结构化数据",
+    STRUCTURED_RECORD: "结构化数据",
+    TEXT: "文本数据",
+    TXT: "文本数据",
+    DOCUMENT: "文本数据",
+    NOTE: "文本数据",
+    NLP: "文本数据",
+    IMAGE: "影像数据",
+    MEDICAL_IMAGE: "医学影像数据",
+    DICOM: "医学影像数据",
+    RADIOLOGY: "医学影像数据",
+    CT: "医学影像数据",
+    FEATURE: "特征数据",
+    VECTOR: "特征数据",
+    EMBEDDING: "特征数据",
+    TIME_SERIES: "时序数据",
+    TIMESERIES: "时序数据",
+    AUDIO: "音频数据",
+    MIXED: "混合数据",
+    VIDEO: "视频数据",
   };
-  return labels[stringValue(value)] ?? stringValue(value, "未知模态");
+  return labels[normalized] ?? withDataSuffix(raw);
+}
+
+function withDataSuffix(value: string) {
+  return value.endsWith("数据") ? value : `${value}数据`;
 }
 
 function resourceStatusLabel(value: unknown, includeInCalculation: boolean, providerName: string) {
@@ -768,10 +832,13 @@ function resourceStatusLabel(value: unknown, includeInCalculation: boolean, prov
 function partyTypeLabel(value: unknown) {
   const labels: Record<string, string> = {
     DATA_PROVIDER: "数据提供方",
-    OPERATOR: "运营服务方",
+    OPERATOR: "运营方",
     TECH_SERVICE: "技术服务方",
-    SERVICE_PROVIDER: "服务提供方",
-    EXPERT: "专家服务方",
+    SERVICE_PROVIDER: "技术服务方",
+    PILOT_BASE: "中试基地",
+    EXPERT_REVIEWER: "专家方",
+    EXPERT: "专家方",
+    CONTRACT_PARTY: "合同主体",
   };
   return labels[stringValue(value)] ?? stringValue(value, "其他主体");
 }
@@ -788,8 +855,8 @@ function constraintTypeLabel(value: unknown) {
   const labels: Record<string, string> = {
     MIN_AMOUNT: "最小金额",
     MAX_AMOUNT: "最大金额",
-    CAP_AMOUNT: "封顶金额",
-    FLOOR_AMOUNT: "保底金额",
+    CAP_AMOUNT: "CAP_AMOUNT（兼容）",
+    FLOOR_AMOUNT: "FLOOR_AMOUNT（兼容）",
     FIXED_RATIO: "固定比例",
     PRIORITY_ALLOCATION: "优先分配",
   };

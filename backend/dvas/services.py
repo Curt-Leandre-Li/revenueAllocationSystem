@@ -1155,7 +1155,7 @@ class NavigationService:
                     6,
                     [
                         self._leaf("MENU_SYSTEM_PARAMETER", "NAV_SYSTEM_PARAMETER", "参数配置", "PARAM", "/system/parameters", 61),
-                        self._leaf("MENU_SYSTEM_USER", "NAV_SYSTEM_USER", "用户与权限管理（P1）", "USER", "/system/users", 62, p0_required=False, p1_only=True),
+                        self._leaf("MENU_SYSTEM_USER", "NAV_SYSTEM_USER", "用户与权限管理", "USER", "/system/users", 62, p0_required=False, p1_only=True),
                         self._leaf("MENU_SYSTEM_AUDIT", "NAV_SYSTEM_AUDIT", "审计日志管理", "AUD", "/system/audit", 63),
                     ],
                 ),

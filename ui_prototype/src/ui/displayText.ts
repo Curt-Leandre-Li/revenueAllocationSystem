@@ -4,9 +4,17 @@ export function userFacingText(value: string | number | boolean | undefined | nu
   }
 
   let text = String(value);
+  const protectedPhrases = ["后端完整链路已执行"];
+  const protectedTokens = protectedPhrases.map((_, index) => `__DVAS_PROTECTED_${index}__`);
+  protectedPhrases.forEach((phrase, index) => {
+    text = text.split(phrase).join(protectedTokens[index]);
+  });
   for (const [from, to] of replacements) {
     text = text.split(from).join(to);
   }
+  protectedTokens.forEach((token, index) => {
+    text = text.split(token).join(protectedPhrases[index]);
+  });
   return text;
 }
 

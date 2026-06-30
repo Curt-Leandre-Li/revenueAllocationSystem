@@ -78,7 +78,12 @@ export function numericCellValue(value: unknown) {
   if (value === undefined || value === null || value === "") {
     return null;
   }
-  const numeric = Number(String(value).replace(/,/g, ""));
+  const normalized = String(value).trim().replace(/,/g, "");
+  if (normalized.endsWith("%")) {
+    const percent = Number(normalized.slice(0, -1));
+    return Number.isFinite(percent) ? percent / 100 : null;
+  }
+  const numeric = Number(normalized);
   return Number.isFinite(numeric) ? numeric : null;
 }
 

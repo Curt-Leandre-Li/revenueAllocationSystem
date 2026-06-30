@@ -22,8 +22,8 @@ export const MDDShapService: MockDomainService = {
           : {};
       return mutateBackendAndRefresh(
         store,
-        () => dvasApi.runMdDshap(parameters),
-        "MD-DShap 权重已由后端计算，项目状态已刷新。",
+        () => dvasApi.runProjectMdDshapJob(parameters),
+        "MD-DShap 权重任务已由后端执行，任务状态和项目状态已刷新。",
         "md-dshap run",
       );
     }
@@ -39,6 +39,18 @@ export const MDDShapService: MockDomainService = {
         () => dvasApi.exportMdDshapAudit(taskId),
         "MD-DShap 算法审计说明已由后端生成，报告记录已刷新。",
         "md-dshap audit export",
+      );
+    }
+
+    if (action.id === "MDS-019") {
+      if (payload?.kind !== "job-cancel" || !payload.jobId) {
+        return refreshStoreFromBackend(store, "当前页面未提供可取消的 job_id，已刷新任务状态。");
+      }
+      return mutateBackendAndRefresh(
+        store,
+        () => dvasApi.cancelJob(payload.jobId),
+        "取消请求已提交后端，任务状态已刷新。",
+        "md-dshap job cancel",
       );
     }
 

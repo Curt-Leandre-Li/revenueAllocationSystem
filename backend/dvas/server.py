@@ -18,13 +18,16 @@ class DvasRequestHandler(BaseHTTPRequestHandler):
     def do_PATCH(self):
         self._handle_request("PATCH")
 
+    def do_DELETE(self):
+        self._handle_request("DELETE")
+
     def do_OPTIONS(self):
         self._handle_request("OPTIONS")
 
     def _handle_request(self, method):
         content_length = int(self.headers.get("Content-Length", "0"))
         raw_body = self.rfile.read(content_length) if content_length else b""
-        status, headers, body = self.app.handle_http(method, self.path, raw_body)
+        status, headers, body = self.app.handle_http(method, self.path, raw_body, self.headers)
         self.send_response(status)
         for key, value in headers.items():
             self.send_header(key, value)

@@ -1,9 +1,13 @@
 import type { ReactNode } from "react";
 import type { MetricItem } from "../domain/types";
 import { userFacingText } from "./displayText";
+import { PageTitleHint } from "./PageTitleHint";
 
 function displaySummaryHint(value: string) {
   const text = userFacingText(value);
+  if (text.includes("revenue_pool")) {
+    return text;
+  }
   if (text.includes("/") || /[a-z]{2,}/.test(text) || /[a-z]+[_-][a-z0-9_-]+/i.test(text)) {
     return text.includes("需要") || text.includes("待补") ? "待生成" : "系统结果";
   }
@@ -26,8 +30,7 @@ export function CompactPageHeader({
   return (
     <header className="compactPageHeader">
       <div>
-        <h1>{userFacingText(title)}</h1>
-        <p>{userFacingText(description)}</p>
+        <PageTitleHint title={title} description={description} />
       </div>
       {(primaryAction || secondaryActions) ? (
         <div className="compactPageActions">
@@ -345,8 +348,8 @@ export function ProductFlowChart({
             <span>总收益</span>
             <strong>{total}</strong>
           </div>
-          <div className="productFlowNode priority dashboardInteractiveTip" data-tooltip={`合同优先 · ${priority}`} tabIndex={0}>
-            <span>合同优先</span>
+          <div className="productFlowNode priority dashboardInteractiveTip" data-tooltip={`非数据主体合同金额 · ${priority}`} tabIndex={0}>
+            <span>非数据主体合同金额</span>
             <strong>{priority}</strong>
           </div>
           <div className="productFlowNode pool dashboardInteractiveTip" data-tooltip={`数据源收益池 · ${pool}`} tabIndex={0}>

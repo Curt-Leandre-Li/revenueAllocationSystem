@@ -40,10 +40,17 @@ export function DataResourcesPage({ route, snapshot, onAction }: PageProps) {
     () =>
       rows.filter((row) => {
         const modalityMatched = modality === "全部" || cellText(row, "modality", "") === modality;
+        const normalizedKeyword = keyword.trim();
         const keywordMatched =
-          !keyword.trim() ||
-          cellText(row, "resource_name", "").includes(keyword.trim()) ||
-          cellText(row, "provider_party", "").includes(keyword.trim());
+          !normalizedKeyword ||
+          [
+            "resource_id",
+            "resource_name",
+            "provider_party",
+            "modality",
+            "raw_modality",
+            "status",
+          ].some((field) => matchesSearchValue(cellText(row, field, ""), normalizedKeyword));
         return modalityMatched && keywordMatched;
       }),
     [rows, modality, keyword],
@@ -57,12 +64,32 @@ export function DataResourcesPage({ route, snapshot, onAction }: PageProps) {
     metricMap.get("关联主体") ?? { label: "关联主体", value: cellText(pageData?.technicalDetails, "provider_party_count", "暂无"), hint: "系统摘要", tone: "neutral" as const },
     metricMap.get("敏感字段") ?? { label: "敏感字段", value: cellText(pageData?.technicalDetails, "sensitive_field_count", "暂无"), hint: "系统摘要", tone: "neutral" as const },
   ];
-  const missingRatePoints = rows.map((row) => ({
-    label: cellText(row, "resource_name"),
-    value: cellText(row, "missing_rate"),
-    numeric: numericCellValue(row.missing_rate),
-    meta: cellText(row, "modality"),
-  }));
+  const modalityPoints = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      const key = cellText(row, "modality", "未标注");
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([label, count]) => ({
+        label,
+        value: String(count),
+        numeric: count,
+      }))
+      .sort((left, right) => (right.numeric ?? 0) - (left.numeric ?? 0));
+  }, [rows]);
+  const missingRatePoints = useMemo(
+    () =>
+      rows
+        .map((row) => ({
+          label: cellText(row, "resource_name"),
+          value: cellText(row, "missing_rate"),
+          numeric: numericCellValue(row.missing_rate),
+          meta: cellText(row, "modality"),
+        }))
+        .sort((left, right) => (right.numeric ?? -1) - (left.numeric ?? -1)),
+    [rows],
+  );
 
   return (
     <div className="pageWorkspace leanPage resourcesPage">
@@ -73,30 +100,10 @@ export function DataResourcesPage({ route, snapshot, onAction }: PageProps) {
 
       <SummaryStrip items={summaryItems} />
 
-      <section className="leanFilterBar">
-        <div className="filterBar">
-          <label>
-            资源/主体搜索
-            <input value={keyword} onChange={(event) => setKeyword(event.target.value)} />
-          </label>
-          <label>
-            模态
-            <select value={modality} onChange={(event) => setModality(event.target.value)}>
-              {modalities.map((item) => (
-                <option key={item}>{item}</option>
-              ))}
-            </select>
-          </label>
-          <ActionButton
-            action={actionRegistry["RES-007"]}
-            disabledReason="暂未启用"
-            onClick={(action) => onAction(action)}
-          />
-        </div>
-      </section>
-
       <section className="resultChartGrid secondary">
-        <ChartArea title="资源类型分布" source={pageData.chart?.chart_id} />
+        <ChartArea title="资源模态分布" source={hasBackendRows(pageData) ? "rows" : undefined}>
+          <ProductBarChart points={modalityPoints} unit="资源数" />
+        </ChartArea>
         <ChartArea title="缺失率排行" source={hasBackendRows(pageData) ? "rows" : undefined}>
           <ProductBarChart points={missingRatePoints} unit="缺失率" />
         </ChartArea>
@@ -106,7 +113,30 @@ export function DataResourcesPage({ route, snapshot, onAction }: PageProps) {
         <div className="leanSectionHead">
           <div>
             <h2>资源列表</h2>
-            <p>字段数、样本数、缺失率、模态和关联主体只展示系统字段。</p>
+          </div>
+          <div className="resourceTableTools">
+            <label>
+              资源/主体搜索
+              <input
+                placeholder="资源名 / 主体 / 模态 / 编号"
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+              />
+            </label>
+            <label>
+              模态
+              <select value={modality} onChange={(event) => setModality(event.target.value)}>
+                {modalities.map((item) => (
+                  <option key={item}>{item}</option>
+                ))}
+              </select>
+            </label>
+            <span>{filteredRows.length} / {rows.length} 条</span>
+            <ActionButton
+              action={actionRegistry["RES-007"]}
+              disabledReason="暂未启用"
+              onClick={(action) => onAction(action)}
+            />
           </div>
         </div>
         {hasBackendRows(pageData) ? (
@@ -125,7 +155,7 @@ export function DataResourcesPage({ route, snapshot, onAction }: PageProps) {
                 </tr>
               </thead>
               <tbody>
-                {filteredRows.map((row, index) => (
+                {filteredRows.length ? filteredRows.map((row, index) => (
                   <tr key={`${cellText(row, "resource_id", "resource")}-${index}`}>
                     <td>
                       <strong>{cellText(row, "resource_name")}</strong>
@@ -162,7 +192,16 @@ export function DataResourcesPage({ route, snapshot, onAction }: PageProps) {
                       </div>
                     </td>
                   </tr>
-                ))}
+                )) : (
+                  <tr>
+                    <td colSpan={8}>
+                      <EmptyGuide
+                        title="未找到匹配资源"
+                        description="请调整资源/主体关键词或模态筛选。"
+                      />
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -257,3 +296,19 @@ const resourceDetailFields: Array<{ key: keyof DataRow & string; label: string }
   { key: "include_in_calculation", label: "是否进入计算" },
   { key: "provider_party", label: "关联主体" },
 ];
+
+function matchesSearchValue(value: string, keyword: string) {
+  const normalizedKeyword = keyword.trim().toLowerCase();
+  if (!normalizedKeyword) {
+    return true;
+  }
+  const normalizedValue = value.toLowerCase();
+  const hasCjk = /[\u4e00-\u9fff]/.test(normalizedKeyword);
+  if (hasCjk || normalizedKeyword.length >= 3) {
+    return normalizedValue.includes(normalizedKeyword);
+  }
+  return normalizedValue
+    .split(/[^a-z0-9]+/i)
+    .filter(Boolean)
+    .some((token) => token === normalizedKeyword);
+}

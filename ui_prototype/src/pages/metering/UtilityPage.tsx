@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { actionRegistry } from "../../domain/actionRegistry";
 import { dvasApi } from "../../domain/api";
 import type { DataRow } from "../../domain/types";
+import { PageTitleHint } from "../../ui/PageTitleHint";
 import {
   cellText,
   hasBackendRows,
@@ -43,11 +44,33 @@ interface ReadonlyFactorDisplay {
   note: string;
 }
 
+interface BubblePosition {
+  row: UtilityViewRow;
+  x: number;
+  y: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+const MIN_BUBBLE_ZOOM = 0.6;
+const MAX_BUBBLE_ZOOM = 2.4;
+const BUBBLE_COLLISION_X_DISTANCE = 14;
+const BUBBLE_COLLISION_Y_DISTANCE = 18;
+const BUBBLE_CLUSTER_OFFSET_PATTERN = [
+  [-24, -12],
+  [24, 12],
+  [-26, 20],
+  [26, -20],
+  [0, 30],
+  [0, -30],
+] as const;
+
 export function UtilityPage({ route, snapshot, onAction }: PageProps) {
   const pageData = snapshot.pages[route.path];
   const rows = pageRows(pageData);
   const firstRow = rows[0];
   const utilityRows = useMemo(() => rows.map(toUtilityViewRow), [rows]);
+  const utilitySummary = useMemo(() => summarizeUtilityRows(utilityRows), [utilityRows]);
   const [selectedKey, setSelectedKey] = useState("");
   const [drawer, setDrawer] = useState<UtilityDrawer>("");
   const [explainTab, setExplainTab] = useState<ExplainTab>("factor");
@@ -61,6 +84,7 @@ export function UtilityPage({ route, snapshot, onAction }: PageProps) {
   const [savingConfig, setSavingConfig] = useState(false);
   const [recalcStatus, setRecalcStatus] = useState("");
   const [recalculating, setRecalculating] = useState(false);
+  const [bubbleZoom, setBubbleZoom] = useState(1);
 
   const selectedRow =
     utilityRows.find((row) => row.key === selectedKey) ?? utilityRows[0] ?? null;
@@ -69,26 +93,26 @@ export function UtilityPage({ route, snapshot, onAction }: PageProps) {
   );
   const participantCount = utilityRows.length ? `${utilityRows.length}` : "暂无";
   const readonlyFactors = useMemo(() => buildReadonlyFactorDisplay(firstRow), [firstRow]);
-  const topContributionName = summaryText(pageData.technicalDetails, [
+  const topContributionName = withSummaryFallback(summaryText(pageData.technicalDetails, [
     "top_contribution_party_name",
     "highest_contribution_party_name",
-  ]);
-  const topContributionValue = summaryPercent(pageData.technicalDetails, [
+  ]), utilitySummary.topContributionName);
+  const topContributionValue = withSummaryFallback(summaryPercent(pageData.technicalDetails, [
     "top_contribution_value",
     "highest_contribution_value",
-  ]);
-  const topUtilityName = summaryText(pageData.technicalDetails, [
+  ]), utilitySummary.topContributionValue);
+  const topUtilityName = withSummaryFallback(summaryText(pageData.technicalDetails, [
     "top_utility_party_name",
     "highest_utility_party_name",
-  ]);
-  const topUtilityValue = summaryWeight(pageData.technicalDetails, [
+  ]), utilitySummary.topUtilityName);
+  const topUtilityValue = withSummaryFallback(summaryWeight(pageData.technicalDetails, [
     "top_utility_value",
     "highest_utility_value",
-  ]);
-  const averageUtility = summaryWeight(pageData.technicalDetails, [
+  ]), utilitySummary.topUtilityValue);
+  const averageUtility = withSummaryFallback(summaryWeight(pageData.technicalDetails, [
     "average_utility_value",
     "avg_utility_value",
-  ]);
+  ]), utilitySummary.averageUtility);
   const formulaText =
     cellText(firstRow, "formula_text") === "暂无"
       ? "归一化贡献 × 质量因子 × 使用因子 × 场景因子 = 效用值"
@@ -165,8 +189,10 @@ export function UtilityPage({ route, snapshot, onAction }: PageProps) {
     <div className={`pageWorkspace utilityWorkbenchPage${overlayOpen ? " utilityOverlayActive" : ""}`}>
       <header className="utilityPageHeader">
         <div>
-          <h1>贡献与效用计算</h1>
-          <p>查看参与方贡献、效用结果及形成逻辑。</p>
+          <PageTitleHint
+            title="贡献与效用计算"
+            description="查看参与方贡献、效用结果及计算依据。"
+          />
         </div>
         <div className="utilityHeaderActions">
           <button type="button" onClick={openExplain}>查看计算说明</button>
@@ -176,7 +202,7 @@ export function UtilityPage({ route, snapshot, onAction }: PageProps) {
       </header>
 
       <section className="utilityMetricGrid" aria-label="贡献与效用摘要">
-        <UtilityMetricCard icon="people" title="参与方数量" value={participantCount} subValue={hasRows ? "个" : ""} />
+        <UtilityMetricCard icon="people" title="参与方数量" value={participantCount} />
         <UtilityMetricCard
           icon="trophy"
           title="最高贡献主体"
@@ -203,29 +229,40 @@ export function UtilityPage({ route, snapshot, onAction }: PageProps) {
           />
         </article>
         <article className="utilityPanel">
-          <h2>参与方表现分布</h2>
+          <div className="utilityPanelHead compact">
+            <h2>参与方表现分布</h2>
+            <div className="utilityZoomControls" aria-label="参与方表现分布缩放">
+              <button
+                disabled={bubbleZoom <= MIN_BUBBLE_ZOOM}
+                type="button"
+                onClick={() => setBubbleZoom((current) => nextBubbleZoom(current, -0.2))}
+              >
+                缩小
+              </button>
+              <span>{Math.round(bubbleZoom * 100)}%</span>
+              <button
+                disabled={bubbleZoom >= MAX_BUBBLE_ZOOM}
+                type="button"
+                onClick={() => setBubbleZoom((current) => nextBubbleZoom(current, 0.2))}
+              >
+                放大
+              </button>
+              <button
+                disabled={bubbleZoom === 1}
+                type="button"
+                onClick={() => setBubbleZoom(1)}
+              >
+                重置
+              </button>
+            </div>
+          </div>
           <UtilityBubbleChart
             rows={utilityRows}
             selectedKey={selectedRow?.key ?? ""}
+            zoom={bubbleZoom}
             onSelect={(row) => setSelectedKey(row.key)}
           />
         </article>
-      </section>
-
-      <section className="utilityFormulaStrip" aria-label="效用形成逻辑">
-        <h2>效用形成逻辑</h2>
-        <div className="utilityFormulaItems">
-          <span>归一化贡献</span>
-          <b>×</b>
-          <span>质量因子</span>
-          <b>×</b>
-          <span>使用因子</span>
-          <b>×</b>
-          <span className="warm">场景因子</span>
-          <b>=</b>
-          <span className="result">效用值</span>
-        </div>
-        <p>效用值用于后续权重与收益分配计算</p>
       </section>
 
       <section className="utilityPanel utilityTablePanel">
@@ -449,31 +486,40 @@ function UtilitySlopeChart({
 function UtilityBubbleChart({
   rows,
   selectedKey,
+  zoom,
   onSelect,
 }: {
   rows: UtilityViewRow[];
   selectedKey: string;
+  zoom: number;
   onSelect: (row: UtilityViewRow) => void;
 }) {
   const visibleRows = rows.slice(0, 6);
   if (!visibleRows.length) {
     return <p className="utilityEmpty chart">暂无</p>;
   }
+  const domainMax = bubbleDomainMax(visibleRows, zoom);
+  const positionedRows = buildBubblePositions(visibleRows, domainMax);
   return (
     <div className="utilityBubbleWrap">
       <div className="utilityBubblePlot" aria-label="参与方表现分布">
         <span className="axisLabel y">效用值</span>
         <span className="axisLabel x">归一化贡献</span>
-        {visibleRows.map((row) => {
-          const x = clampPercent(row.contribution, 0.7);
-          const y = 100 - clampPercent(row.utility, 0.65);
+        {positionedRows.map(({ row, x, y, offsetX, offsetY }, index) => {
           const active = row.key === selectedKey;
+          const pointStyle = {
+            left: `${x}%`,
+            top: `${y}%`,
+            zIndex: active ? 12 : index + 1,
+            "--bubble-offset-x": `${offsetX}px`,
+            "--bubble-offset-y": `${offsetY}px`,
+          } as CSSProperties;
           return (
             <button
               className={`utilityBubblePoint quality${qualityBucket(row.quality)}${active ? " active" : ""}`}
               data-tooltip={tooltipText(row)}
               key={row.key}
-              style={{ left: `${x}%`, top: `${y}%` }}
+              style={pointStyle}
               type="button"
               onClick={() => onSelect(row)}
             >
@@ -947,6 +993,43 @@ function buildReadonlyFactorDisplay(row: DataRow | undefined): ReadonlyFactorDis
   ];
 }
 
+function summarizeUtilityRows(rows: UtilityViewRow[]) {
+  const contributionRows = rows.filter((row) => row.contribution !== null);
+  const utilityRows = rows.filter((row) => row.utility !== null);
+  const topContribution = maxByNumber(contributionRows, (row) => row.contribution);
+  const topUtility = maxByNumber(utilityRows, (row) => row.utility);
+  const utilitySum = utilityRows.reduce((sum, row) => sum + (row.utility ?? 0), 0);
+  const averageUtility = utilityRows.length ? utilitySum / utilityRows.length : null;
+  return {
+    topContributionName: topContribution?.partyName ?? "暂无",
+    topContributionValue: topContribution?.contributionText ?? "暂无",
+    topUtilityName: topUtility?.partyName ?? "暂无",
+    topUtilityValue: topUtility?.utilityText ?? "暂无",
+    averageUtility: averageUtility === null ? "暂无" : averageUtility.toFixed(6),
+  };
+}
+
+function maxByNumber(
+  rows: UtilityViewRow[],
+  selector: (row: UtilityViewRow) => number | null,
+) {
+  return rows.reduce<UtilityViewRow | null>((best, row) => {
+    const value = selector(row);
+    if (value === null) {
+      return best;
+    }
+    if (!best) {
+      return row;
+    }
+    const bestValue = selector(best);
+    return bestValue === null || value > bestValue ? row : best;
+  }, null);
+}
+
+function withSummaryFallback(value: string, fallback: string) {
+  return value === "暂无" ? fallback : value;
+}
+
 function summaryText(row: DataRow | undefined, keys: string[]) {
   for (const key of keys) {
     const value = cellText(row, key);
@@ -1011,6 +1094,65 @@ function tooltipText(row: UtilityViewRow) {
   return `${row.partyName} · 归一化贡献 ${row.contributionText} · 质量因子 ${row.qualityText} · 使用因子 ${row.usageText} · 场景因子 ${row.scenarioText} · 效用值 ${row.utilityText}`;
 }
 
+function buildBubblePositions(rows: UtilityViewRow[], domainMax: number) {
+  const rawPositions = rows.map((row) => ({
+    row,
+    x: clampPercent(row.contribution, domainMax),
+    y: 100 - clampPercent(row.utility, domainMax),
+  }));
+  const parents = rawPositions.map((_, index) => index);
+
+  function findParent(index: number): number {
+    if (parents[index] !== index) {
+      parents[index] = findParent(parents[index]);
+    }
+    return parents[index];
+  }
+
+  function unionPositions(leftIndex: number, rightIndex: number) {
+    const leftParent = findParent(leftIndex);
+    const rightParent = findParent(rightIndex);
+    if (leftParent !== rightParent) {
+      parents[rightParent] = leftParent;
+    }
+  }
+
+  rawPositions.forEach((leftPosition, leftIndex) => {
+    rawPositions.slice(leftIndex + 1).forEach((rightPosition, relativeRightIndex) => {
+      if (
+        Math.abs(leftPosition.x - rightPosition.x) < BUBBLE_COLLISION_X_DISTANCE &&
+        Math.abs(leftPosition.y - rightPosition.y) < BUBBLE_COLLISION_Y_DISTANCE
+      ) {
+        unionPositions(leftIndex, leftIndex + relativeRightIndex + 1);
+      }
+    });
+  });
+
+  const clusterSizes = new Map<number, number>();
+  rawPositions.forEach((_, index) => {
+    const clusterKey = findParent(index);
+    clusterSizes.set(clusterKey, (clusterSizes.get(clusterKey) ?? 0) + 1);
+  });
+
+  const clusterOrder = new Map<number, number>();
+  return rawPositions.map((position, index) => {
+    const clusterKey = findParent(index);
+    const clusterSize = clusterSizes.get(clusterKey) ?? 1;
+    const clusterIndex = clusterOrder.get(clusterKey) ?? 0;
+    clusterOrder.set(clusterKey, clusterIndex + 1);
+    if (clusterSize === 1) {
+      return { ...position, offsetX: 0, offsetY: 0 };
+    }
+
+    const [baseOffsetX, baseOffsetY] =
+      BUBBLE_CLUSTER_OFFSET_PATTERN[clusterIndex % BUBBLE_CLUSTER_OFFSET_PATTERN.length];
+    const offsetScale = Math.floor(clusterIndex / BUBBLE_CLUSTER_OFFSET_PATTERN.length);
+    const offsetX = baseOffsetX + Math.sign(baseOffsetX) * offsetScale * 10;
+    const offsetY = baseOffsetY + Math.sign(baseOffsetY) * offsetScale * 10;
+    return { ...position, offsetX, offsetY };
+  });
+}
+
 function utilityDelta(row: UtilityViewRow) {
   if (row.contribution === null || row.utility === null) {
     return 0;
@@ -1022,7 +1164,22 @@ function clampPercent(value: number | null, max: number) {
   if (value === null || max <= 0) {
     return 0;
   }
-  return Math.max(0, Math.min(100, (value / max) * 100));
+  return Math.max(4, Math.min(96, (value / max) * 100));
+}
+
+function bubbleDomainMax(rows: UtilityViewRow[], zoom: number) {
+  const maxValue = rows.reduce((current, row) => (
+    Math.max(current, row.contribution ?? 0, row.utility ?? 0)
+  ), 0);
+  const paddedDomain = Math.max(maxValue * 1.18, 0.08);
+  return Math.max(0.02, paddedDomain / zoom);
+}
+
+function nextBubbleZoom(current: number, delta: number) {
+  return Math.max(
+    MIN_BUBBLE_ZOOM,
+    Math.min(MAX_BUBBLE_ZOOM, Math.round((current + delta) * 10) / 10),
+  );
 }
 
 function qualityBucket(value: number | null) {
