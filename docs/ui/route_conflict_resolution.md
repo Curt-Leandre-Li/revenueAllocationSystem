@@ -19,11 +19,11 @@
 | 数元贡献度计量 | 数元计量管理 | /metering/shuyuan | NAV_MEASURE_SHUYUAN | DU | P0 主展示路径 |
 | 数元贡献度计量 | 贡献度与效用计算 | /metering/utility | NAV_MEASURE_UTILITY | UTIL | P0 主展示路径 |
 | 收益分配计算 | MD-DShap 计算管理 | /allocation/md-dshap | NAV_ALLOC_MDS | MDS | P0 主展示路径 |
+| 收益分配计算 | 合同分配规则 | /allocation/constraints | NAV_ALLOC_CONSTRAINT | CONS | P0 主展示路径 |
 | 收益分配计算 | 收益分配模拟 | /allocation/simulation | NAV_ALLOC_SIMULATION | ALLOC | P0 主展示路径 |
-| 收益分配计算 | 合同约束管理 | /allocation/constraints | NAV_ALLOC_CONSTRAINT | CONS | P0 主展示路径 |
 | 报告生成与导出 | 报告生成与导出 | /reports | NAV_REPORT_EXPORT | REP | P0 主展示路径 |
 | 系统管理 | 参数配置 | /system/parameters | NAV_SYSTEM_PARAMETER | PARAM | P0 主展示路径 |
-| 系统管理 | 用户与权限管理（P1） | /system/users | NAV_SYSTEM_USER | USER | P1 规划态，只读展示 |
+| 系统管理 | 用户与权限管理（P1） | /system/users | NAV_SYSTEM_USER | USER | P1 已接入登录/RBAC |
 | 系统管理 | 审计日志管理 | /system/audit | NAV_SYSTEM_AUDIT | AUD | P0 主展示路径 |
 
 ## Compatibility Aliases

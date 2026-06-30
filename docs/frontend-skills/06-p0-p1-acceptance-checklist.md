@@ -13,8 +13,8 @@
 - 数元计量。
 - 贡献度与效用计算。
 - MD-DShap 权重计算。
+- 合同分配规则。
 - 收益分配模拟。
-- 合同约束管理。
 - Markdown / CSV / JSON / JSONL 导出。
 - 审计日志和快照追溯。
 
@@ -39,7 +39,7 @@ P1 能力可以显示为规划态，但不得伪装成 P0 已上线。
 - 页面指标是否来自后端字段或 chart DTO。
 - 图表是否没有浏览器端业务推导。
 - MD-DShap 是否只解释为权重层，不解释为最终法律分配比例。
-- 收益分配是否展示合同优先分配、数据源收益池、权重分配、合同约束调整顺序。
+- 收益分配是否展示合同比例方案、数据源收益池、MD-DShap 权重分配和尾差处理顺序。
 
 ## 页面存在性自检
 
@@ -53,17 +53,17 @@ P1 能力可以显示为规划态，但不得伪装成 P0 已上线。
 | `/metering/shuyuan` | P0 | 参数、调用量、计量结果、明细 |
 | `/metering/utility` | P0 | 贡献度、效用值、trace |
 | `/allocation/md-dshap` | P0 | 默认 MD-DShap、权重、边际 trace、审计快照 |
-| `/allocation/simulation` | P0 | 收益池、优先分配、约束前后、锁定 |
-| `/allocation/constraints` | P0 | 约束类型、优先级、启停、命中 trace |
-| `/reports` | P0/P1 | Markdown/CSV/JSON/JSONL 可用，PDF P1 灰显 |
+| `/allocation/constraints` | P0 | 合同比例方案、数据源收益池比例、非数据主体比例、保存/清空 |
+| `/allocation/simulation` | P0 | 合同比例摘要、数据源收益池、金额来源、尾差、锁定 |
+| `/reports` | P0/P1 | Markdown/CSV/JSON/JSONL 可用，PDF 仅作为 P1 本地接口 |
 | `/system/parameters` | P0 | 参数版本、风险文案、MD-DShap 默认参数 |
-| `/system/users` | P1 | P0 只显示规划态，不做登录/RBAC |
+| `/system/users` | P1 | 本地演示登录/RBAC，不代表生产认证方案 |
 | `/system/audit` | P0 | 日志查询、快照详情、JSONL 导出 |
 
 ## 导出自检
 
 - P0 只展示 Markdown、CSV、JSON、JSONL。
-- PDF 按钮必须为 P1 规划或暂未启用。
+- PDF 按钮必须调用后端 P1 PDF 生成接口；后端前置条件不足时显示真实失败原因。
 - 每个导出都展示文件清单、字段范围、生成时间。
 - 每个导出都展示 `report_id` 和 `checksum`。
 - 历史报告不能静默覆盖。

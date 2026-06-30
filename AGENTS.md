@@ -17,9 +17,9 @@ repository. They override global defaults when stricter.
 
 Highest-priority product inputs for this documentation alignment round:
 
-1. `数据收益分配系统_V1.3_需求规格说明书_导航结构更新版.md`
-2. `数据收益分配系统_系统详细功能设计_V1.1_导航结构更新版.md`
-3. `数据收益分配系统_数据库设计与ER关系图_V1.0_导航结构更新版.md`
+1. `数据收益分配系统_V1.4_需求规格说明书_增加后端逐资源质量评估.md`
+2. `数据收益分配系统_系统详细功能设计_V1.2_增加后端逐资源质量评估.md`
+3. `数据收益分配系统_数据库设计与ER关系图_V1.1_增加后端逐资源质量评估.md`
 
 If older repository docs conflict with these files, update the older docs or
 mark them as superseded. Do not change runtime implementation to force
@@ -27,28 +27,34 @@ alignment.
 
 ## Current Round Boundary
 
-This round is documentation synchronization only.
+This round is interface repair and complete-chain frontend/backend alignment.
+The current task explicitly opens runtime, frontend, API-contract, and test
+edits needed to align `SYS-004` and the saved contract-ratio complete chain.
 
 Allowed:
 
 - `AGENTS.md`
-- `.codex/agents/*.toml` when agent role configuration needs alignment
-- `docs/**/*.md`
-- `README.md` or project explanation Markdown files
+- `backend/dvas/*.py` for scoped service, API dispatch, and DTO behavior repairs
+- `backend/openapi.yaml`
+- `backend/tests/*.py`
+- `ui_prototype/src/**`
+- `docs/**/*.md` and project explanation Markdown files directly tied to this
+  interface-repair round
 
 Forbidden:
 
-- `src/`
 - `demo_ui/`
-- `tests/`
 - runnable scripts under `scripts/`
 - dependency files such as `package.json`, lock files, `pyproject.toml`, or
   `requirements*.txt`
 - database migration or executable DDL implementation scripts
-- frontend, backend, algorithm, API, test, UI, or database implementation
+- deployment, cloud, secret, environment-variable, or production-auth changes
+- database migration or schema implementation changes
+- commit, push, merge, branch deletion, worktree removal, or history rewrite
 
-If full alignment requires code changes, record them as future implementation
-tasks only.
+Keep changes narrow: do not introduce a default/fake contract-ratio plan, do not
+use frontend mock data to report backend success, and leave unrelated dirty
+worktree changes intact.
 
 ## Navigation Baseline
 
@@ -66,8 +72,8 @@ menu labels:
   - 贡献度与效用计算
 - 收益分配计算
   - MD-DShap 计算管理
+  - 合同分配规则
   - 收益分配模拟
-  - 合同约束管理
 - 报告生成与导出
 - 系统管理
   - 参数配置
@@ -99,12 +105,11 @@ The current complete chain is:
 -> 质量评估
 -> 数元计量
 -> 贡献度计算与效用计算
--> 配置总收益
--> 配置非数据源主体合同优先分配和上限
--> 扣除合同优先分配，形成数据源主体可分配收益池
 -> MD-DShap 权重计算
+-> 配置总收益和合同比例方案，形成非数据主体合同金额和数据源主体收益池
+-> 收益分配模拟
 -> 使用 MD-DShap 归一化权重分配数据源主体收益池
--> 应用合同约束和尾差处理
+-> 应用尾差处理
 -> 锁定参考方案或复制新版本重算
 -> 报告生成与导出
 -> 审计追溯
@@ -124,7 +129,7 @@ P0 includes:
 - 贡献度与效用计算
 - MD-DShap 权重计算
 - 收益分配模拟
-- 合同约束
+- 合同分配规则
 - Markdown / CSV / JSON / JSONL 导出
 - 审计日志和快照追溯
 
@@ -159,8 +164,7 @@ P1 may extend:
   signals and provides `v(S,t)` or utility input for MD-DShap.
 - Non-data contribution parties do not enter the MD-DShap pool by default.
   Operators, pilot bases, technical service providers, experts, and similar
-  parties are handled first through contract priority allocation, fixed ratio,
-  floor, cap, minimum, or maximum constraints.
+  parties are handled through saved contract-ratio items in P0.
 - A single data-provider scenario does not run the full MD-DShap process. Its
   weight is 1, and pages/reports must disclose single-party simplified
   allocation.
@@ -190,10 +194,13 @@ P1 may extend:
 - UI Designer Agent owns 1440x900 Chinese management-backend design inputs,
   button/dialog/state requirements, risk notices, and route mapping. It does
   not generate UI code in this round.
-- Frontend Agent documents route, page, and component breakdown only in this
-  round. It does not write React or frontend code.
+- Frontend Agent documents route, page, and component breakdown in
+  documentation-only rounds; in the current interface-repair round,
+  `ui_prototype/src/**` edits are explicitly allowed.
 - Backend Agent documents service boundaries, data objects, and interface
-  contracts only in this round. It does not write backend code.
+  contracts in documentation-only rounds; in the current interface-repair round,
+  scoped `backend/dvas/*.py` and `backend/tests/*.py` edits are explicitly
+  allowed.
 - QA Agent owns acceptance matrix, regression checklist, and documentation
   consistency checks. It does not write test code in this round.
 - Docs Agent owns document index, terminology, version notes, software
