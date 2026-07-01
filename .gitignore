@@ -15,3 +15,7 @@ coverage/
 .env.*
 !.env.example
 backend/runtime/
+.codegraph/
+.playwright-cli/
+output/
+mds-page-screenshots/
