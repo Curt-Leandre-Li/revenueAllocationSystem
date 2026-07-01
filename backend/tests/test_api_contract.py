@@ -3649,6 +3649,41 @@ class DvasApiContractTests(unittest.TestCase):
         report_route = self.assert_ok(self.request("POST", "/api/v1/reports/md-dshap-audit", {}))
         self.assertEqual("MD_DSHAP_AUDIT_REPORT", report_route["report"]["report_type"])
 
+    def test_md_dshap_audit_report_uses_rep006_with_rep012_compat_alias(self):
+        self.run_demo_to_allocated()
+        self.repository.set_role_permission_codes("VIEWER", ["BTN_REP-006"])
+        viewer_token = self.login_token("viewer", "viewer123")
+
+        rep006_route = self.assert_ok(
+            self.request(
+                "POST",
+                "/api/v1/reports/md-dshap-audit",
+                {"_auth_token": viewer_token},
+            )
+        )
+        self.assertEqual("MD_DSHAP_AUDIT_REPORT", rep006_route["report"]["report_type"])
+
+        self.repository.set_role_permission_codes("VIEWER", ["BTN_REP-012"])
+        rep012_route = self.assert_ok(
+            self.request(
+                "POST",
+                "/api/v1/reports/md-dshap-audit",
+                {"_auth_token": viewer_token},
+            )
+        )
+        self.assertEqual("MD_DSHAP_AUDIT_REPORT", rep012_route["report"]["report_type"])
+
+        self.repository.set_role_permission_codes("VIEWER", [])
+        denied = self.request(
+            "POST",
+            "/api/v1/reports/md-dshap-audit",
+            {"_auth_token": viewer_token},
+        )
+        self.assertFalse(denied["success"])
+        self.assertEqual("DVAS_PERMISSION_DENIED", denied["code"])
+        self.assertEqual("button_code", denied["field_errors"][0]["field"])
+        self.assertEqual("REP-006", denied["field_errors"][0]["reason"])
+
     def test_report_reexport_creates_new_report_without_overwriting_history(self):
         self.run_demo_to_allocated()
 

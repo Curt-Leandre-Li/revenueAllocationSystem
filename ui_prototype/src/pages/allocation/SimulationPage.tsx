@@ -162,13 +162,13 @@ export function SimulationPage({ snapshot, onAction, onNavigate }: PageProps) {
 
           <article className="allocationPanel constraintEvidence">
             <div className="allocationPanelHead">
-              <h2>约束与金额来源</h2>
+              <h2>合同比例与金额来源</h2>
               <span>{allocation.constraintCheck.statusText}</span>
             </div>
             <div className="constraintEvidenceBody">
               <dl>
                 <div>
-                  <dt>trace 行数</dt>
+                  <dt>金额来源 trace 行数</dt>
                   <dd>
                     {allocation.constraintCheck.hitCount === null
                       ? "后端未返回"
@@ -184,7 +184,7 @@ export function SimulationPage({ snapshot, onAction, onNavigate }: PageProps) {
                   </dd>
                 </div>
                 <div>
-                  <dt>识别状态</dt>
+                  <dt>路径状态</dt>
                   <dd>{constraintStateLabel(allocation.constraintCheck.state)}</dd>
                 </div>
               </dl>
@@ -273,9 +273,9 @@ export function SimulationPage({ snapshot, onAction, onNavigate }: PageProps) {
 function constraintStateLabel(state: string) {
   const labels: Record<string, string> = {
     not_run: "待执行",
-    contract_ratio: "合同比例路径",
-    no_hits: "普通约束未命中",
-    has_hits: "普通约束已命中",
+    contract_ratio: "合同比例主路径",
+    no_hits: "历史兼容约束未命中",
+    has_hits: "历史兼容约束已命中",
     unknown: "后端未返回 trace",
   };
   return labels[state] ?? "后端未返回";

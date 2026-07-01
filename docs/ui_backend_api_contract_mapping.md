@@ -1,42 +1,61 @@
 # UI Backend API Contract Mapping
 
-Phase: 2C-prep
+Phase: 2C-prep, refreshed for 2026-07-01 documentation alignment
 
-Status: contract mapping only. Do not use this document as evidence that frontend runtime integration has been implemented.
+Status: contract mapping and drift record. Older rows in this file document the
+Phase 2B/2C-prep state; the "Current Status Override" section below supersedes
+stale counts and absence claims where current runtime code differs.
+
+## Current Status Override, 2026-07-01
+
+- Frontend action registry currently contains 81 `defineAction` entries, not
+  the earlier 68-action surface.
+- Contract-ratio configuration is the current allocation main path:
+  `/allocation/constraints` saves runtime `contract_ratio_plans` and
+  `contract_ratio_items`; `/allocation/simulation` requires that saved plan and
+  does not create a default/fake plan.
+- Local P1 user/session/RBAC and PDF report routes now exist in backend runtime
+  and tests. They remain P1, not P0, and are not production-grade auth/RBAC or
+  production document-service claims.
+- `REP-006` maps to `/api/v1/reports/md-dshap-audit`; backend permission
+  enforcement uses `REP-006` as the primary button code and keeps `REP-012`
+  only as a historical compatibility alias.
+- Frontend services must not use mock data to report backend success or to
+  synthesize a missing contract-ratio plan.
 
 Scope boundary:
 
 - This document maps the Phase 2B `ui_prototype` action/service surface to the current backend HTTP API, internal services, schemas, and tests.
 - This document does not implement API adapters, DTO mappers, UI changes, backend changes, or production integration.
 - `sources/` does not exist in this repository snapshot. The three source-of-truth documents are present at repository root and were used as source inputs:
-  - `数据收益分配系统_V1.3_需求规格说明书_导航结构更新版.md`
-  - `数据收益分配系统_系统详细功能设计_V1.1_导航结构更新版.md`
-  - `数据收益分配系统_数据库设计与ER关系图_V1.0_导航结构更新版.md`
+  - `数据收益分配系统_V1.4_需求规格说明书_增加后端逐资源质量评估.md`
+  - `数据收益分配系统_系统详细功能设计_V1.2_增加后端逐资源质量评估.md`
+  - `数据收益分配系统_数据库设计与ER关系图_V1.1_增加后端逐资源质量评估.md`
 
 ## Evidence Inputs
 
 | Area | Files / commands checked | Notes |
 | --- | --- | --- |
 | Source of truth | Root PRD, detailed design, DB/ER docs | Defines navigation, button semantics, state machine, tables, P0/P1 boundaries. |
-| Frontend actions | `ui_prototype/src/domain/actionRegistry.ts` | 68 action codes, handler names, permissions, mock side effects. |
-| Frontend services | `ui_prototype/src/domain/services/*Service.ts`, `serviceTypes.ts`, `actionDispatcher.ts` | 14 exported service handlers. Most write through mock store; a few have dormant backend helper paths gated by `snapshot.backend.connected`. |
+| Frontend actions | `ui_prototype/src/domain/actionRegistry.ts` | 81 action registry entries, handler names, permissions, and P0/P1 phases. |
+| Frontend services | `ui_prototype/src/domain/services/*Service.ts`, `serviceTypes.ts`, `actionDispatcher.ts`, `backendWorkspace.ts` | Service handlers call backend-backed workspace paths for the current chain; mock success must not be used for contract-ratio or backend completion claims. |
 | Frontend fields/store | `fieldMap.ts`, `store.ts`, `apiClient.ts`, `backendAdapter.ts` | Current adapter only covers project/dashboard/data package/resource/party/quality subset. |
 | Backend routing | `backend/dvas/app.py`, `backend/openapi.yaml` | 49 HTTP method/path combinations under `/api/v1`; app is standard-library HTTP adapter, not FastAPI. |
 | Backend services | `backend/dvas/services.py`, `repository.py`, `contracts.py` | Dict DTOs; no pydantic/BaseModel schemas. OpenAPI component schemas define request DTOs. |
-| Backend tests | `backend/tests/test_api_contract.py` | Uses `InMemoryRepository` and temporary dirs. Covers P0 chain and confirms PDF/login/RBAC/user routes are absent. |
+| Backend tests | `backend/tests/test_api_contract.py` | Uses `InMemoryRepository` and temporary dirs. Covers P0 chain plus local P1 PDF/user/RBAC route behavior. |
 | Existing docs | `docs/api_and_data_contract.md`, `docs/reporting_contract.md`, `docs/traceability/2026-06-18-be00-be02-runtime-scope.md` | Confirms stable IDs, P0 export formats, report/checksum rules, and P1 exclusions. |
 
 ## Summary Counts
 
 | Metric | Count | Notes |
 | --- | ---: | --- |
-| Frontend action codes | 68 | Extracted from `ActionId` and `actionRegistry`. |
+| Frontend action codes | 81 | Counted from `defineAction(` entries in `actionRegistry.ts`. |
 | Frontend exported service methods | 14 | One `handleAction` per frontend service module. Private backend helper functions exist for demo upload and quality only. |
 | Backend HTTP endpoints | 49 | Counted from `backend/openapi.yaml`; all are `/api/v1` relative paths. |
 | Backend route function surface | 1 dispatch function | `DvasApplication._dispatch` branches to backend services. |
-| Existing P0 backend tests | 1 file | `backend/tests/test_api_contract.py` covers the complete P0 chain and route absence checks. |
+| Existing backend tests | 1 file | `backend/tests/test_api_contract.py` covers the P0 chain and selected local P1 route behavior. |
 
-Action mapping status counts:
+Legacy action mapping status counts from the original 2C-prep pass:
 
 | Status | Count |
 | --- | ---: |
@@ -88,7 +107,8 @@ All endpoints below are defined in `backend/openapi.yaml` and routed by `DvasApp
 | PUT | `/api/v1/contract-constraints/{constraint_id}` | `_dispatch` | `ContractConstraintWriteRequest` | updated constraint | `ContractConstraintService.update` | contract_constraint, audit_log | versioned write and audit | yes | P0 |
 | PATCH | `/api/v1/contract-constraints/{constraint_id}/status` | `_dispatch` | `ContractConstraintStatusRequest` | updated constraint status | `ContractConstraintService.set_status` | contract_constraint, audit_log | logical disable and audit | yes | P0 |
 | POST | `/api/v1/allocation-scenarios` | `_dispatch` | `AllocationScenarioCreateRequest` | allocation scenario | `AllocationService.create` | allocation_scenario, audit_log | creates DRAFT scenario; validates weight/revenue preconditions | yes | P0 |
-| POST | `/api/v1/allocation-scenarios/{allocation_id}/simulate` | `_dispatch` | path `allocation_id` | allocation, results, constraint traces, project_status | `AllocationService.simulate` | allocation_result, constraint_apply_trace, snapshot_store, audit_log | status `ALLOCATED`; writes results/traces/snapshot/audit | yes | P0 |
+| POST | `/api/v1/allocation-scenarios/{allocation_id}/simulate` | `_dispatch` | path `allocation_id` | allocation, results, constraint traces, project_status | `AllocationService.simulate` | allocation_result, constraint_apply_trace, snapshot_store, audit_log | legacy scenario simulation; writes results/traces/snapshot/audit | yes | P0 compatibility |
+| POST | `/api/v1/projects/{project_id}/allocation/simulate` | `_dispatch` | path `project_id` | allocation summary, contract ratio plan/items, results | `AllocationService.simulate_contract_ratio` | allocation_scenario, allocation_result, runtime contract_ratio_plan/items, snapshot_store, audit_log | current contract-ratio simulation; status `ALLOCATED`; no default/fake plan | yes | P0 current |
 | POST | `/api/v1/allocation-scenarios/{allocation_id}/lock` | `_dispatch` | path `allocation_id` | locked allocation, project_status | `AllocationService.lock` | allocation_scenario, audit_log | status `CONFIRMED`; no payment instruction | yes | P0 |
 | GET | `/api/v1/allocation-scenarios/{allocation_id}/results` | `_dispatch` | path `allocation_id` | paged allocation result rows | `AllocationService.results` | allocation_result | read only | yes | P0 |
 | GET | `/api/v1/reports` | `_dispatch` | query none | `TablePage<ReportRecord>` | `ReportService.list` | report_record | read only | yes | P0 |
@@ -153,31 +173,31 @@ Legend:
 | MDS-015 | 查看复杂度优化说明 | `/allocation/md-dshap` | MDS | VIEW | `MDDShapService.handleAction` | UI modal plus A read mock | none | OUT_OF_SCOPE | none | static explanation | none | optional read audit | no | no | READY | Static product explanation; no backend endpoint required unless audit requires read log. |
 | MDS-016 | 重新计算 | `/allocation/md-dshap` | MDS | CALCULATE | `MDDShapService.handleAction` | State+A+S; new mock task version | `POST /api/v1/md-dshap/tasks` | EXISTING | `MdDshapTaskRunRequest` | new task/results | `WEIGHT_CALCULATED`; new task id | yes | new snapshots | no | READY | Backend tests verify rerun preserves previous results. |
 | MDS-017 | 导出算法结果 | `/allocation/md-dshap` | MDS | EXPORT | `MDDShapService.handleAction` | A+R/E; algorithm result export | `POST /api/v1/reports/csv` or new algorithm export | PARTIAL | none today | report/export files | `EXPORTED` if using reports | yes | report snapshot | yes | NEEDS_BACKEND_ENDPOINT | `/reports/csv` includes `md_dshap_weights.csv`, but no standalone algorithm export. |
-| MDS-018 | 生成算法审计说明 | `/allocation/md-dshap` | MDS | EXPORT | `MDDShapService.handleAction` | A+R; audit report record only | `POST /api/v1/reports/md-dshap-audit` | MISSING | task_id/field scope | report_record/export_file | optional `EXPORTED` | yes | report snapshot | yes | NEEDS_BACKEND_ENDPOINT | Required by UI; backend only has full report/audit-log exports. |
-| ALLOC-003 | 配置总收益 | `/allocation/simulation` | ALLOC | UPDATE | `AllocationService.handleAction` | A generic mock | `POST /api/v1/allocation-scenarios` | EXISTING | `AllocationScenarioCreateRequest` | allocation_scenario | creates DRAFT scenario | yes | no | no | NEEDS_DTO_MAPPER | UI may stage form locally, then create scenario with total_revenue. |
-| ALLOC-005 | 配置合同优先分配 | `/allocation/simulation` | ALLOC | UPDATE | `AllocationService.handleAction` | A generic mock | `POST /api/v1/allocation-scenarios` | EXISTING | `AllocationScenarioCreateRequest` | allocation_scenario | DRAFT scenario / revenue pool | yes | no | no | NEEDS_DTO_MAPPER | Backend validates priority amount <= total revenue. |
-| ALLOC-007 | 选择分配模式 | `/allocation/simulation` | ALLOC | UPDATE | `AllocationService.handleAction` | A generic mock | `POST /api/v1/allocation-scenarios` | EXISTING | `AllocationScenarioCreateRequest` | allocation_scenario | DRAFT scenario | yes | no | no | NEEDS_DTO_MAPPER | Backend default `MD_DSHAP_WEIGHT_WITH_CONSTRAINTS`. |
-| ALLOC-011 | 执行收益分配模拟 | `/allocation/simulation` | ALLOC | CALCULATE | `AllocationService.handleAction` | A+S generic mock | `POST /api/v1/allocation-scenarios/{allocation_id}/simulate` | EXISTING | path allocation_id | allocation, results, traces | `ALLOCATED` | yes | result snapshot | no | READY | Writes constraint_apply_trace rows. |
+| MDS-018 | 生成算法审计说明 | `/allocation/md-dshap` | MDS | EXPORT | `MDDShapService.handleAction` | A+R; audit report record only | `POST /api/v1/reports/md-dshap-audit` | EXISTING | optional task_id / latest task | report_record/export_file | optional `EXPORTED` | yes | report snapshot | yes | READY | Uses the real MD-DShap audit report route. |
+| ALLOC-003 | 查看总收益配置 | `/allocation/simulation` | ALLOC | VIEW | `AllocationService.handleAction` | backend contract-ratio state | `GET /api/v1/projects/{project_id}/allocation/contract-ratio` | EXISTING | path project_id | contract_ratio_plan/items | none | optional | no | no | READY | Total revenue is edited on 合同分配规则 and read by simulation. |
+| ALLOC-005 | 查看/使用合同比例方案 | `/allocation/simulation` | ALLOC | VIEW/UPDATE | `AllocationService.handleAction` | backend workspace state | `GET /api/v1/projects/{project_id}/allocation/contract-ratio` | EXISTING | path project_id | contract_ratio_plan/items | no direct status change | optional | no | no | READY | Simulation reads the saved plan; editing belongs on 合同分配规则. |
+| ALLOC-007 | 确认分配口径 | `/allocation/simulation` | ALLOC | VIEW | `AllocationService.handleAction` | backend contract-ratio state | `GET /api/v1/projects/{project_id}/allocation/contract-ratio` | EXISTING | path project_id | saved plan, ratio sum, data-provider pool | none | optional | no | no | READY | Current口径固定为 saved contract-ratio plan + MD-DShap data-provider pool. |
+| ALLOC-011 | 执行收益分配模拟 | `/allocation/simulation` | ALLOC | CALCULATE | `AllocationService.handleAction` | backend contract-ratio simulation | `POST /api/v1/projects/{project_id}/allocation/simulate` | EXISTING | path project_id; backend reads saved plan/latest weights | summary, contract_ratio_plan/items, allocation, results | `ALLOCATED` | yes | result snapshot | no | READY | Fails with `DVAS_CONTRACT_RATIO_REQUIRED` if no valid saved plan; does not write normal constraint apply trace. |
 | ALLOC-013 | 查看分配方案对比 | `/allocation/simulation` | ALLOC | VIEW | `AllocationService.handleAction` | A read mock | `GET /api/v1/allocation-scenarios/{allocation_id}/results` | EXISTING | path allocation_id | allocation_result table page | none | optional read audit | no | no | READY | Compare requires grouping versions on frontend. |
 | ALLOC-014 | 复制新版本 | `/allocation/simulation` | ALLOC | CREATE | `AllocationService.handleAction` | A generic mock | `POST /api/v1/allocation-scenarios/{allocation_id}/copy` | MISSING | allocation_id, overrides | allocation_scenario | new DRAFT version | yes | optional parameter snapshot | no | NEEDS_BACKEND_ENDPOINT | Backend can create fresh scenario but has no copy-from-existing endpoint. |
 | ALLOC-015 | 锁定分配方案 | `/allocation/simulation` | ALLOC | CONFIRM | `AllocationService.handleAction` | A generic mock | `POST /api/v1/allocation-scenarios/{allocation_id}/lock` | EXISTING | path allocation_id | locked allocation | `CONFIRMED` | yes | no | no | READY | Backend states no legal settlement/payment instruction. |
 | ALLOC-016 | 导出分配结果 | `/allocation/simulation` | ALLOC | EXPORT | `AllocationService.handleAction` | A+R/E generic mock | `POST /api/v1/reports/csv` or `POST /api/v1/reports/json` | EXISTING | none | report/export files | `EXPORTED` | yes | report snapshot | yes | READY | CSV includes source-level allocation; JSON includes allocation_result. |
-| CONS-002 | 新增合同约束 | `/allocation/constraints` | CONS | CREATE | `ConstraintService.handleAction` | A generic mock | `POST /api/v1/contract-constraints` | EXISTING | `ContractConstraintWriteRequest` | contract_constraint | constraint active/disabled | yes | no | no | READY | Validates amount/ratio/type. |
-| CONS-003 | 编辑约束 | `/allocation/constraints` | CONS | UPDATE | `ConstraintService.handleAction` | A generic mock | `PUT /api/v1/contract-constraints/{constraint_id}` | EXISTING | `ContractConstraintWriteRequest` | contract_constraint | increments version | yes | no | no | READY | |
-| CONS-004 | 删除/停用合同约束 | `/allocation/constraints` | CONS | DELETE_DISABLE | `ConstraintService.handleAction` | A generic mock | `PATCH /api/v1/contract-constraints/{constraint_id}/status` | EXISTING | `ContractConstraintStatusRequest` | contract_constraint | disabled/enabled | yes | no | no | READY | Physical delete remains out of P0 boundary. |
-| CONS-011 | 查看约束检查结果 | `/allocation/constraints` | CONS | VIEW | `ConstraintService.handleAction` | A read mock; trace drawer | `POST /api/v1/allocation-scenarios/{allocation_id}/simulate` then read returned traces | PARTIAL | allocation_id | constraint_traces in simulation response | none for pure check desired | yes if simulation | result snapshot if simulation | no | NEEDS_BACKEND_ENDPOINT | No pre-simulation check-only endpoint; results are produced during simulate. |
+| CONS-002 | 新增合同比例项 | `/allocation/constraints` | CONS | CREATE | `ContractRatioService.handleAction` | backend contract-ratio state | `PUT /api/v1/projects/{project_id}/allocation/contract-ratio` | EXISTING | contract ratio plan/items | contract_ratio_plan/items | saved plan version | yes | no | no | READY | Validates ratio sum, party type and data-provider pool. |
+| CONS-003 | 编辑合同比例方案 | `/allocation/constraints` | CONS | UPDATE | `ContractRatioService.handleAction` | backend contract-ratio state | `PUT /api/v1/projects/{project_id}/allocation/contract-ratio` | EXISTING | contract ratio plan/items | contract_ratio_plan/items | saved plan version | yes | no | no | READY | No default/fake plan is created by the frontend. |
+| CONS-004 | 清空合同比例方案 | `/allocation/constraints` | CONS | DELETE_DISABLE | `ContractRatioService.handleAction` | backend contract-ratio state | `DELETE /api/v1/projects/{project_id}/allocation/contract-ratio` | EXISTING | path project_id | removed runtime plan/items | cannot simulate until saved | yes | no | no | READY | Physical SQL contract_constraint delete is unrelated to the current main path. |
+| CONS-011 | 查看合同比例可模拟状态 | `/allocation/constraints` | CONS | VIEW | `ContractRatioService.handleAction` | backend contract-ratio state | `GET /api/v1/projects/{project_id}/allocation/summary` | EXISTING | path project_id | ratio sum, pool amount, can_simulate | none | optional | no | no | READY | Simulation fails with `DVAS_CONTRACT_RATIO_REQUIRED` until a valid plan is saved. |
 | REP-001 | 预览报告 | `/dashboard`, `/reports` | REP | VIEW | `ReportService.handleAction` | A read mock | `GET /api/v1/reports` plus report context endpoints | EXISTING | none | report records | none | optional read audit | no | no | NEEDS_DTO_MAPPER | Existing list lacks full preview body; preview can assemble from records/results. |
 | REP-002 | 导出 Markdown | `/reports` | REP | EXPORT | `ReportService.handleAction` | A+S+R/E generic mock | `POST /api/v1/reports/markdown` | EXISTING | none | report/export files | `EXPORTED` | yes | report snapshot | yes | READY | P0 Markdown report implemented. |
-| REP-003 | 生成 PDF 报告 | `/reports` | REP | EXPORT | `ReportService.handleAction` | disabled P1 UI only | none | MOCK_ONLY_P1 | none | none | none | no | no | no | KEEP_MOCK_FOR_P1 | Tests assert PDF routes absent. |
+| REP-003 | 生成 PDF 报告 | `/reports` | REP | EXPORT | `ReportService.handleAction` | local P1 backend path | `POST /api/v1/projects/{project_id}/reports/pdf` | EXISTING_P1 | path project_id | report/export file metadata and PDF download handle | `EXPORTED` when generated | yes | report snapshot | yes | P1_LABEL_REQUIRED | Local P1 PDF exists; do not present as P0 or production document service. |
 | REP-004 | 导出 CSV 明细 | `/reports` | REP | EXPORT | `ReportService.handleAction` | A+S+R/E generic mock | `POST /api/v1/reports/csv` | EXISTING | none | report/export files | `EXPORTED` | yes | report snapshot | yes | READY | Backend formats amounts 2 decimals and weights 6 decimals. |
 | REP-005 | 导出 JSON 结果 | `/reports` | REP | EXPORT | `ReportService.handleAction` | A+S+R/E generic mock | `POST /api/v1/reports/json` | EXISTING | none | report/export file | `EXPORTED` | yes | report snapshot | yes | READY | JSON includes snapshot refs/results/disclaimer. |
-| REP-006 | 导出算法审计说明 | `/reports` | REP | EXPORT | `ReportService.handleAction` | A+S+R/E generic mock | `POST /api/v1/reports/md-dshap-audit` | MISSING | task_id | report/export file | `EXPORTED` optional | yes | report snapshot | yes | NEEDS_BACKEND_ENDPOINT | Existing `/reports/audit-log` is JSONL audit export, not algorithm audit narrative. |
+| REP-006 | 导出算法审计说明 | `/reports` | REP | EXPORT | `ReportService.handleAction` | backend route exists; permission aligned | `POST /api/v1/reports/md-dshap-audit` | EXISTING | task_id / latest task | report/export file | `EXPORTED` optional | yes | report snapshot | yes | READY | Backend checks `REP-006` as the primary code and accepts `REP-012` only as compatibility alias. |
 | REP-009 | 导出收益分配确认书 | `/reports` | REP | EXPORT | `ReportService.handleAction` | A+S+R/E generic mock | `POST /api/v1/reports/allocation-confirmation` | MISSING | allocation_id | report/export file | `EXPORTED` optional | yes | report snapshot | yes | NEEDS_BACKEND_ENDPOINT | Required by reporting contract but not implemented as endpoint. |
-| USER-001 | 新增用户 | `/system/users` | USER | CREATE | `UserService.handleAction` | P1 mock only | none | MOCK_ONLY_P1 | none | none | none | no | no | no | KEEP_MOCK_FOR_P1 | Login/RBAC/users are P1 and tests assert routes absent. |
-| USER-002 | 编辑用户 | `/system/users` | USER | UPDATE | `UserService.handleAction` | P1 mock only | none | MOCK_ONLY_P1 | none | none | none | no | no | no | KEEP_MOCK_FOR_P1 | |
-| USER-007 | 配置角色 | `/system/users` | USER | UPDATE | `UserService.handleAction` | P1 mock only | none | MOCK_ONLY_P1 | none | none | none | no | no | no | KEEP_MOCK_FOR_P1 | |
-| USER-008 | 查看权限矩阵 | `/system/users` | USER | VIEW | `UserService.handleAction` | P1 read-only page | none | MOCK_ONLY_P1 | none | none | none | no | no | no | KEEP_MOCK_FOR_P1 | |
-| USER-009 | 重置密码 | `/system/users` | USER | UPDATE | `UserService.handleAction` | P1 mock only | none | MOCK_ONLY_P1 | none | none | none | no | no | no | KEEP_MOCK_FOR_P1 | |
+| USER-001 | 查询用户 | `/system/users` | USER | VIEW | `UserService.handleAction` | local P1 backend | `GET /api/v1/users` | EXISTING_P1 | query | users page | none | optional | no | no | P1_LABEL_REQUIRED | Local P1 only; no production-grade auth/RBAC claim. |
+| USER-002 | 新增用户 | `/system/users` | USER | CREATE | `UserService.handleAction` | local P1 backend | `POST /api/v1/users` | EXISTING_P1 | user write DTO | created user | user created | yes | no | no | P1_LABEL_REQUIRED | Backend enforces role/status guardrails. |
+| USER-007 | 配置角色 | `/system/users` | USER | UPDATE | `UserService.handleAction` | local P1 backend | `PATCH /api/v1/system/users/{user_id}` and `GET /api/v1/system/roles` | EXISTING_P1 | role codes | updated user / role list | role assignment updated | yes | no | no | P1_LABEL_REQUIRED | |
+| USER-008 | 查看权限矩阵 | `/system/users` | USER | VIEW | `UserService.handleAction` | local P1 backend | `GET /api/v1/permissions` | EXISTING_P1 | none | permission matrix | none | optional | no | no | P1_LABEL_REQUIRED | |
+| USER-009 | 重置密码/权限配置 | `/system/users` | USER | UPDATE | `UserService.handleAction` | local P1 backend | `POST /api/v1/system/users/{user_id}/reset-password` and `PUT /api/v1/system/roles/{role_id}/permissions` | EXISTING_P1 | user_id / permission DTO | reset result or permission update | security action | yes | no | no | P1_LABEL_REQUIRED | |
 | AUD-002 | 查询审计日志 | `/system/audit` | AUD | VIEW | `AuditService.handleAction` | A read mock | `GET /api/v1/audit-logs` | EXISTING | query filters | audit_log table page | none | no for read | no | no | READY | Query is read-only; supports filters/limit. |
 | AUD-006 | 查看快照详情 | `/system/audit` | AUD | VIEW | `AuditService.handleAction` | A read mock; trace drawer | `GET /api/v1/audit-logs/{log_id}` | PARTIAL | path log_id | audit_log plus snapshots | none | no for read | no | no | NEEDS_BACKEND_ENDPOINT | Backend exposes snapshots through audit log detail, not direct `snapshot/{id}` lookup. |
 | AUD-007 | 导出审计日志 | `/system/audit` | AUD | EXPORT | `AuditService.handleAction` | A+R/E generic mock | `POST /api/v1/reports/audit-log` | EXISTING | none | report/export file | `EXPORTED` when context exists | yes | report snapshot if context | yes | READY | Produces audit JSONL with audit/report/export records. |
@@ -194,11 +214,11 @@ Legend:
 | `ShuyuanService.ts` | `handleAction` | `POST /shuyuan-meterings/run`, `GET /shuyuan-meterings/latest/details`, parameters | coefficients/call_count | metering/detail rows | yes | status labels | amounts 2 decimals | missing quality -> blocker | yes for draft config |
 | `UtilityService.ts` | `handleAction` | `POST /contributions/run`, `POST /utilities/run`, `GET /utilities/latest/trace` | weights/factors | contribution records, utility, trace | yes | status labels | weights/utilities 6 decimals | missing metering/contribution -> blocker | yes for function config |
 | `MDDShapService.ts` | `handleAction` | `POST /md-dshap/tasks`, `GET /md-dshap/tasks/{id}/*` | seed, sample_rounds, epsilon, save_marginal_detail | task, result rows, marginal traces | yes | `MD_DSHAP`, `COMPLETED` to Chinese | normalized weights 6 decimals; sum 1 | utility/participant precondition to panel | yes for standalone exports |
-| `AllocationService.ts` | `handleAction` | `POST /allocation-scenarios`, `POST /simulate`, `POST /lock`, `GET /results` | total, priority, mode, weight_task_id | scenario/results/traces | yes | allocation status/mode labels | amounts 2 decimals; weights 6 decimals | revenue/priority errors attach to fields | no after scenario DTO mapper ready |
+| `AllocationService.ts` | `handleAction` | `GET/PUT/DELETE /projects/{project_id}/allocation/contract-ratio`, `POST /projects/{project_id}/allocation/simulate`, legacy scenario routes | saved contract-ratio plan, latest MD-DShap task/weights | contract ratio summary, scenario/results, final allocations | yes | allocation status/amount source labels | amounts 2 decimals; weights/ratios 6 decimals | missing plan maps to `DVAS_CONTRACT_RATIO_REQUIRED` blocker | no after contract-ratio DTO mapper ready |
 | `ConstraintService.ts` | `handleAction` | `GET/POST/PUT/PATCH /contract-constraints*`; traces from allocation simulate | party id, constraint type/value/status | constraints and returned traces | yes | constraint types/status | amount 2 decimals; ratio 0..1 | validation errors attach to form rows | yes for check-only action |
-| `ReportService.ts` | `handleAction` | `GET /reports`, `POST /reports/markdown/csv/json/audit-log` | mostly no body today; future field scope | report_record/export_files | yes | report type/file format labels | checksums string; amount/weight as file rule | precondition errors show missing allocation | yes for P1 PDF/extra report types |
+| `ReportService.ts` | `handleAction` | `GET /reports`, `POST /reports/markdown/csv/json/audit-log/md-dshap-audit`, `POST /projects/{project_id}/reports/pdf` | mostly no body today; task/project id for specialized reports | report_record/export_files/manifest | yes | report type/file format labels | checksums string; amount/weight as file rule | precondition errors show missing allocation | PDF remains P1-labeled; no mock success for backend reports |
 | `ParameterService.ts` | `handleAction` | `GET/PUT/POST /system/parameters*` | parameter_code/current_value | parameter/version rows | yes | parameter type/scope labels | numeric params positive; precision by parameter | non-editable errors show reason | no for P0 editable params |
-| `UserService.ts` | `handleAction` | none | P1 only | P1 only | yes later | role/status enums later | n/a | keep disabled P1 copy | yes, keep mock |
+| `UserService.ts` | `handleAction` | `/auth/*`, `/system/users*`, `/users*`, `/system/roles*`, `/system/permissions` | local P1 user/session/role/permission DTOs | local P1 users, roles, permissions, current user | yes | role/status enums | n/a | auth/permission errors remain explicit P1 failures | no mock success for enabled local P1 endpoints |
 | `AuditService.ts` | `handleAction` | `GET /audit-logs`, `GET /audit-logs/{id}`, `POST /reports/audit-log` | filters/limit/log_id | audit rows, snapshot refs, export file | yes | module/status labels | n/a | not-found and filter validation | yes for direct snapshot until endpoint exists |
 
 ## Backend Gap List
@@ -215,13 +235,13 @@ Legend:
 | GAP-API-008 | DU | call count draft/save endpoint | DU-003 | shuyuan_metering input staging or parameter_version | resource/party call counts | saved draft/version | P0 | BLOCKS_PAGE_ACTION |
 | GAP-API-009 | UTIL | utility function snapshot configuration endpoint | UTIL-007 | utility_function_snapshot | formula, factors, disclosure text | snapshot/version | P0 | BLOCKS_PAGE_ACTION |
 | GAP-API-010 | MDS | standalone algorithm result export | MDS-017 | md_dshap_result, report_record, export_file | task_id, format | report/export files | P0 | BLOCKS_PAGE_ACTION |
-| GAP-API-011 | MDS/REP | MD-DShap audit narrative export | MDS-018, REP-006 | algorithm_audit_snapshot, report_record, export_file | task_id, field scope | markdown/json report file | P0 | BLOCKS_PAGE_ACTION |
+| GAP-API-011 | MDS/REP | MD-DShap audit permission alignment | MDS-018, REP-006 | algorithm_audit_snapshot, report_record, export_file, permission policy | task_id, field scope | markdown/json report file | P0 | CLOSED |
 | GAP-API-012 | ALLOC | copy allocation scenario endpoint | ALLOC-014 | allocation_scenario | source allocation_id, overrides | new DRAFT scenario | P0 | BLOCKS_PAGE_ACTION |
 | GAP-API-013 | CONS | constraint check-only endpoint | CONS-011 | contract_constraint, constraint_apply_trace | allocation_id or candidate constraints | check result without simulation side effect | P0 | NICE_TO_HAVE |
 | GAP-API-014 | REP | allocation confirmation statement export | REP-009 | allocation_scenario, allocation_result, report_record | allocation_id | confirmation markdown/json | P0 | BLOCKS_PAGE_ACTION |
 | GAP-API-015 | AUD | direct snapshot detail endpoint | AUD-006 | snapshot_store | snapshot_id | snapshot metadata/content | P0 | BLOCKS_PAGE_ACTION |
-| GAP-API-016 | USER | user/role/permission APIs | USER-001/002/007/008/009 | user_account, role, permission, user_role, role_permission | P1 user/RBAC DTOs | P1 user/RBAC responses | P1 | P1_ONLY |
-| GAP-API-017 | REP | PDF report endpoints | REP-003 | report renderer P1 | report_id/template | PDF file metadata | P1 | P1_ONLY |
+| GAP-API-016 | USER | production-grade auth/RBAC beyond local P1 | USER-* | user_account, role, permission, user_role, role_permission | production auth/RBAC DTOs | production user/RBAC responses | P1+ | OUT_OF_SCOPE_CURRENT |
+| GAP-API-017 | REP | production PDF/template service beyond local P1 PDF | REP-003 | report renderer P1 | report_id/template | PDF file metadata | P1+ | OUT_OF_SCOPE_CURRENT |
 
 BLOCKS_FULL_CHAIN gaps:
 
@@ -259,21 +279,21 @@ BLOCKS_FULL_CHAIN gaps:
 - Needs backend or mapper: `MDS-017`, `MDS-018`; `MDS-015` stays static/out-of-scope.
 - DTO mappers: task metadata, participant set, task set, marginal traces, normalized weights.
 - Acceptance path: `/allocation/md-dshap`.
-- Fallback: keep standalone algorithm export/audit report mock until dedicated report endpoints exist.
+- Fallback: keep standalone algorithm export unavailable until a dedicated endpoint exists; MD-DShap audit narrative uses the real backend route with `REP-006` primary permission and `REP-012` compatibility alias.
 
-### 5. Allocation / Constraint
+### 5. Allocation / Contract Ratio
 
-- Directly connectable actions: `ALLOC-003`, `ALLOC-005`, `ALLOC-007`, `ALLOC-011`, `ALLOC-013`, `ALLOC-015`, `ALLOC-016`, `CONS-002`, `CONS-003`, `CONS-004`.
-- Needs backend or mapper: `ALLOC-014`, `CONS-011`.
-- DTO mappers: allocation scenario create, amount precision, constraint enum/status, result version grouping.
+- Directly connectable actions: `CONS-002`, `CONS-003`, `CONS-004`, `ALLOC-011`, `ALLOC-013`, `ALLOC-015`, `ALLOC-016`.
+- Needs backend or mapper: `ALLOC-014`; legacy `CONS-011` check-only is not part of the contract-ratio main path.
+- DTO mappers: contract-ratio plan/items, amount precision, ratio precision, amount source, result version grouping.
 - Acceptance path: `/allocation/simulation`, `/allocation/constraints`.
-- Fallback: keep copy-new-version and check-only constraint traces in mock until endpoint gaps close.
+- Fallback: keep copy-new-version UI unavailable until endpoint gap closes. Do not mock a saved contract-ratio plan or successful allocation simulation.
 
 ### 6. Reports / Audit
 
-- Directly connectable actions: `REP-001`, `REP-002`, `REP-004`, `REP-005`, `AUD-002`, `AUD-007`.
-- Needs backend: `REP-006`, `REP-009`, `AUD-006` direct snapshot detail.
-- P1: `REP-003` PDF remains disabled/mock.
+- Directly connectable actions: `REP-001`, `REP-002`, `REP-003` as P1, `REP-004`, `REP-005`, `REP-006`, `AUD-002`, `AUD-007`.
+- Needs alignment/backend: `REP-009`, `AUD-006` direct snapshot detail.
+- P1: `REP-003` PDF is local P1 and must remain labeled as P1.
 - DTO mappers: report records, export files, audit log query/detail, checksum and file metadata.
 - Acceptance path: `/reports`, `/system/audit`.
 - Fallback: keep report preview, algorithm audit narrative, allocation confirmation, direct snapshot mock.
@@ -286,13 +306,13 @@ BLOCKS_FULL_CHAIN gaps:
 - Acceptance path: `/system/parameters`.
 - Fallback: do not fallback for editable P0 params after mapper is ready; show backend validation errors.
 
-### 8. Users P1 Placeholder
+### 8. Users P1
 
-- Directly connectable actions: none.
-- Needs backend: all `USER-*` endpoints are P1 and intentionally absent.
-- DTO mappers: future user/role/permission mappers.
+- Directly connectable actions: local P1 `USER-*` list/create/update/disable/reset/roles/permissions/current-user/password paths.
+- Needs backend: production-grade auth/RBAC is outside current scope.
+- DTO mappers: user/role/permission/session mappers.
 - Acceptance path: `/system/users`.
-- Fallback: keep P1 placeholder read-only/mock.
+- Fallback: show explicit P1 unavailable/error state; do not mock successful user/RBAC writes when backend is expected.
 
 ## DTO Mapper Plan
 
@@ -444,5 +464,5 @@ Proceed to Phase 2C only as incremental adapter integration, not broad page refa
 1. Add a frontend API adapter/mappers behind a feature flag or `backend=1`.
 2. Connect dashboard/data package/quality first because current `apiClient.ts` already partially covers them.
 3. Add DTO mappers before page wiring.
-4. Keep P1, resource-summary export, algorithm-audit narrative, allocation confirmation, direct snapshot detail, and full quick-run on mock until backend gaps close.
-5. Never connect PDF/user/RBAC routes in P0; tests currently assert they are absent.
+4. Keep resource-summary export, allocation confirmation, direct snapshot detail, and full quick-run behind explicit unavailable/degraded states until backend gaps close.
+5. PDF/user/RBAC routes may be connected only as local P1 flows. Never present them as P0 or production-grade capability.

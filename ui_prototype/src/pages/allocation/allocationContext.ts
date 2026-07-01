@@ -356,7 +356,7 @@ function buildConstraintCheck(
       hitCount: traceRows.length,
       adjustmentAmount,
       traceRows,
-      statusText: "普通约束已命中",
+      statusText: "历史兼容约束 trace 已返回",
       detailText: `后端返回 ${traceRows.length} 条 constraint_apply_trace，调整合计 ${formatAmount(adjustmentAmount, "0.00")}。`,
     };
   }
@@ -383,7 +383,7 @@ function buildConstraintCheck(
       adjustmentAmount: null,
       traceRows: [],
       statusText: "后端未返回约束 trace",
-      detailText: "当前分配结果可展示金额，但无法判断普通约束命中情况。",
+      detailText: "当前分配结果可展示金额，但无法判断历史兼容约束 trace 状态。",
     };
   }
 
@@ -392,8 +392,8 @@ function buildConstraintCheck(
     hitCount: 0,
     adjustmentAmount: 0,
     traceRows: [],
-    statusText: "普通约束未命中",
-    detailText: "后端返回空 constraint_apply_trace，本次普通约束未产生金额调整。",
+    statusText: "历史兼容约束 trace 为空",
+    detailText: "后端返回空 constraint_apply_trace；当前合同比例主路径不依赖普通约束命中结果。",
   };
 }
 

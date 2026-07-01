@@ -462,7 +462,7 @@ class InMemoryRepository:
             "DATA-012", "DATA-009", "PARTY-002", "PARTY-003", "PARTY-005",
             "QUAL-003", "DU-009", "UTIL-006", "UTIL-008", "MDS-011", "MDS-012",
             "MDS-019", "ALLOC-011", "ALLOC-015", "CONS-002", "CONS-003", "CONS-011",
-            "REP-001", "REP-002", "REP-003", "REP-004", "REP-005", "REP-010",
+            "REP-001", "REP-002", "REP-003", "REP-004", "REP-005", "REP-006", "REP-010",
             "REP-011", "REP-012", "USER-001", "USER-002", "USER-003", "USER-004",
             "USER-005", "USER-007", "USER-008", "USER-009", "USER-010", "USER-011",
             "AUD-002", "AUD-006", "AUD-007",

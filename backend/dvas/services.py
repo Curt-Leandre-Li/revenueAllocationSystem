@@ -305,10 +305,11 @@ class AuthService:
             "export_permissions": sorted(set(export_permissions)),
         }
 
-    def require_button(self, payload, button_code):
+    def require_button(self, payload, button_code, aliases=None):
         user = self.current_user(payload)
         permissions = self.permission_summary(user["user_id"])
-        if button_code not in permissions["button_codes"]:
+        accepted_codes = [button_code, *(aliases or [])]
+        if not any(code in permissions["button_codes"] for code in accepted_codes):
             raise ApiError(
                 "DVAS_PERMISSION_DENIED",
                 "当前用户无此操作权限",

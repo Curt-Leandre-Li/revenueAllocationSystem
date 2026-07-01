@@ -623,7 +623,7 @@ class DvasApplication:
             self.auth_service.require_button(body, "AUD-007")
             return self.report_service.export_audit_log()
         if method == "POST" and segments == ["reports", "md-dshap-audit"]:
-            self.auth_service.require_button(body, "REP-012")
+            self.auth_service.require_button(body, "REP-006", aliases=("REP-012",))
             return self.report_service.generate_md_dshap_audit()
         if method == "GET" and segments == ["system", "parameters"]:
             self.auth_service.require_menu(body, "NAV_SYSTEM_PARAMETER")

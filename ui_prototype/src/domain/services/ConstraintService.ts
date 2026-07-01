@@ -80,7 +80,7 @@ export const ConstraintService: MockDomainService = {
     }
 
     if (action.id === "CONS-011") {
-      return refreshStoreFromBackend(store, "合同约束与应用结果已从后端刷新。");
+      return refreshStoreFromBackend(store, "合同比例方案与可模拟状态已从后端刷新。");
     }
 
     return backendUnavailableStore(store, action.label, "constraint action");

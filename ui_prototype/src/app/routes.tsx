@@ -115,11 +115,8 @@ export const appRoutes: AppRoute[] = [
     menuCode: "NAV_ALLOC_SIMULATION",
     moduleCode: "ALLOC",
     phase: "P0",
-    responsibility: "配置总收益、优先分配、收益池和约束，生成模拟分配结果。",
+    responsibility: "读取已保存合同比例方案和 MD-DShap 权重，执行收益分配模拟并展示结果。",
     actionIds: [
-      "ALLOC-003",
-      "ALLOC-005",
-      "ALLOC-007",
       "ALLOC-011",
       "ALLOC-013",
       "ALLOC-014",
