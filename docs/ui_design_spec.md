@@ -36,11 +36,11 @@
 | 数元计量管理 | Base price, coefficients, call count, detail table, formula note, export. |
 | 贡献度与效用计算 | Contribution factors, normalized contribution, utility function, trace drawer. |
 | MD-DShap 计算管理 | Algorithm mode, participant set, task set, parameters, progress, marginal trace, weights, audit export. |
-| 收益分配模拟 | Total revenue, priority allocation, data-provider revenue pool, mode selector, pre/post constraint amount, lock scheme. |
-| 合同约束管理 | Constraint list, type, object, value, priority, enable/disable, trace. |
-| 报告生成与导出 | Preview, file list, field scope, history, Markdown/CSV/JSON/JSONL export, PDF P1 disabled state. |
+| 合同分配规则 | Total revenue, data-provider pool ratio, non-data-party ratio items, ratio sum, backend-calculated amounts, can-simulate state. |
+| 收益分配模拟 | Saved contract-ratio plan, data-provider revenue pool, MD-DShap weighted allocation, amount source, tail-difference handling, lock scheme. |
+| 报告生成与导出 | Preview, file list, field scope, history, Markdown/CSV/JSON/JSONL export, local P1 PDF state. |
 | 参数配置 | Quality weights, MD-DShap parameters, risk copy, precision rules, versioning. |
-| 用户与权限管理（P1） | Users, roles, permission matrix, button-level permission. P0 shows P1 placeholder. |
+| 用户与权限管理（P1） | Users, roles, permission matrix, button-level permission, local P1 login/session state. |
 | 审计日志管理 | Filters, log details, snapshot links, trace, JSONL export. |
 
 ## Example Project Copy

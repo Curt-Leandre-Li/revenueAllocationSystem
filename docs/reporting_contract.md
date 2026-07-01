@@ -22,8 +22,8 @@ files.
 
 | File | Format | P0 | Required content |
 | --- | --- | --- | --- |
-| `allocation_summary.md` | Markdown | Yes | Project summary, input summary, participants, total revenue, priority allocation, data-provider pool, algorithm mode, allocation result, constraints, rounding, disclaimer. |
-| `source_level_allocation.csv` | CSV | Yes | `project_id`, `scenario_id`, `party_id`, `party_name`, `party_type`, `is_data_provider`, `raw_weight`, `normalized_weight`, `pre_constraint_amount`, `post_constraint_amount`, `constraint_adjustment_reason`. |
+| `allocation_summary.md` | Markdown | Yes | Project summary, input summary, participants, total revenue, contract-ratio plan, non-data contract amount, data-provider pool, algorithm mode, allocation result, tail-difference handling, disclaimer. |
+| `source_level_allocation.csv` | CSV | Yes | `project_id`, `scenario_id`, `party_id`, `party_name`, `party_type`, `is_data_provider`, `amount_source`, `contract_ratio`, `base_pool_amount`, `raw_weight`, `normalized_weight`, `final_amount`, `rounding_delta`. |
 | `quality_assessment_report.md` | Markdown | Yes | Quality score, level, dimension scores, evidence, warnings, parameter snapshot. |
 | `quality_assessment_result.json` | JSON | Yes | `assessment_id`, `project_id`, `package_id`, metric version, weights, scores, evidence, warnings, `created_at`. |
 | `shuyuan_metering_statement.md` | Markdown | Yes | Base price, coefficients, call count, resource/party/project amounts, formula note. |

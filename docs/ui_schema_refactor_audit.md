@@ -1,5 +1,9 @@
 # UI Schema Refactor Audit
 
+Historical snapshot: this audit predates the current V1.4/V1.2/V1.1 source
+baseline and contract-ratio runtime alignment. Use
+`docs/CODE_DOCUMENT_DRIFT_AUDIT.md` for current status.
+
 Status: phase-one audit and design freeze only. This document does not approve
 runtime implementation, dependency changes, script changes, database changes, or
 frontend page rewrites.

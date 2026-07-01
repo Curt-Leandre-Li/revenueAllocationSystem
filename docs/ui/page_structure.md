@@ -84,19 +84,19 @@
 
 - 导航：收益分配计算
 - 路由：/allocation/simulation
-- 数据库映射：NAV_ALLOC_SIMULATION / ALLOC / allocation_scenario, allocation_priority_item, allocation_result
-- 核心区块：总收益、合同优先分配、分配模式、约束前后金额、方案对比
-- 核心按钮：配置总收益、配置合同优先分配、选择分配模式、执行收益分配模拟、查看分配方案对比、锁定分配方案、导出分配结果
+- 数据库映射：NAV_ALLOC_SIMULATION / ALLOC / allocation_scenario, allocation_result；运行时读取 contract_ratio_plan, contract_ratio_item
+- 核心区块：已保存合同比例方案、数据源收益池、MD-DShap 权重分配、金额来源、方案对比
+- 核心按钮：查看合同比例方案、执行收益分配模拟、查看分配方案对比、锁定分配方案、导出分配结果
 - 页面状态：正常、前置条件未满足、计算中、失败、已锁定、已导出
 - 截图：docs/ui/screenshots/pages/09_allocation_simulation.png
 
-## 合同约束管理
+## 合同分配规则
 
 - 导航：收益分配计算
 - 路由：/allocation/constraints
-- 数据库映射：NAV_ALLOC_CONSTRAINT / CONS / contract_constraint, constraint_apply_trace
-- 核心区块：约束列表、约束类型、优先级、生效状态、约束检查结果
-- 核心按钮：新增合同约束、编辑合同约束、删除/停用合同约束、查看约束检查结果
+- 数据库映射：NAV_ALLOC_CONSTRAINT / CONS / 运行时 contract_ratio_plan, contract_ratio_item；旧 contract_constraint, constraint_apply_trace 仅为兼容对象
+- 核心区块：总收益、数据源主体收益池比例、非数据主体合同比例项、比例合计、可模拟状态
+- 核心按钮：保存合同比例方案、清空合同比例方案、查看比例校验结果
 - 页面状态：正常、空状态、失败、已锁定、已导出
 - 截图：docs/ui/screenshots/pages/10_allocation_constraints.png
 
@@ -105,7 +105,7 @@
 - 导航：报告生成与导出
 - 路由：/reports
 - 数据库映射：NAV_REPORT_EXPORT / REP / report_record, export_file, snapshot_store
-- 核心区块：报告预览、导出记录、文件清单、字段范围、P1 PDF 提示
+- 核心区块：报告预览、导出记录、文件清单、字段范围、P1 PDF 生成与下载状态
 - 核心按钮：报告预览、生成 Markdown 报告、生成 PDF 报告（P1）、导出 CSV 明细、导出 JSON 结果、导出算法审计说明、导出收益分配确认书
 - 页面状态：正常、前置条件未满足、失败、已锁定、已导出
 - 截图：docs/ui/screenshots/pages/11_reports_export.png
@@ -125,9 +125,9 @@
 - 导航：系统管理
 - 路由：/system/users
 - 数据库映射：NAV_SYSTEM_USER / USER / user_account, role, permission, user_role, role_permission
-- 核心区块：P1 能力边界、用户列表、角色权限矩阵、按钮权限、local_operator 说明
-- 核心按钮：用户查询、新增用户、重置密码、权限配置
-- 页面状态：P1 未启用、只读规划、权限不足、正常
+- 核心区块：P1 能力边界、用户列表、角色权限矩阵、按钮权限、当前用户说明
+- 核心按钮：用户查询、新增用户、编辑用户、启用/停用用户、重置密码、配置角色、查看权限矩阵、修改本人密码
+- 页面状态：P1 本地启用、权限不足、正常、失败
 - 截图：docs/ui/screenshots/pages/13_system_users_p1.png
 
 ## 审计日志管理

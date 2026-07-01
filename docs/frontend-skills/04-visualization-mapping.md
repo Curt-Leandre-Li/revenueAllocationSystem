@@ -7,7 +7,7 @@
 ## 硬规则
 
 - 所有图表只消费后端结果字段或后端 chart DTO。
-- 前端不计算质量分、数元金额、贡献度、效用值、权重、收益分配金额或合同约束调整。
+- 前端不计算质量分、数元金额、贡献度、效用值、权重、收益分配金额或合同比例方案金额。
 - 前端可以做展示格式化、图例映射、颜色映射、筛选、排序、tooltip 和空值占位。
 - 缺少图表所需结构时，新增后端展示 DTO 任务；不要在浏览器端拼业务计算。
 - 图表旁必须保留数据来源、结果版本或快照引用。
@@ -46,8 +46,8 @@
 | 数元计量管理 | 资源级/参与方级数元金额柱状图、调用量趋势或排行 | shuyuan metering/detail DTO |
 | 贡献度与效用计算 | 贡献度排行、效用值排行、trace 摘要 | contribution/utility/trace DTO |
 | MD-DShap 计算管理 | 参与方权重条形图、边际贡献热力表、算法复杂度说明卡 | md_dshap result/marginal_trace/audit DTO |
-| 收益分配模拟 | 总收益到数据源收益池到参与方分配的流向图、约束前后金额对比图 | allocation result + constraint trace DTO |
-| 合同约束管理 | 约束类型分布、约束命中/未命中状态 | contract constraint + apply trace DTO |
+| 合同分配规则 | 总收益、数据源主体收益池比例、非数据主体比例项、比例合计和可模拟状态 | contract_ratio plan/items DTO |
+| 收益分配模拟 | 总收益到合同比例方案、数据源收益池、参与方最终分配的流向图；金额来源和尾差说明 | allocation result + contract_ratio DTO |
 | 报告生成与导出 | 导出文件清单、report_id、checksum、生成时间 | report/export DTO |
 | 审计日志管理 | 操作时间线、模块筛选、快照详情 | audit log/detail DTO |
 

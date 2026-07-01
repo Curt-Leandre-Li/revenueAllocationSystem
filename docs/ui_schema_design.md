@@ -63,7 +63,7 @@ Navigation labels must have no Arabic numeric prefixes.
 | 系统首页 | 内部区块: 项目总览, 流程入口, 风险提示, 一键计算 |
 | 数据管理 | 数据接入管理, 数据资源管理, 参与方管理 |
 | 数元贡献度计量 | 质量评估管理, 数元计量管理, 贡献度与效用计算 |
-| 收益分配计算 | MD-DShap 计算管理, 收益分配模拟, 合同约束管理 |
+| 收益分配计算 | MD-DShap 计算管理, 合同分配规则, 收益分配模拟 |
 | 报告生成与导出 | 报告生成与导出 |
 | 系统管理 | 参数配置, 用户与权限管理（P1）, 审计日志管理 |
 
@@ -99,9 +99,9 @@ Frozen page list:
 | `DU_METERING` | DU | 数元计量管理 | `/metering/shuyuan` | workflow | 基准价, 调用量, 系数配置, 计量明细, 参数版本 |
 | `UTIL_CALCULATION` | UTIL | 贡献度与效用计算 | `/metering/utility` | workflow | 贡献因子, 归一化贡献, 效用函数, 效用值, Trace |
 | `MDS_CALCULATION` | MDS | MD-DShap 计算管理 | `/allocation/md-dshap` | workflow | 算法模式, 参与方集合, 前置条件检查, 边际贡献, 权重表, 算法审计快照 |
-| `ALLOC_SIMULATION` | ALLOC | 收益分配模拟 | `/allocation/simulation` | workflow | 总收益, 合同优先分配, 分配模式, 约束前后金额, 方案对比 |
-| `CONS_MANAGEMENT` | CONS | 合同约束管理 | `/allocation/constraints` | table | 约束列表, 约束类型, 优先级, 生效状态, 约束检查结果 |
-| `REP_EXPORT` | REP | 报告生成与导出 | `/reports` | workflow | 报告预览, 导出记录, 文件清单, 字段范围, P1 PDF 提示 |
+| `CONS_MANAGEMENT` | CONS | 合同分配规则 | `/allocation/constraints` | form | 总收益, 数据源主体收益池比例, 非数据主体比例项, 比例合计, 可模拟状态 |
+| `ALLOC_SIMULATION` | ALLOC | 收益分配模拟 | `/allocation/simulation` | workflow | 已保存合同比例方案, 数据源收益池, MD-DShap 权重分配, 金额来源, 方案对比 |
+| `REP_EXPORT` | REP | 报告生成与导出 | `/reports` | workflow | 报告预览, 导出记录, 文件清单, 字段范围, P1 PDF 生成与下载状态 |
 | `AUD_LOG` | AUD | 审计日志管理 | `/system/audit` | table | 日志查询, 计算 Trace, 输入快照, 参数快照, 输出快照, 导出记录 |
 | `PARAM_CONFIG` | PARAM | 参数配置 | `/system/parameters` | form | 场景系数, 质量权重模板, MD-DShap 参数, 风险提示文案, 参数版本 |
 | `USER_PERMISSION_P1` | USER | 用户与权限管理（P1） | `/system/users` | table | P1 能力边界, 用户列表, 角色权限矩阵, 按钮权限, local_operator 说明 |
@@ -177,12 +177,10 @@ MDS calculation progress drawer
 MDS marginal contribution drawer
 MDS weight detail drawer
 MDS complexity note drawer
-ALLOC total revenue drawer
-ALLOC priority allocation drawer
+CONS contract-ratio plan drawer
+CONS non-data ratio item drawer
 ALLOC scenario comparison drawer
 ALLOC lock scenario confirm modal
-CONS create/edit contract constraint modal
-CONS constraint check drawer
 REP export confirm modal
 REP report preview drawer
 AUD log detail drawer
@@ -232,17 +230,23 @@ RES-007, MDS-017, MDS-018, ALLOC-016,
 REP-002, REP-003, REP-004, REP-005, REP-006, REP-009, AUD-007
 ```
 
-`REP-003` is P1 and disabled in P0.
+`REP-003` is P1. Current local backend exposes the P1 PDF path, but it must not
+be presented as P0 export capability or as a production document service.
 
 P1 user actions:
 
 | Action | Type | P0 Behavior |
 |---|---|---|
-| `USER-001` | VIEW | Show planning/read-only panel. |
-| `USER-002` | CREATE | Disabled; no account creation in P0. |
-| `USER-007` | UPDATE | Disabled; no password flow in P0. |
-| `USER-008` | UPDATE | Disabled; role management is P1. |
-| `USER-009` | UPDATE | Disabled; permission config is P1. |
+| `USER-001` | VIEW | Query local P1 user list when enabled; otherwise show P1 boundary. |
+| `USER-002` | CREATE | Create local P1 user through backend guardrails. |
+| `USER-003` | UPDATE | Edit local P1 user profile/status fields. |
+| `USER-004` | UPDATE | Disable/enable user with last-admin/current-user guards. |
+| `USER-005` | UPDATE | Reset another user's password in local P1 flow. |
+| `USER-007` | UPDATE | Configure local P1 roles. |
+| `USER-008` | VIEW | Read local P1 permission matrix. |
+| `USER-009` | UPDATE | Update role-permission assignments where backend allows. |
+| `USER-010` | VIEW | Read current local P1 session/user. |
+| `USER-011` | UPDATE | Change own password in local P1 flow. |
 
 ## 8. State Machine
 
@@ -251,12 +255,11 @@ Canonical transitions:
 | From | To | Trigger |
 |---|---|---|
 | `DRAFT` | `INGESTED` | `SYS-002`, `DATA-002`, `DATA-003` |
-| `INGESTED` | `ASSESSABLE` | Resource recognition complete and `RES-005` or `PARTY-006` creates valid data-source relation |
-| `ASSESSABLE` | `ASSESSED` | `QUAL-003` |
+| `INGESTED` | `ASSESSED` | `QUAL-003` after resource recognition and valid data-source relation preconditions pass |
 | `ASSESSED` | `METERED` | `DU-009` |
 | `METERED` | `UTILITY_CALCULATED` | `UTIL-008` |
 | `UTILITY_CALCULATED` | `WEIGHT_CALCULATED` | `MDS-011` |
-| `WEIGHT_CALCULATED` | `ALLOCATED` | `ALLOC-011` |
+| `WEIGHT_CALCULATED` | `ALLOCATED` | `ALLOC-011` with a saved valid contract-ratio plan |
 | `ALLOCATED` | `CONFIRMED` | `ALLOC-015` |
 | `ALLOCATED`, `CONFIRMED` | `EXPORTED` | `ALLOC-016`, `REP-002`, `REP-004`, `REP-005`, `REP-006`, `REP-009`, `AUD-007` |
 
@@ -267,8 +270,9 @@ from, to, triggered_by_action, module, guards, side_effects,
 audit_log_required, rollback_policy, success_ui, failure_ui
 ```
 
-`ASSESSABLE` may be UI-derived until backend persistence is approved, but it
-must not be omitted from the schema.
+`ASSESSABLE` is not a persisted backend project status in the current runtime.
+UI may derive an assessable precondition state, but persisted state transitions
+go directly from `INGESTED` to `ASSESSED`.
 
 ## 9. Data Binding Registry
 
@@ -286,19 +290,22 @@ Core binding groups:
 | Binding | Source Type | Used By |
 |---|---|---|
 | `binding_project_summary` | selector/api | `SYS_OVERVIEW` cards, status, recent report |
-| `binding_data_packages` | api/mock | `DATA_INGESTION` table and upload details |
-| `binding_resources` | api/mock | `RES_MANAGEMENT` resource table and detail drawer |
-| `binding_parties` | api/mock | `PARTY_MANAGEMENT`, `RES_MANAGEMENT`, `ALLOC_SIMULATION` |
-| `binding_quality_results` | api/mock | `QUAL_ASSESSMENT` |
-| `binding_metering_results` | api/mock | `DU_METERING` |
-| `binding_utility_results` | api/mock | `UTIL_CALCULATION`, `MDS_CALCULATION` |
-| `binding_mds_results` | api/mock | `MDS_CALCULATION`, `ALLOC_SIMULATION`, reports |
-| `binding_allocation_results` | api/mock | `ALLOC_SIMULATION`, `REP_EXPORT` |
-| `binding_constraints` | api/mock | `CONS_MANAGEMENT`, `ALLOC_SIMULATION` |
-| `binding_report_records` | api/mock | `REP_EXPORT`, `AUD_LOG` |
-| `binding_audit_logs` | api/mock | `AUD_LOG`, audit panels |
-| `binding_system_parameters` | api/mock | `PARAM_CONFIG`, risk panels |
-| `binding_user_permission_p1` | api/mock | `USER_PERMISSION_P1` planning state |
+| `binding_data_packages` | api/runtime | `DATA_INGESTION` table and upload details |
+| `binding_resources` | api/runtime | `RES_MANAGEMENT` resource table and detail drawer |
+| `binding_parties` | api/runtime | `PARTY_MANAGEMENT`, `RES_MANAGEMENT`, `ALLOC_SIMULATION` |
+| `binding_quality_results` | api/runtime | `QUAL_ASSESSMENT` |
+| `binding_metering_results` | api/runtime | `DU_METERING` |
+| `binding_utility_results` | api/runtime | `UTIL_CALCULATION`, `MDS_CALCULATION` |
+| `binding_mds_results` | api/runtime | `MDS_CALCULATION`, `ALLOC_SIMULATION`, reports |
+| `binding_contract_ratio_plan` | api/runtime | `CONS_MANAGEMENT`, `ALLOC_SIMULATION`, `REP_EXPORT` |
+| `binding_allocation_results` | api/runtime | `ALLOC_SIMULATION`, `REP_EXPORT` |
+| `binding_report_records` | api/runtime | `REP_EXPORT`, `AUD_LOG` |
+| `binding_audit_logs` | api/runtime | `AUD_LOG`, audit panels |
+| `binding_system_parameters` | api/runtime | `PARAM_CONFIG`, risk panels |
+| `binding_user_permission_p1` | api/runtime | `USER_PERMISSION_P1` local P1 state |
+
+Mock fixtures may be used for isolated UI development only. They must not be
+used to report backend success or to synthesize a missing contract-ratio plan.
 
 ## 10. Regeneration Contract
 

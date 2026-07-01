@@ -2,7 +2,7 @@
 
 ## Source Of Truth
 
-Use `数据收益分配系统_V1.3_需求规格说明书_导航结构更新版.md` as the highest-priority
+Use `数据收益分配系统_V1.4_需求规格说明书_增加后端逐资源质量评估.md` as the highest-priority
 product requirements source. This file is a concise repository working summary
 for agents.
 
@@ -11,7 +11,7 @@ for agents.
 - Provide a standard complete chain for data revenue allocation simulation.
 - Support demo data and uploaded JSON input.
 - Manage data packages, data resources, parties, quality, shuyuan metering,
-  contribution, utility, MD-DShap weights, contract constraints, allocation
+  contribution, utility, MD-DShap weights, contract allocation rules, allocation
   simulation, reports, and audit trace.
 - Use MD-DShap as the default contribution weight strategy.
 - Export audit-readable Markdown/CSV/JSON/JSONL artifacts in P0.
@@ -42,9 +42,10 @@ for agents.
 - FR-07: Configure and execute shuyuan metering.
 - FR-08: Calculate contribution and utility values.
 - FR-09: Execute MD-DShap weight calculation with trace and audit snapshots.
-- FR-10: Configure total revenue, contract priority allocation, and data
-  provider revenue pool.
-- FR-11: Apply contract constraints and run allocation simulation.
+- FR-10: Configure total revenue, saved contract-ratio plan, and data-provider
+  revenue pool.
+- FR-11: Run allocation simulation from the saved contract-ratio plan and
+  MD-DShap weights.
 - FR-12: Lock a reference scenario or copy a new version for recalculation.
 - FR-13: Generate Markdown/CSV/JSON/JSONL exports with `report_id`,
   `checksum`, disclaimer, and field scope.

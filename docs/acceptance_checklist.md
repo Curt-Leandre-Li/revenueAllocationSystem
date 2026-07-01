@@ -20,11 +20,11 @@
 | 数元计量管理 | Base price, coefficients, call count, resource/party/project detail, formula note. |
 | 贡献度与效用计算 | Contribution factors, normalized contribution, utility source, utility value, trace. |
 | MD-DShap 计算管理 | Default mode, participant set, single-party simplification, weights sum to 1, marginal trace, audit report. |
-| 收益分配模拟 | Total revenue, priority allocation, data-provider pool, pre/post constraint amounts, scheme lock. |
-| 合同约束管理 | Constraint type, value, priority, enable/disable, apply trace. |
+| 合同分配规则 | Total revenue, data-provider pool ratio, non-data-party ratio items, backend calculated amounts, ratio sum 1.000000, no default/fake plan. |
+| 收益分配模拟 | Saved contract-ratio plan, data-provider pool, MD-DShap-weighted data-provider allocation, amount source, tail-difference handling, scheme lock. |
 | 报告生成与导出 | Markdown/CSV/JSON/JSONL, fields, `report_id`, `checksum`, disclaimer, no overwrite. |
 | 参数配置 | Parameter versions, MD-DShap defaults, risk text. |
-| 用户与权限管理（P1） | P1 label; no P0 login/RBAC requirement. |
+| 用户与权限管理（P1） | P1 label, local user/RBAC endpoints where enabled, no production-grade auth/RBAC claim. |
 | 审计日志管理 | Query, detail, snapshot links, trace, JSONL export. |
 
 ## Button-Level Acceptance Principles

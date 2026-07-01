@@ -2,6 +2,11 @@
 
 Scope: `db/dvas_p0_01_schema.sql`, `backend/dvas/repository.py`, `backend/dvas/postgres_read_model.py`, and runtime service objects.
 
+Historical snapshot: this check predates current runtime objects such as
+`contract_ratio_plans`, `contract_ratio_items`, resource-level quality runtime
+objects, local P1 user/RBAC, and report manifests. For current alignment, use
+`docs/CODE_DOCUMENT_DRIFT_AUDIT.md` and the V1.1 DB/ER root document.
+
 ## Required Object Coverage
 
 | Required object | SQL schema | Runtime JSON model | Result |
@@ -66,4 +71,3 @@ Scope: `db/dvas_p0_01_schema.sql`, `backend/dvas/repository.py`, `backend/dvas/p
 ## DB Verdict
 
 The database design is salvageable and largely aligned with the source documents. The runtime model is not yet aligned tightly enough for a clean production or PostgreSQL-backed backend. Required surgery: define a single canonical persistence contract, then either adapt runtime writes to SQL or formally constrain JSON runtime as a P0-local adapter with explicit mapping tests.
-

@@ -12,8 +12,8 @@
 | 数元贡献度计量 | 数元计量管理 | P0 | `/metering/shuyuan` | `/measure/shuyuan`, `/shuyuan` |
 | 数元贡献度计量 | 贡献度与效用计算 | P0 | `/metering/utility` | `/measure/utility`, `/utility` |
 | 收益分配计算 | MD-DShap 计算管理 | P0 | `/allocation/md-dshap` | `/md-dshap` |
+| 收益分配计算 | 合同分配规则 | P0 | `/allocation/constraints` | `/constraints` |
 | 收益分配计算 | 收益分配模拟 | P0 | `/allocation/simulation` | `/allocation` |
-| 收益分配计算 | 合同约束管理 | P0 | `/allocation/constraints` | `/constraints` |
 | 报告生成与导出 | 报告生成与导出 | P0/P1 | `/reports` | `/export` |
 | 系统管理 | 参数配置 | P0 | `/system/parameters` | `/parameters` |
 | 系统管理 | 用户与权限管理（P1） | P1 | `/system/users` | `/users` |

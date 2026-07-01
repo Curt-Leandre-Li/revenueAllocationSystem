@@ -1,6 +1,6 @@
 **数据收益分配系统 V1.2**
 
-**数据库设计与 ER 关系图（导航结构更新版）**
+**数据库设计与 ER 关系图（当前代码同步版）**
 
 输出用途：数据库设计、后端开发、UI 菜单权限、测试验收、算法审计说明
 
@@ -8,11 +8,11 @@
 
 | **项目**     | **内容**                                                                                                             |
 |--------------|----------------------------------------------------------------------------------------------------------------------|
-| 文档名称     | 《数据收益分配系统 V1.2 数据库设计与 ER 关系图》                                                                     |
+| 文档名称     | 《数据收益分配系统 V1.2 数据库设计与 ER 关系图（当前代码同步版）》                                                   |
 | 系统名称     | 数据收益分配系统（DVAS，Data Value Allocation System）                                                               |
-| 文档版本     | V1.0-导航结构更新版                                                                                                  |
-| 编写日期     | 2026 年 6 月 17 日                                                                                                   |
-| 设计依据     | 《数据收益分配系统 V1.2 需求规格说明书》《系统详细功能设计 V1.0》及更新后的左侧导航结构                              |
+| 文档版本     | V1.2.1-代码同步版                                                                                                    |
+| 编写日期     | 2026 年 6 月 30 日                                                                                                   |
+| 设计依据     | 《数据收益分配系统 V1.4.3 需求规格说明书》《系统详细功能设计 V1.3.1》及当前 `db/` DDL、JSON runtime state、前端路由和后端测试 |
 | 适用范围     | P0 本地演示系统与 P1 权限/PDF/异步任务扩展的数据库设计输入                                                           |
 | 本次更新重点 | 更新左侧导航结构、菜单权限、模块映射、路由路径、ER 图分组和 DDL 种子数据；业务表、算法表、审计快照策略保持不变。 |
 
@@ -22,8 +22,9 @@
 | V1.0-导航结构更新版 | 2026-06-17 | 按更新后的左侧导航结构重组菜单、路由、权限、模块映射和 ER 图分组；保持无关业务表与算法存储模型一致。 | 已提交 |
 | V1.1-资源质量评估版 | 2026-06-25 | 新增后端逐资源质量评估表、关系、索引、按钮副作用和导出字段映射。 | 本次提交稿 |
 | V1.2-代码同步版 | 2026-06-28 | 按当前 `db/` DDL、`JsonFileRepository` 运行时 state、`persistence_mapping.py` 和合同比例主流程重新标注已落表、JSON 运行时对象、PostgreSQL 预留与枚举映射。 | 代码同步稿 |
+| V1.2.1-代码同步版 | 2026-06-30 | 按当前项目真实内容收口：修正文档元数据、导航映射顺序和 runtime/DDL 边界说明。 | 当前同步稿 |
 
-## 0. 当前代码同步基线（2026-06-28）
+## 0. 当前代码同步基线（2026-06-30）
 
 本节是本轮数据库设计同步的最高优先级说明。若后续表格仍出现候选表或早期字段，与本节冲突时，以本节为当前实现口径。
 
@@ -92,7 +93,7 @@ report_record, export_file, audit_log, system_parameter, parameter_version
 | 一级导航从技术模块调整为 6 个业务入口              | 新增/更新 nav_menu 父子节点和 sort_no；ER 图按新导航分组。          | 否                     |
 | 数据接入、数据资源、参与方统一归入“数据管理”       | 更新 route_path 和 module-table 映射；资源-主体关系表保持不变。     | 否                     |
 | 质量、数元、贡献效用统一归入“数元贡献度计量”       | 更新菜单分组；质量/计量/效用表仍按原计算链路引用。                  | 否                     |
-| MD-DShap、收益分配、合同分配规则统一归入“收益分配计算” | 更新菜单分组；新增合同比例方案逻辑对象，旧约束 trace 仅保留兼容。   | 否                     |
+| MD-DShap、合同分配规则、收益分配模拟统一归入“收益分配计算” | 更新菜单分组；新增合同比例方案逻辑对象，旧约束 trace 仅保留兼容。   | 否                     |
 | 审计日志移动到系统管理                             | audit_log 增加或保留 menu_code/module_code 映射；审计表不迁移数据。 | 否                     |
 | 用户与权限管理标注 P1                              | P0 保留 local_operator；P1 启用 user/role/permission。              | 否                     |
 
@@ -110,8 +111,8 @@ report_record, export_file, audit_log, system_parameter, parameter_version
 | 3        | 数元贡献度计量 | 数元计量管理         | NAV_MEASURE_SHUYUAN  | DU              | /metering/shuyuan       | P0       | shuyuan_metering, shuyuan_metering_detail                                         | UPDATE, CALCULATE, VIEW              |
 | 3        | 数元贡献度计量 | 贡献度与效用计算     | NAV_MEASURE_UTILITY  | UTIL            | /metering/utility       | P0       | contribution_record, utility_function_snapshot, utility_record, utility_trace     | UPDATE, CALCULATE, VIEW              |
 | 4        | 收益分配计算   | MD-DShap 计算管理    | NAV_ALLOC_MDS        | MDS             | /allocation/md-dshap    | P0       | md_dshap_task, md_dshap_result, md_dshap_marginal_trace, algorithm_audit_snapshot | CALCULATE, VIEW, EXPORT              |
-| 4        | 收益分配计算   | 收益分配模拟         | NAV_ALLOC_SIMULATION | ALLOC           | /allocation/simulation  | P0       | SQL: allocation_scenario, allocation_result；runtime JSON: contract_ratio_plans/items | CALCULATE, CONFIRM, EXPORT           |
 | 4        | 收益分配计算   | 合同分配规则         | NAV_ALLOC_CONSTRAINT | CONS            | /allocation/constraints | P0       | runtime JSON: contract_ratio_plans/items；SQL: contract_constraint 仅旧约束兼容      | CREATE, UPDATE, DELETE_DISABLE, VIEW |
+| 4        | 收益分配计算   | 收益分配模拟         | NAV_ALLOC_SIMULATION | ALLOC           | /allocation/simulation  | P0       | SQL: allocation_scenario, allocation_result；runtime JSON: contract_ratio_plans/items | CALCULATE, CONFIRM, EXPORT           |
 | 5        | 报告生成与导出 | 报告生成与导出       | NAV_REPORT_EXPORT    | REP             | /reports                | P0/P1    | report_record, export_file, snapshot_store                                        | VIEW, EXPORT                         |
 | 6        | 系统管理       | 参数配置             | NAV_SYSTEM_PARAMETER | PARAM           | /system/parameters      | P0       | system_parameter, parameter_version                                               | VIEW, UPDATE                         |
 | 6        | 系统管理       | 用户与权限管理（P1） | NAV_SYSTEM_USER      | USER            | /system/users           | P1       | user_account, role, permission, user_role, role_permission                        | CREATE, UPDATE, VIEW, DELETE_DISABLE |
@@ -170,8 +171,8 @@ report_record, export_file, audit_log, system_parameter, parameter_version
 | quality_metric_template      | 质量指标模板表    | metric_id            |                                                                    | metric_code、parent_metric_code、default_weight  | P0 默认 7 个一级指标和 17 个二级指标权重模板。 |
 | quality_assessment           | 质量评估表        | assessment_id        | project_id、package_id                                             | score、level、quality_factor                     | 质量评估管理主表。                             |
 | quality_score_detail         | 质量得分明细      | detail_id            | assessment_id                                                      | dimension_code、weight、score                    | 包级一级指标和二级指标得分、证据和问题摘要。   |
-| quality_resource_assessment  | 资源级质量评估表  | resource_assessment_id | assessment_id、resource_id、project_id、package_id                | resource_score、resource_level、resource_quality_factor | 每个数据资源一条资源级质量评估主结果。          |
-| quality_resource_score_detail | 资源级质量得分明细 | resource_detail_id    | resource_assessment_id、assessment_id、resource_id                 | dimension_code、weight、score、rule_code         | 资源级一级/二级指标得分、证据和规则编码。      |
+| quality_resource_assessment  | 资源级质量评估运行时对象 | resource_assessment_id | assessment_id、resource_id、project_id、package_id                | resource_score、resource_level、resource_quality_factor | 当前后端内存仓库保存的资源级质量评估主结果；现行 SQL DDL 未单独建表。 |
+| quality_resource_score_detail | 资源级质量得分运行时对象 | resource_detail_id    | resource_assessment_id、assessment_id、resource_id                 | dimension_code、weight、score、rule_code         | 当前后端内存仓库保存的资源级一级/二级指标得分；现行 SQL DDL 未单独建表。 |
 | shuyuan_metering             | 数元计量表        | metering_id          | project_id、assessment_id                                          | base_price、coefficients、total_amount           | 数元计量管理主表。                             |
 | shuyuan_metering_detail      | 数元计量明细      | detail_id            | metering_id、resource_id、party_id                                 | call_count、metering_amount                      | 资源级/参与方级计量明细。                      |
 | contribution_record          | 贡献度记录        | contribution_id      | project_id、party_id                                               | valid_units、weights、normalized_contribution    | 贡献度与效用计算输入。                         |
@@ -182,9 +183,9 @@ report_record, export_file, audit_log, system_parameter, parameter_version
 | md_dshap_result              | MD-DShap 权重结果 | result_id            | task_id、party_id                                                  | participant_weight、baseline_weight、weight_diff | 仅数据源主体权重进入数据源收益池分配。         |
 | md_dshap_marginal_trace      | 边际贡献明细      | trace_id             | task_id、party_id                                                  | coalition_before、v_before、v_after              | 算法审计明细。                                 |
 | algorithm_audit_snapshot     | 算法审计快照      | snapshot_id          | task_id、project_id                                                | input/parameter/output snapshot                  | 算法报告导出依据。                             |
-| contract_ratio_plan          | 合同比例方案      | plan_id              | project_id                                                         | total_revenue、data_provider_pool_ratio、ratio_sum、data_provider_revenue_pool、status | 合同分配规则页保存的方案；ratio_sum 必须为 1.000000。 |
-| contract_ratio_item          | 合同比例项        | item_id              | plan_id、party_id                                                  | bucket_type、ratio、calculated_amount、amount_source、basis_text | 包含 DATA_PROVIDER_POOL 与 NON_DATA_PARTY 行。 |
-| allocation_scenario          | 收益分配场景      | allocation_id        | project_id、weight_task_id、contract_ratio_plan_id                 | total_revenue、non_data_contract_amount、data_provider_revenue_pool、allocation_mode、status | 引用合同比例方案并生成分配结果。 |
+| contract_ratio_plan          | 合同比例方案运行时对象 | plan_id              | project_id                                                         | total_revenue、data_provider_pool_ratio、ratio_sum、data_provider_revenue_pool、status | 合同分配规则页保存的运行时方案；ratio_sum 必须为 1.000000；现行 SQL DDL 未单独建表。 |
+| contract_ratio_item          | 合同比例项运行时对象 | item_id              | plan_id、party_id                                                  | bucket_type、ratio、calculated_amount、amount_source、basis_text | 运行时包含 DATA_PROVIDER_POOL 与 NON_DATA_PARTY 行；现行 SQL DDL 未单独建表。 |
+| allocation_scenario          | 收益分配场景      | allocation_id        | project_id、weight_task_id                                         | total_revenue、non_data_contract_amount、data_provider_revenue_pool、allocation_mode、status | 当前运行时 DTO 引用合同比例方案；现行 SQL DDL 未包含 contract_ratio_plan_id 字段。 |
 | allocation_result            | 分配结果表        | result_id            | allocation_id、party_id                                            | amount_source、contract_ratio、base_pool_amount、raw_weight、normalized_weight、final_amount | 非数据主体使用 CONTRACT_RATIO；数据源主体使用 MD_DSHAP_WEIGHT。 |
 | report_record                | 报告记录表        | report_id            | project_id、source_snapshot_id                                     | report_type、file_path、checksum                 | 报告生成与导出主表。                           |
 | export_file                  | 导出文件明细      | file_id              | report_id                                                          | file_type、field_scope_json、checksum            | 一次导出多个文件时使用。                       |
@@ -1044,8 +1045,8 @@ data_provider_amount_i = data_provider_revenue_pool × md_dshap_normalized_weigh
 | 数元贡献度计量 | 数元计量管理         | NAV_MEASURE_SHUYUAN  | DU              | /metering/shuyuan       | P0       |
 | 数元贡献度计量 | 贡献度与效用计算     | NAV_MEASURE_UTILITY  | UTIL            | /metering/utility       | P0       |
 | 收益分配计算   | MD-DShap 计算管理    | NAV_ALLOC_MDS        | MDS             | /allocation/md-dshap    | P0       |
-| 收益分配计算   | 收益分配模拟         | NAV_ALLOC_SIMULATION | ALLOC           | /allocation/simulation  | P0       |
 | 收益分配计算   | 合同分配规则         | NAV_ALLOC_CONSTRAINT | CONS            | /allocation/constraints | P0       |
+| 收益分配计算   | 收益分配模拟         | NAV_ALLOC_SIMULATION | ALLOC           | /allocation/simulation  | P0       |
 | 报告生成与导出 | 报告生成与导出       | NAV_REPORT_EXPORT    | REP             | /reports                | P0/P1    |
 | 系统管理       | 参数配置             | NAV_SYSTEM_PARAMETER | PARAM           | /system/parameters      | P0       |
 | 系统管理       | 用户与权限管理（P1） | NAV_SYSTEM_USER      | USER            | /system/users           | P1       |

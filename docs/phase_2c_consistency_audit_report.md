@@ -1,5 +1,9 @@
 # Phase 2C 前端、后端、数据库一致性审计报告
 
+Historical snapshot: this report predates the current V1.4/V1.2/V1.1 source
+baseline and contract-ratio runtime alignment. Use
+`docs/CODE_DOCUMENT_DRIFT_AUDIT.md` for current status.
+
 ## 1. 审计基线
 
 - 审计基线 HEAD: `a7f405f Fix Phase 2C consistency gaps`

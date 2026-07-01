@@ -15,14 +15,14 @@ final allocation mode.
 | Contribution calculation | Produce contribution and normalized contribution signals. | Contract settlement. |
 | DAUS / utility | Provide utility values and `v(S,t)` inputs from contribution, quality, usage, and scenario signals. | Final allocation. |
 | MD-DShap | Produce participant and task-level weights with marginal trace. | Payment instruction or legal settlement. |
-| Allocation simulation | Apply revenue pool, priority allocation, weights, and constraints to produce simulation reference. | Real financial payment. |
+| Allocation simulation | Apply the saved contract-ratio plan, data-provider revenue pool, MD-DShap weights, and tail-difference handling to produce simulation reference. | Real financial payment. |
 
 ## MD-DShap Rules
 
 - Participant set includes only data-provider parties with
   `include_in_md_dshap=true`.
-- Non-data contribution parties default to contract priority or constraint
-  handling.
+- Non-data contribution parties default to saved contract-ratio items outside
+  the MD-DShap participant pool.
 - Single data-provider scenario does not run the full algorithm; weight is 1
   and the page/report discloses single-party simplified allocation.
 - Weight sum must normalize to 1. Display precision is 6 decimals.
@@ -51,5 +51,5 @@ MD-DShap result.
 - No data-provider participant.
 - Utility values missing for multi-party calculation.
 - Weight normalization failure.
-- Priority allocation exceeds total revenue.
+- Saved contract-ratio plan is missing, invalid, or does not sum to 1.000000.
 - Required input, parameter, or output snapshot cannot be generated.

@@ -26,8 +26,8 @@ claim.
 - Shuyuan metering.
 - Contribution and utility calculation.
 - MD-DShap weight calculation.
+- Contract allocation rules.
 - Allocation simulation.
-- Contract constraints.
 - Markdown, CSV, JSON, and JSONL export.
 - Audit logs and snapshot traceability.
 
@@ -75,12 +75,10 @@ role concepts for future P1 permissions:
 -> 质量评估
 -> 数元计量
 -> 贡献度计算与效用计算
--> 配置总收益
--> 配置非数据源主体合同优先分配和上限
--> 扣除合同优先分配，形成数据源主体可分配收益池
 -> MD-DShap 权重计算
--> 使用 MD-DShap 归一化权重分配数据源主体收益池
--> 应用合同约束和尾差处理
+-> 配置总收益和合同比例方案，形成非数据主体合同金额和数据源主体收益池
+-> 收益分配模拟，使用 MD-DShap 归一化权重分配数据源主体收益池
+-> 应用尾差处理
 -> 锁定参考方案或复制新版本重算
 -> 报告生成与导出
 -> 审计追溯
@@ -93,10 +91,10 @@ role concepts for future P1 permissions:
 - DAUS / utility is an input signal layer for `v(S,t)` or utility values.
 - Non-data contribution parties do not enter the MD-DShap algorithm pool by
   default.
-- Contract priority allocation and constraints apply before/after data-provider
-  pool allocation according to the latest PRD.
-- Non-data party contract priority is applied before the data-provider revenue
-  pool is formed; MD-DShap then allocates only that remaining pool across data
-  providers.
+- Non-data party contract amounts come from saved contract-ratio items.
+- The saved contract-ratio plan defines the data-provider revenue pool before
+  MD-DShap weights are applied across data providers.
+- Historical contract-constraint wording is compatibility/design context only;
+  it is not the current main runtime path for allocation simulation.
 - Recalculation and export create new versions and never silently overwrite
   historical task/result/trace/report records.

@@ -68,9 +68,9 @@
 | FC-041 | `ui_prototype/src/domain/apiClient.ts:186` | 旧上传 payload mock | 旧 API client 保留 demoUploadPayload。 | 旧代码容易被误用伪造上传。 | Phase 1 删除或明确废弃旧 client。 |
 | FC-042 | `ui_prototype/src/domain/services/backendWorkspace.ts:377` | 当前收益池前端聚合 | allocation results `reduce` post_constraint_amount 得出 `currentRevenuePool`。 | 收益池不是约束后金额求和的前端结果。 | 后端返回 allocation summary/revenue pool 字段。 |
 | FC-043 | `ui_prototype/src/domain/services/backendWorkspace.ts:575` | 权重合计前端聚合 | `mdResults.reduce(normalized_weight)` 得出权重合计。 | 权重合计/归一化校验由后端负责。 | 后端返回 `weight_sum`/validation。 |
-| FC-044 | `ui_prototype/src/domain/services/backendWorkspace.ts:623` | 数据源收益池前端聚合 | allocation results `reduce(post_constraint_amount)` 作为 total。 | 分配池金额必须由后端返回。 | 后端 DTO 增加 `total_revenue`, `priority_allocation_amount`, `data_provider_revenue_pool`。 |
+| FC-044 | `ui_prototype/src/domain/services/backendWorkspace.ts:623` | 数据源收益池前端聚合 | allocation results `reduce(post_constraint_amount)` 作为 total。 | 分配池金额必须由后端返回。 | 后端 DTO 返回 `total_revenue`, `non_data_contract_amount`, `data_provider_revenue_pool`, `contract_ratio_plan`。 |
 | FC-045 | `ui_prototype/src/domain/services/backendWorkspace.ts:637` | total_revenue 前端填充 | 把前端 reduce 的 total 写入每行 `total_revenue`。 | 不得由前端回填业务字段。 | 逐行使用后端字段或页面 summary DTO。 |
-| FC-046 | `ui_prototype/src/domain/services/backendWorkspace.ts:638` | 优先分配硬编码 | `priority_allocation_amount: "0.00"`。 | 合同优先金额必须来自后端。 | 从 allocation scenario DTO 读取。 |
+| FC-046 | `ui_prototype/src/domain/services/backendWorkspace.ts:638` | 合同金额硬编码 | `priority_allocation_amount: "0.00"`。 | 非数据主体合同金额和数据源收益池必须来自后端合同比例方案。 | 从 contract-ratio/allocation DTO 读取。 |
 | FC-047 | `ui_prototype/src/domain/services/backendWorkspace.ts:343` | utilityValue 错置 | MD-DShap weight model 中 `utilityValue` 用 `normalized_weight` 填充。 | 效用值不能用权重代替。 | 若后端无 utility_value，则字段为空或不展示。 |
 | FC-048 | `ui_prototype/src/domain/services/backendWorkspace.ts:349` | 边际 trace 伪造 | 用 weight result 生成 coalition/vBefore/vAfter。 | 边际贡献 trace 必须来自后端。 | 接 marginal traces endpoint。 |
 | FC-049 | `ui_prototype/src/pages/reports/ReportsPage.tsx:148` | 导出记录 mock | `mock.exports` 展示导出文件。 | 导出文件、checksum、生成时间必须来自后端。 | 从 report/export DTO 读取。 |

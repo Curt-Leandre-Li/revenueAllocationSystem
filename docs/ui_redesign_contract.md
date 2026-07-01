@@ -8,9 +8,9 @@ dependency changes, runtime schema changes, or build output regeneration.
 
 The redesign must follow this authority order:
 
-1. `数据收益分配系统_V1.3_需求规格说明书_导航结构更新版.md`
-2. `数据收益分配系统_系统详细功能设计_V1.1_导航结构更新版.md`
-3. `数据收益分配系统_数据库设计与ER关系图_V1.0_导航结构更新版.md`
+1. `数据收益分配系统_V1.4_需求规格说明书_增加后端逐资源质量评估.md`
+2. `数据收益分配系统_系统详细功能设计_V1.2_增加后端逐资源质量评估.md`
+3. `数据收益分配系统_数据库设计与ER关系图_V1.1_增加后端逐资源质量评估.md`
 4. `AGENTS.md`
 
 If older UI docs or current prototype files conflict with these sources, treat
@@ -35,8 +35,9 @@ force alignment during this documentation round.
   only scenario, default business positioning, or real medical production data.
 - Keep P0 honest: local operator mode, JSON/demo input, synchronous demo-scale
   calculations, Markdown/CSV/JSON/JSONL exports, audit snapshots. Do not
-  present login, production RBAC, PDF export, async queues, bank/tax/payment, or
-  electronic signature as implemented P0 features.
+  present login, production RBAC, async queues, bank/tax/payment, or electronic
+  signature as implemented P0 features. Local P1 user/RBAC and PDF paths, where
+  present, must be labeled as P1 and not as P0 or production capability.
 
 ## 3. Delete Old UI Boundary
 
@@ -91,8 +92,8 @@ primary route registry must use this list.
 | 数元贡献度计量 | 数元计量管理 | `/metering/shuyuan` | `NAV_MEASURE_SHUYUAN` | `DU` | P0 |
 | 数元贡献度计量 | 贡献度与效用计算 | `/metering/utility` | `NAV_MEASURE_UTILITY` | `UTIL` | P0 |
 | 收益分配计算 | MD-DShap 计算管理 | `/allocation/md-dshap` | `NAV_ALLOC_MDS` | `MDS` | P0 |
+| 收益分配计算 | 合同分配规则 | `/allocation/constraints` | `NAV_ALLOC_CONSTRAINT` | `CONS` | P0 |
 | 收益分配计算 | 收益分配模拟 | `/allocation/simulation` | `NAV_ALLOC_SIMULATION` | `ALLOC` | P0 |
-| 收益分配计算 | 合同约束管理 | `/allocation/constraints` | `NAV_ALLOC_CONSTRAINT` | `CONS` | P0 |
 | 报告生成与导出 | 报告生成与导出 | `/reports` | `NAV_REPORT_EXPORT` | `REP` | P0/P1 |
 | 系统管理 | 参数配置 | `/system/parameters` | `NAV_SYSTEM_PARAMETER` | `PARAM` | P0 |
 | 系统管理 | 用户与权限管理（P1） | `/system/users` | `NAV_SYSTEM_USER` | `USER` | P1 |
@@ -113,11 +114,11 @@ primary route registry must use this list.
 | 数元计量管理 | Configure base price, call count, scenario/quality/technology/expert/development coefficients, execute metering, and show resource/party/project details. |
 | 贡献度与效用计算 | Configure contribution factors, calculate normalized contribution, configure utility function, calculate utility values, and expose trace. |
 | MD-DShap 计算管理 | Make `MD_DSHAP` the default, show participant/task sets, parameters, baseline-check boundary, marginal trace, weights, rerun behavior, and audit export. |
-| 收益分配模拟 | Configure total revenue, priority allocation, data-provider revenue pool, allocation mode, pre/post constraint amounts, comparison, lock, and export. |
-| 合同约束管理 | Maintain minimum, maximum, cap, floor, fixed-ratio, and priority-allocation constraints with status, priority, version, and check results. |
-| 报告生成与导出 | Preview reports, show export field scopes, generate Markdown/CSV/JSON/JSONL, show P1 PDF boundary, version, `report_id`, and `checksum`. |
+| 合同分配规则 | Save total revenue, data-provider pool ratio, non-data-party ratio items, backend-calculated amounts, ratio validation, and can-simulate state. |
+| 收益分配模拟 | Read the saved contract-ratio plan, run project-level allocation simulation, show non-data contract amounts, data-provider pool, MD-DShap-weighted data-provider amounts, amount source, comparison, lock, and export. |
+| 报告生成与导出 | Preview reports, show export field scopes, generate Markdown/CSV/JSON/JSONL, label local P1 PDF generation/download, version, `report_id`, and `checksum`. |
 | 参数配置 | Maintain scenario coefficients, quality weights, MD-DShap defaults, risk copy, precision rules, and parameter versions. |
-| 用户与权限管理（P1） | Show disabled P1 planning for users, roles, permissions, password reset, and button permissions without pretending P0 login exists. |
+| 用户与权限管理（P1） | Show local P1 users, roles, permissions, password reset, and button permissions where backend endpoints are enabled, while making clear this is outside P0 and not production-grade auth/RBAC. |
 | 审计日志管理 | Query operation/calculation/export logs, inspect input/parameter/output/report snapshots, show failure reasons, and export audit logs. |
 
 ## 7. Page Acceptance Criteria
@@ -142,8 +143,8 @@ Every page must satisfy these criteria:
 - Locked or exported projects disable core configuration actions and offer a
   copy-new-version path.
 - High-risk actions require a confirmation dialog.
-- P1-only actions are disabled or clearly marked as P1. They must not look
-  implemented in P0.
+- P1-only actions are disabled or clearly marked as P1. Local P1 endpoints may
+  be usable, but must not look implemented in P0 or production-ready.
 
 ## 8. Visual Specification
 
@@ -188,7 +189,7 @@ The redesign must define these reusable components before page implementation:
 | AuditDetailDrawer | Shows `menu_code`, `module_code`, operator, before/after, snapshots, status, failure reason, report checksum. |
 | ConfirmModal | Required for delete, disable, rerun, lock, parameter save, and export actions. |
 | ExportDialog | Shows file type, field scope, version, disclaimer, `report_id`, checksum rule, and failure handling. |
-| P1BoundaryPanel | Explains disabled P1 capabilities such as login, RBAC, PDF, async progress, and historical report management. |
+| P1BoundaryPanel | Explains P1 capabilities such as login/RBAC, PDF, async progress, and historical report management; distinguish local P1 endpoints from P0 and production-grade systems. |
 
 Component props must be driven by route, field, action, state, and permission
 registries. Components must not hard-code business state transitions that
@@ -214,4 +215,5 @@ belong in service/action handlers.
   or export files.
 - Do not show PDF, login, production RBAC, async task queue, bank/tax/payment,
   electronic signature, or multi-tenant features as implemented P0 capability.
+  Local P1 PDF and user/RBAC endpoints must remain explicitly labeled as P1.
 - Do not make the sample project the only business scenario.

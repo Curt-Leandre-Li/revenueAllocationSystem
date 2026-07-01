@@ -2,6 +2,10 @@
 
 Scope: backend routes in `backend/dvas/app.py` and `backend/openapi.yaml`.
 
+Historical snapshot: route decisions in this file predate the current
+contract-ratio, local P1 user/RBAC, and P1 PDF alignment. For current status,
+use `docs/CODE_DOCUMENT_DRIFT_AUDIT.md` and `docs/ui_backend_api_contract_mapping.md`.
+
 Legend:
 
 - Domain: conforms to current DVAS business domain.
@@ -119,4 +123,3 @@ No backend route was found for `/mock`, `/demo-ui`, `/frontend`, `/pages`, `/leg
 No backend import from React, Vue, Vite, Next, Element, Ant Design, `ui_prototype`, or `ui_rebuild` was found.
 
 No API payload names such as `cardList`, `tableColumns`, `sidebarTree`, or `mockChartData` were found in backend source. `button-permissions` and `available_actions/disabled_actions` are business permission/precondition objects, not page-component payloads.
-

@@ -15,12 +15,12 @@
 | DTO-007 | 贡献度与效用计算 | utility chart DTO、contribution factor draft view 缺失 | 贡献排行、效用排行和贡献因子草稿不能展示 | 只展示 utility trace；配置入口禁用 |
 | DTO-008 | MD-DShap 计算管理 | `md_dshap_view` 缺少 `weight_sum`, `weight_validation_status`, `task_set_count`, `top_weight_party_name`, 页面级 complexity/audit display DTO | 不能展示权重合计、归一化校验、最高权重主体和复杂度说明 | 显示“暂无/待生成”，不计算权重合计、最高主体或复杂度 |
 | DTO-009 | MD-DShap 计算管理 | marginal trace 已接入 workspace page data，但缺少页面专用筛选/分页 DTO | 边际贡献抽屉只能展示当前任务已返回 trace，不能做后端分页筛选 | 抽屉仅做本地展示筛选，不从权重结果推导 trace |
-| DTO-010 | 收益分配模拟 | allocation summary DTO 已补充 `summary.total_revenue`, `summary.total_contract_priority_amount`, `summary.data_provider_revenue_pool`, `contract_priority_allocations[]`, `data_provider_allocations[]` | 页面可展示合同优先、上限和数据源收益池 | 读取后端 DTO；不得在前端计算扣减、实际优先金额或数据源分配金额 |
-| DTO-011 | 收益分配模拟 | constraint apply trace / compare DTO 缺少 `constraint_adjustment_amount` 和应用轨迹 | 不能展示约束前后差额和轨迹 | 表格只展示后端 result rows；缺失字段显示“后端未返回” |
+| DTO-010 | 收益分配模拟 | contract-ratio allocation summary DTO 已补充 `summary.total_revenue`, `summary.non_data_contract_amount`, `summary.data_provider_revenue_pool`, `contract_ratio_plan`, `contract_ratio_items[]`, `data_provider_allocations[]`, `amount_source` | 页面可展示合同比例方案、非数据主体合同金额、数据源收益池和金额来源 | 读取后端 DTO；不得在前端计算扣减、实际合同金额或数据源分配金额 |
+| DTO-011 | 收益分配模拟 | 旧 constraint apply trace / compare DTO 不属于当前合同比例主路径 | 合同比例主路径不展示约束前后差额和普通约束轨迹 | 显示合同比例分配结果和尾差处理；旧约束 trace 仅在兼容路径有数据时作为技术说明 |
 | DTO-012 | 报告生成与导出 | report export view 缺少统一文件清单 DTO，`/reports` OpenAPI 仍是通用成功响应 | 不能稳定展示文件清单、`report_id`、`checksum`、生成时间和字段范围 | 只展示后端 reports rows；缺失字段显示“后端未返回”，不再使用 fallback 文件 |
 | DTO-013 | 审计日志管理 | audit detail view 的 `snapshot_refs` / snapshots 未接入页面 data | 快照抽屉不能展示真实快照 | 显示缺 DTO，不展示 mock 快照 |
 | DTO-014 | 数据接入管理 | data package summary / validation summary DTO 缺少有效数据包数、校验失败数、字段级失败详情、修复建议 | 数据接入卡片不能展示聚合校验结果 | 只展示 package rows；缺少详情时显示“后端未返回” |
 | DTO-015 | 系统首页流程 / 一键计算 | process / pipeline summary DTO 缺少通过检查数、阻塞检查数和阶段摘要 | 流程页不能展示聚合检查计数 | 只展示后端 precondition rows；指标显示缺 DTO |
-| DTO-016 | 合同约束管理 | constraints summary DTO 缺少约束总数、启用约束数、约束对象数和检查结果 | 约束卡片不能展示聚合统计 | 只展示 constraint rows；摘要显示缺 DTO |
+| DTO-016 | 合同分配规则 | contract-ratio summary DTO 需要稳定返回 `ratio_sum`, `can_simulate`, blocker reasons, backend-calculated amounts | 合同比例页不能可靠展示可模拟状态和阻塞原因 | 只展示后端返回的 contract-ratio plan/items；不得前端伪造可模拟状态 |
 | DTO-017 | 审计日志管理 | audit summary DTO 缺少失败日志数和快照详情计数 | 审计卡片不能展示失败/快照聚合 | 只展示 audit rows；摘要显示缺 DTO |
 | DTO-018 | MD-DShap 计算管理 | 缺少权重流向 Sankey chart DTO、权重占比 chart DTO、参数配置中的 `save_marginal_detail` 持久化字段 | 页面只能将后端 task/results 字段映射为轻量图表；`save_marginal_detail` 只能作为启动计算请求参数 | 不构造业务含义、不归一化、不补算；配置保存只提交后端支持字段 |

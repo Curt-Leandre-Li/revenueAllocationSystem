@@ -141,12 +141,12 @@ Responsibilities:
 
 - Own 收益分配计算 pages:
   - MD-DShap 计算管理
+  - 合同分配规则
   - 收益分配模拟
-  - 合同约束管理
 - Implement MD-DShap default display, baseline-check boundary, participant/task
-  sets, marginal trace, weights, complexity notes, rerun versioning, allocation
-  mode, priority allocation, pre/post constraint amounts, plan comparison, lock,
-  and constraint check results.
+  sets, marginal trace, weights, complexity notes, rerun versioning,
+  contract-ratio plan saving, data-provider pool display, amount source,
+  plan comparison, and lock behavior.
 - Enforce weight normalization to 1 and 6-decimal display.
 - Keep MD-DShap outputs as weights only, not settlement instructions.
 

@@ -1,5 +1,9 @@
 # Documentation And Agents Alignment Self-Check
 
+Historical snapshot: this self-check predates the current V1.4/V1.2/V1.1
+source baseline and contract-ratio runtime alignment. Use
+`docs/CODE_DOCUMENT_DRIFT_AUDIT.md` for current status.
+
 ## Inventory
 
 Checked current entrypoints and document areas:

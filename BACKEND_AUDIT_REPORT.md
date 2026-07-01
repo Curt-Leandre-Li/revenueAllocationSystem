@@ -2,6 +2,10 @@
 
 Audit date: 2026-06-23
 
+Historical snapshot: this report used the older generated DOCX authority set.
+For current product alignment, use `docs/CODE_DOCUMENT_DRIFT_AUDIT.md` and the
+V1.4/V1.2/V1.1 root Markdown source documents.
+
 Scope: backend only. Frontend repair, frontend compatibility shims, and runtime implementation changes were intentionally not performed.
 
 ## Source Of Truth
@@ -142,4 +146,3 @@ No file deletion, branch deletion, or backend rewrites were performed because:
 - The requested deletion of `AGENTS.md` conflicts with the current active project instruction source.
 
 Cleanup candidates are recorded in `BACKEND_DELETION_LOG.md`.
-

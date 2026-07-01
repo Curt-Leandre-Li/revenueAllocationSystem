@@ -5,8 +5,11 @@ documentation only and must not be treated as a migration or executable DDL.
 
 ## Source Document
 
-Use `数据收益分配系统_数据库设计与ER关系图_V1.0_导航结构更新版.md` as the detailed
-database design authority.
+Use `数据收益分配系统_数据库设计与ER关系图_V1.1_增加后端逐资源质量评估.md` as the detailed
+database design authority. That document distinguishes current SQL DDL objects
+from runtime JSON objects such as `contract_ratio_plans`,
+`contract_ratio_items`, `quality_resource_assessments`, and
+`quality_resource_score_details`.
 
 ## Navigation Tables
 

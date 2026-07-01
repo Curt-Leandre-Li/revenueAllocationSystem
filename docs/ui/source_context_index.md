@@ -4,9 +4,9 @@
 
 | 文档 | 作用 | 读取状态 |
 | --- | --- | --- |
-| 数据收益分配系统_V1.3_需求规格说明书_导航结构更新版.md | P0/P1 边界、业务规则、按钮验收、MD-DShap 默认策略、导出字段清单 | 904 行，已完整读取 |
-| 数据收益分配系统_系统详细功能设计_V1.1_导航结构更新版.md | 页面内容、按钮状态、弹窗、Trace、错误提示、服务和快照要求 | 1208 行，已完整读取 |
-| 数据收益分配系统_数据库设计与ER关系图_V1.0_导航结构更新版.md | nav_menu、permission、menu_code、module_code、route_path、表字段与导出映射 | 878 行，已完整读取 |
+| 数据收益分配系统_V1.4_需求规格说明书_增加后端逐资源质量评估.md | P0/P1 边界、业务规则、按钮验收、MD-DShap 默认策略、导出字段清单 | 当前最高优先级需求源 |
+| 数据收益分配系统_系统详细功能设计_V1.2_增加后端逐资源质量评估.md | 页面内容、按钮状态、弹窗、Trace、错误提示、服务和快照要求 | 当前最高优先级详细设计源 |
+| 数据收益分配系统_数据库设计与ER关系图_V1.1_增加后端逐资源质量评估.md | nav_menu、permission、menu_code、module_code、route_path、SQL/runtime 对象与导出映射 | 当前最高优先级数据库设计源 |
 
 ## Product Boundary
 
@@ -14,8 +14,8 @@
 - 默认项目：肺癌早筛数据收益分配示例项目。
 - 操作员：local_operator。
 - 全局声明：系统结果仅为模拟参考，非法律结算；不构成法律结算、财务付款、合同履约或主管单位审批结果。
-- P0：本地操作员、演示数据/JSON 上传、质量评估、数元计量、贡献度与效用计算、MD-DShap、收益分配模拟、合同约束、Markdown/CSV/JSON/JSONL 导出、审计日志。
-- P1：登录、RBAC、PDF 导出、CSV/XLSX 批量导入、异步任务、历史报告管理；P1 功能在原型中只显示规划态，不伪装为 P0 已上线。
+- P0：本地操作员、演示数据/JSON 上传、质量评估、数元计量、贡献度与效用计算、MD-DShap、合同分配规则、收益分配模拟、Markdown/CSV/JSON/JSONL 导出、审计日志。
+- P1：登录、RBAC、PDF 导出、CSV/XLSX 批量导入、异步任务、历史报告管理；本地 P1 能力可调用后端 P1 接口，但不得伪装为 P0 或生产级能力。
 
 ## Navigation And Database Mapping
 
@@ -31,8 +31,8 @@
 | 数元贡献度计量 | 数元计量管理 | /metering/shuyuan | NAV_MEASURE_SHUYUAN | DU | P0 | shuyuan_metering, shuyuan_metering_detail |
 | 数元贡献度计量 | 贡献度与效用计算 | /metering/utility | NAV_MEASURE_UTILITY | UTIL | P0 | contribution_record, utility_function_snapshot, utility_record, utility_trace |
 | 收益分配计算 | MD-DShap 计算管理 | /allocation/md-dshap | NAV_ALLOC_MDS | MDS | P0 | md_dshap_task, md_dshap_result, md_dshap_marginal_trace, algorithm_audit_snapshot |
-| 收益分配计算 | 收益分配模拟 | /allocation/simulation | NAV_ALLOC_SIMULATION | ALLOC | P0 | allocation_scenario, allocation_priority_item, allocation_result |
-| 收益分配计算 | 合同约束管理 | /allocation/constraints | NAV_ALLOC_CONSTRAINT | CONS | P0 | contract_constraint, constraint_apply_trace |
+| 收益分配计算 | 合同分配规则 | /allocation/constraints | NAV_ALLOC_CONSTRAINT | CONS | P0 | runtime contract_ratio_plan, contract_ratio_item；SQL contract_constraint/constraint_apply_trace 仅旧约束兼容 |
+| 收益分配计算 | 收益分配模拟 | /allocation/simulation | NAV_ALLOC_SIMULATION | ALLOC | P0 | allocation_scenario, allocation_result, runtime contract_ratio_plan/items |
 | 报告生成与导出 | 报告生成与导出 | /reports | NAV_REPORT_EXPORT | REP | P0/P1 | report_record, export_file, snapshot_store |
 | 系统管理 | 参数配置 | /system/parameters | NAV_SYSTEM_PARAMETER | PARAM | P0 | system_parameter, parameter_version |
 | 系统管理 | 用户与权限管理（P1） | /system/users | NAV_SYSTEM_USER | USER | P1 | user_account, role, permission, user_role, role_permission |
@@ -71,6 +71,6 @@
 | --- | --- | --- |
 | 历史路由如 /dashboard、/quality、/allocation 与新版二级路由并存 | 数据库设计文档优先 nav_menu/route_path | 原型只使用新版 route_path；历史路由仅作为兼容别名说明 |
 | 系统首页内部项目总览、流程入口、风险提示、一键计算是否作为二级页面 | 本次 UI 修正优先：系统首页只保留一级入口 | 四项合并为系统首页同页区块；删除左侧二级页面和独立截图路由 |
-| PDF、登录、RBAC、异步任务在需求中出现 | 需求规格说明书优先 P0/P1 边界 | P1 页面和按钮显示规划态，不执行 P0 功能 |
+| PDF、登录、RBAC、异步任务在需求中出现 | 需求规格说明书优先 P0/P1 边界 | 本地 P1 页面和按钮调用后端 P1 接口；不可用时显示 P1 边界，不伪装为 P0 |
 | MD-DShap 与基础 Shapley 同时出现 | 需求规格说明书优先算法边界 | MD_DSHAP 为默认；基础 Shapley 仅以 baseline_check 展示 |
 | 详细功能设计强调弹窗、Trace、错误提示 | 系统详细功能设计优先交互 | 计算、高风险、导出按钮均生成对应演示截图 |
