@@ -7,7 +7,7 @@ DVAS, Data Value Allocation System, is a data revenue allocation simulation and 
 ## 启动后端
 
 ```bash
-cd /Users/apple/Desktop/data-revenue-allocation-system-v2
+cd <项目根目录>
 python3.12 -m backend.dvas.server
 ```
 
@@ -16,7 +16,7 @@ python3.12 -m backend.dvas.server
 ## 启动前端
 
 ```bash
-cd /Users/apple/Desktop/data-revenue-allocation-system-v2/ui_prototype
+cd <项目根目录>/ui_prototype
 npm install
 npm run dev
 ```
@@ -26,7 +26,7 @@ npm run dev
 ## 构建前端
 
 ```bash
-cd /Users/apple/Desktop/data-revenue-allocation-system-v2/ui_prototype
+cd <项目根目录>/ui_prototype
 npm run build
 ```
 
@@ -35,14 +35,14 @@ npm run build
 优先命令：
 
 ```bash
-cd /Users/apple/Desktop/data-revenue-allocation-system-v2/backend
+cd <项目根目录>/backend
 pytest tests/test_api_contract.py
 ```
 
 如果当前 Python 环境没有 `pytest`，可运行同一测试文件的 unittest 路径：
 
 ```bash
-cd /Users/apple/Desktop/data-revenue-allocation-system-v2
+cd <项目根目录>
 PYTHONDONTWRITEBYTECODE=1 python3.12 -m unittest backend.tests.test_api_contract
 ```
 
