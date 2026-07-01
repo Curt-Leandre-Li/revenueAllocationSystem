@@ -44,8 +44,10 @@ export function ConfirmModal({
   return (
     <div className="modalBackdrop" role="presentation">
       <section className="confirmModal" role="dialog" aria-modal="true" aria-label="确认操作">
-        <h2>{modalTitle}</h2>
-        <p>{modalDescription}</p>
+        <div className="confirmModalTitle">
+          <h2>{modalTitle}</h2>
+          <p>{modalDescription}</p>
+        </div>
         {action ? <p className="modalActionCode">功能编号：{action.id}</p> : null}
         {modalEffect ? <p className="modalEffect">{modalEffect}</p> : null}
         <p className="modalRisk">{modalRisk}</p>

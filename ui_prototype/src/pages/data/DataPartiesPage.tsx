@@ -112,7 +112,7 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
   );
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("全部");
-  const [drawer, setDrawer] = useState<"" | "form" | "contribution" | "link">("");
+  const [drawer, setDrawer] = useState<"" | "form" | "contribution">("");
   const [partyDraft, setPartyDraft] = useState<PartyDraft>(() => newPartyDraft());
 
   const filteredParties = useMemo(
@@ -168,18 +168,6 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
             新增参与方
           </button>
         }
-        secondaryActions={
-          <button
-            className="actionButton secondary"
-            type="button"
-            onClick={() => {
-              onAction(actionRegistry["PARTY-006"]);
-              setDrawer("link");
-            }}
-          >
-            批量关联资源
-          </button>
-        }
       />
 
       <DataMetricStrip items={summaryItems} />
@@ -195,12 +183,9 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
 
       <section className="leanTableSection">
         <div className="leanSectionHead">
-          <div>
+          <div className="partyListTitleGroup" tabIndex={0}>
             <h2>主体列表</h2>
-            <p>管理参与主体的类型、资源关联及是否进入算法权重池。</p>
-            <p className="partyRuleInline">
-              非数据主体默认不进入 MD-DShap 权重池，后续通过合同比例参与收益分配模拟。
-            </p>
+            <p className="partyListHoverHint">管理参与主体的类型、资源关联及是否进入算法权重池。</p>
           </div>
           <div className="partyTableTools">
             <label>
@@ -220,9 +205,6 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
               </select>
             </label>
             <span>{filteredParties.length} / {parties.length} 条</span>
-            <button className="textLinkButton" type="button" onClick={() => onNavigate("/allocation/md-dshap")}>
-              查看权重结果
-            </button>
           </div>
         </div>
         <div className="tableWrap">
@@ -278,17 +260,6 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
                           }
                         >
                           {statusLabel}
-                        </button>
-                        <button
-                          disabled={!party.isDataProvider}
-                          title={party.isDataProvider ? "关联数据资源" : "非数据主体不关联数据资源"}
-                          type="button"
-                          onClick={() => {
-                            onAction(actionRegistry["PARTY-006"]);
-                            setDrawer("link");
-                          }}
-                        >
-                          关联资源
                         </button>
                       </div>
                     </td>
@@ -426,27 +397,6 @@ export function DataPartiesPage({ route, snapshot, onAction, onNavigate }: PageP
               />
             </label>
           </div>
-        </DrawerSection>
-      </DetailDrawer>
-
-      <DetailDrawer
-        footerNote="资源关联用于解除后续评估阻断；保存动作写入关系审计。"
-        objectType="资源关联"
-        open={drawer === "link"}
-        size="md"
-        title="关联数据资源"
-        variant="form"
-        actions={[
-          { label: "取消", onClick: () => setDrawer("") },
-          { label: "保存关联", type: "primary", onClick: () => { onAction(actionRegistry["PARTY-006"]); setDrawer(""); } },
-        ]}
-        onClose={() => setDrawer("")}
-      >
-        <DrawerSection title="可关联资源">
-          <EmptyGuide
-            title="关联配置由后端接口保存"
-            description="当前页面已按现有资源归属聚合展示，写入关系仍走参与方关联资源接口。"
-          />
         </DrawerSection>
       </DetailDrawer>
 

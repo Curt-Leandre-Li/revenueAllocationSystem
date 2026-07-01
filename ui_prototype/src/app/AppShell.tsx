@@ -74,6 +74,7 @@ export function AppShell() {
   const [currentUserRoles, setCurrentUserRoles] = useState<string[]>([]);
   const [currentMenuCodes, setCurrentMenuCodes] = useState<string[]>([]);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [syncNoticeDismissed, setSyncNoticeDismissed] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [loginSubmitting, setLoginSubmitting] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -206,6 +207,12 @@ export function AppShell() {
     };
   }, [userMenuOpen]);
 
+  useEffect(() => {
+    if (store.dataSource.mode === "backend") {
+      setSyncNoticeDismissed(false);
+    }
+  }, [store.dataSource.mode]);
+
   const route = getRoute(activePath);
   const RoutePage = routeComponents[route.path] ?? WorkbenchPage;
   const pageData = store.snapshot.pages[route.path];
@@ -236,6 +243,9 @@ export function AppShell() {
   const userAvatarLabel = getAvatarLabel(topbarOperator);
   const connectionLabel = store.dataSource.mode === "backend" ? "已连接" : "未连接";
   const connectionTone = store.dataSource.mode === "backend" ? "connected" : "disconnected";
+  const showSyncNotice =
+    store.dataSource.mode !== "backend" && backendChecked && !syncNoticeDismissed;
+  const showOperationMessage = store.dataSource.mode === "backend" && Boolean(store.lastMessage);
   const leanWorkspace =
     route.path === "/data/ingestion" ||
     route.path === "/metering/quality" ||
@@ -430,11 +440,27 @@ export function AppShell() {
           </div>
         </section>
 
+        {showSyncNotice ? (
+          <div className="syncNoticeBar" role="status" aria-live="polite">
+            <div>
+              <strong>工作区未同步</strong>
+              <span>系统未连接，当前页面不会显示已同步成功状态。</span>
+            </div>
+            <button
+              aria-label="关闭工作区未同步提示"
+              type="button"
+              onClick={() => setSyncNoticeDismissed(true)}
+            >
+              ×
+            </button>
+          </div>
+        ) : null}
+
         <section className="globalStatusRail" aria-label="项目状态条">
           <StatusStepper current={store.snapshot.status} />
         </section>
 
-        {store.lastMessage ? (
+        {showOperationMessage ? (
           <p className="operationMessage" role="status">{userFacingText(store.lastMessage)}</p>
         ) : null}
 

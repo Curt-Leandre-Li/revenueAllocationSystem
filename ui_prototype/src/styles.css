@@ -1384,6 +1384,62 @@ button:disabled {
   padding: 6px 10px;
 }
 
+.syncNoticeBar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 12px;
+  border: 1px solid #e4c37c;
+  border-radius: 8px;
+  background: #fff9ed;
+  box-shadow: var(--shadow-xs);
+  color: #5e4520;
+  padding: 10px 12px;
+}
+
+.syncNoticeBar div {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  align-items: center;
+}
+
+.syncNoticeBar strong {
+  flex: 0 0 auto;
+  color: #7b4a07;
+  font-weight: 900;
+}
+
+.syncNoticeBar span {
+  min-width: 0;
+  color: #5e4520;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.syncNoticeBar button {
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid #d8b56d;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #6f4f00;
+  cursor: pointer;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.syncNoticeBar button:hover {
+  border-color: #bd8e2f;
+  background: #fff4d8;
+}
+
 .operationMessage {
   position: fixed;
   right: 24px;
@@ -3809,6 +3865,12 @@ summary:focus-visible {
   padding: 6px 12px;
 }
 
+.downloadTypeOptions label.active {
+  background: #edf4ff;
+  border-color: #a9c6f7;
+  color: var(--blue);
+}
+
 .downloadTypeOptions input {
   accent-color: var(--blue);
 }
@@ -3819,6 +3881,13 @@ summary:focus-visible {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.downloadSelectionCount {
+  color: #66758c;
+  font-size: 12px;
+  font-weight: 850;
+  white-space: nowrap;
 }
 
 .downloadFilterActions button {
@@ -3839,6 +3908,32 @@ summary:focus-visible {
   background: var(--blue);
   border-color: var(--blue);
   color: #fff;
+}
+
+.reportSelectionHead,
+.reportSelectionCell {
+  width: 42px;
+  text-align: center;
+}
+
+.reportSelectionHead input,
+.reportSelectionCell input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--blue);
+  cursor: pointer;
+}
+
+.phase2Table tr.selectedFile td {
+  background: #f3f7ff;
+}
+
+.phase2Table td small {
+  display: block;
+  margin-top: 4px;
+  color: #73839a;
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .mdsTaskScopePanel {
@@ -7251,19 +7346,38 @@ button.dashboardModuleMain {
   font-weight: 820;
 }
 
-.partyRuleInline {
-  display: inline-flex;
-  max-width: 100%;
-  align-items: center;
-  margin-top: 8px !important;
-  border: 1px solid #d4e3ff;
-  border-radius: 999px;
-  background: #f6f9ff;
-  color: #1f54bd !important;
-  font-size: 12px !important;
-  font-weight: 850;
+.partyListTitleGroup {
+  position: relative;
+  outline: none;
+}
+
+.partyListHoverHint {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 6;
+  width: max-content;
+  max-width: min(520px, calc(100vw - 48px));
+  margin: 0 !important;
+  border: 1px solid #d7e1ef;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 10px 24px rgba(15, 31, 53, 0.1);
+  color: #65758b !important;
+  padding: 7px 10px;
+  font-size: 13px;
   line-height: 1.45;
-  padding: 4px 10px;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition: opacity 120ms ease, visibility 120ms ease;
+}
+
+.partyListTitleGroup:hover .partyListHoverHint,
+.partyListTitleGroup:focus-visible .partyListHoverHint,
+.partyListTitleGroup:focus-within .partyListHoverHint {
+  opacity: 1;
+  visibility: visible;
 }
 
 .textLinkButton {
@@ -8900,6 +9014,20 @@ button.dashboardModuleMain {
     right: 12px;
     bottom: 12px;
     max-width: calc(100vw - 24px);
+  }
+
+  .syncNoticeBar,
+  .syncNoticeBar div {
+    align-items: flex-start;
+  }
+
+  .syncNoticeBar div {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .syncNoticeBar span {
+    white-space: normal;
   }
 
   .profileMenuContext,

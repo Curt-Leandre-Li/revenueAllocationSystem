@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { actionRegistry } from "../../domain/actionRegistry";
 import { dvasApi } from "../../domain/api";
 import {
@@ -26,18 +26,41 @@ interface DownloadedReportFile {
   mimeType: string;
 }
 
+interface ReportDownloadRow extends ReportDownloadFile {
+  key: string;
+  reportId: string;
+  reportName: string;
+  reportStatus: string;
+  createdAt: string;
+  checksum: string;
+}
+
 export function ReportsPage({ route, snapshot, onAction }: PageProps) {
   const [drawer, setDrawer] = useState<"" | "record">("");
   const [selectedReportId, setSelectedReportId] = useState("");
   const [selectedDownloadTypes, setSelectedDownloadTypes] = useState<Set<string>>(() => new Set());
+  const [selectedFileKeys, setSelectedFileKeys] = useState<Set<string>>(() => new Set());
   const [downloading, setDownloading] = useState(false);
   const pageData = snapshot.pages[route.path];
   const reportRows = pageRows(pageData);
-  const availableDownloadTypes = buildDownloadTypes(reportRows);
+  const reportFileRows = useMemo(() => buildReportFileRows(reportRows), [reportRows]);
+  const availableDownloadTypes = useMemo(() => buildDownloadTypes(reportFileRows), [reportFileRows]);
   const visibleReportRows = reportRows;
-  const downloadTargets = selectedDownloadTypes.size
-    ? buildDownloadTargets(reportRows, selectedDownloadTypes)
-    : [];
+  const visibleDownloadFiles = useMemo(
+    () => selectedDownloadTypes.size
+      ? reportFileRows.filter((file) => selectedDownloadTypes.has(file.type))
+      : reportFileRows,
+    [reportFileRows, selectedDownloadTypes],
+  );
+  const visibleFileKeys = useMemo(
+    () => new Set(visibleDownloadFiles.map((file) => file.key)),
+    [visibleDownloadFiles],
+  );
+  const selectedVisibleFileCount = visibleDownloadFiles.filter((file) => selectedFileKeys.has(file.key)).length;
+  const allVisibleFilesSelected = visibleDownloadFiles.length > 0 && selectedVisibleFileCount === visibleDownloadFiles.length;
+  const downloadTargets = visibleDownloadFiles
+    .filter((file) => selectedFileKeys.has(file.key))
+    .map((file) => ({ reportId: file.reportId, exportFileId: file.exportFileId }));
   const metrics = pageMetrics(pageData);
   const latestReport = visibleReportRows[0];
   const selectedReport =
@@ -64,6 +87,13 @@ export function ReportsPage({ route, snapshot, onAction }: PageProps) {
     meta: cellText(row, "report_status"),
   }));
 
+  useEffect(() => {
+    setSelectedFileKeys((current) => {
+      const next = new Set(Array.from(current).filter((key) => visibleFileKeys.has(key)));
+      return next.size === current.size ? current : next;
+    });
+  }, [visibleFileKeys]);
+
   function toggleDownloadType(type: string) {
     setSelectedDownloadTypes((current) => {
       const next = new Set(current);
@@ -74,6 +104,47 @@ export function ReportsPage({ route, snapshot, onAction }: PageProps) {
       }
       return next;
     });
+  }
+
+  function toggleFileSelection(fileKey: string) {
+    setSelectedFileKeys((current) => {
+      const next = new Set(current);
+      if (next.has(fileKey)) {
+        next.delete(fileKey);
+      } else {
+        next.add(fileKey);
+      }
+      return next;
+    });
+  }
+
+  function selectAllVisibleFiles() {
+    setSelectedFileKeys((current) => {
+      const next = new Set(current);
+      visibleDownloadFiles.forEach((file) => next.add(file.key));
+      return next;
+    });
+  }
+
+  function clearSelectedFiles() {
+    setSelectedFileKeys(new Set());
+  }
+
+  async function downloadSingleFile(file: ReportDownloadRow) {
+    if (downloading) {
+      return;
+    }
+    setDownloading(true);
+    try {
+      const downloadedFile = await dvasApi.downloadReport(file.reportId, file.exportFileId || undefined);
+      downloadBase64File(
+        downloadedFile.file_name,
+        downloadedFile.content_base64,
+        downloadedFile.mime_type ?? "application/octet-stream",
+      );
+    } finally {
+      setDownloading(false);
+    }
   }
 
   async function downloadSelectedTypes() {
@@ -128,7 +199,7 @@ export function ReportsPage({ route, snapshot, onAction }: PageProps) {
           <div className="reportDownloadFilters" aria-label="批量下载类型筛选">
             <div className="downloadTypeOptions">
               {availableDownloadTypes.map((type) => (
-                <label key={type}>
+                <label className={selectedDownloadTypes.has(type) ? "active" : ""} key={type}>
                   <input
                     checked={selectedDownloadTypes.has(type)}
                     type="checkbox"
@@ -139,17 +210,20 @@ export function ReportsPage({ route, snapshot, onAction }: PageProps) {
               ))}
             </div>
             <div className="downloadFilterActions">
+              <span className="downloadSelectionCount">
+                已选 {selectedVisibleFileCount} / {visibleDownloadFiles.length} 个文件
+              </span>
               <button
-                disabled={!availableDownloadTypes.length}
+                disabled={!visibleDownloadFiles.length || allVisibleFilesSelected}
                 type="button"
-                onClick={() => setSelectedDownloadTypes(new Set(availableDownloadTypes))}
+                onClick={selectAllVisibleFiles}
               >
                 全选
               </button>
               <button
-                disabled={!selectedDownloadTypes.size}
+                disabled={!selectedFileKeys.size}
                 type="button"
-                onClick={() => setSelectedDownloadTypes(new Set())}
+                onClick={clearSelectedFiles}
               >
                 清空
               </button>
@@ -164,25 +238,60 @@ export function ReportsPage({ route, snapshot, onAction }: PageProps) {
             </div>
           </div>
         </div>
-        {hasReports ? (
+        {visibleDownloadFiles.length ? (
           <div className="tableWrap">
             <table className="dataTable phase2Table">
-              <thead><tr><th>报告名称</th><th>类型</th><th>状态</th><th>生成时间</th><th>report_id</th><th>checksum</th><th>操作</th></tr></thead>
+              <thead>
+                <tr>
+                  <th className="reportSelectionHead">
+                    <input
+                      aria-label="全选当前列表文件"
+                      checked={allVisibleFilesSelected}
+                      type="checkbox"
+                      onChange={(event) => {
+                        if (event.target.checked) {
+                          selectAllVisibleFiles();
+                        } else {
+                          clearSelectedFiles();
+                        }
+                      }}
+                    />
+                  </th>
+                  <th>文件名称</th>
+                  <th>类型</th>
+                  <th>状态</th>
+                  <th>生成时间</th>
+                  <th>report_id</th>
+                  <th>checksum</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
               <tbody>
-                {visibleReportRows.map((item, index) => (
-                  <tr key={`${cellText(item, "report_id", "report")}-${index}`}>
-                    <td><strong>{cellText(item, "report_name")}</strong></td>
-                    <td>{cellText(item, "report_type")}</td>
-                    <td>{cellText(item, "report_status")}</td>
-                    <td>{cellText(item, "created_at")}</td>
-                    <td>{cellText(item, "report_id")}</td>
-                    <td>{cellText(item, "checksum")}</td>
+                {visibleDownloadFiles.map((item) => (
+                  <tr className={selectedFileKeys.has(item.key) ? "selectedFile" : ""} key={item.key}>
+                    <td className="reportSelectionCell">
+                      <input
+                        aria-label={`选择 ${item.name}`}
+                        checked={selectedFileKeys.has(item.key)}
+                        type="checkbox"
+                        onChange={() => toggleFileSelection(item.key)}
+                      />
+                    </td>
+                    <td>
+                      <strong>{item.name}</strong>
+                      <small>{item.reportName}</small>
+                    </td>
+                    <td>{item.type}</td>
+                    <td>{item.reportStatus}</td>
+                    <td>{item.createdAt}</td>
+                    <td>{item.reportId}</td>
+                    <td>{item.checksum}</td>
                     <td>
                       <div className="tableActions">
                         <button
                           type="button"
                           onClick={() => {
-                            setSelectedReportId(cellText(item, "report_id"));
+                            setSelectedReportId(item.reportId);
                             setDrawer("record");
                           }}
                         >
@@ -190,10 +299,7 @@ export function ReportsPage({ route, snapshot, onAction }: PageProps) {
                         </button>
                         <button
                           type="button"
-                          onClick={() => onAction(actionRegistry["REP-011"], {
-                            kind: "download-file",
-                            reportId: cellText(item, "report_id"),
-                          })}
+                          onClick={() => void downloadSingleFile(item)}
                         >
                           下载
                         </button>
@@ -202,7 +308,7 @@ export function ReportsPage({ route, snapshot, onAction }: PageProps) {
                           type="button"
                           onClick={() => onAction(actionRegistry["REP-012"], {
                             kind: "download-file",
-                            reportId: cellText(item, "report_id"),
+                            reportId: item.reportId,
                           })}
                         >
                           归档
@@ -214,6 +320,11 @@ export function ReportsPage({ route, snapshot, onAction }: PageProps) {
               </tbody>
             </table>
           </div>
+        ) : hasReports ? (
+          <EmptyGuide
+            title="当前类型暂无文件"
+            description="取消上方文件类型筛选，或选择其他文件类型后再勾选下载。"
+          />
         ) : (
           <EmptyGuide
             title="暂无报告记录"
@@ -273,27 +384,35 @@ function buildExportedFilePoints(rows: ReturnType<typeof pageRows>) {
     }));
 }
 
-function buildDownloadTypes(rows: ReturnType<typeof pageRows>) {
-  return Array.from(new Set(rows.flatMap((row) => exportFilesFromRow(row).map((file) => file.type)).filter(Boolean)))
+function buildDownloadTypes(files: ReportDownloadRow[]) {
+  return Array.from(new Set(files.map((file) => file.type).filter(Boolean)))
     .sort((left, right) => left.localeCompare(right, "zh-CN"));
 }
 
-function buildDownloadTargets(rows: ReturnType<typeof pageRows>, selectedTypes: Set<string>) {
-  const targets = new Map<string, { reportId: string; exportFileId: string }>();
+function buildReportFileRows(rows: ReturnType<typeof pageRows>): ReportDownloadRow[] {
+  const files: ReportDownloadRow[] = [];
   for (const row of rows) {
     const reportId = cellText(row, "report_id");
     if (!reportId || reportId === "暂无") {
       continue;
     }
-    for (const file of exportFilesFromRow(row)) {
-      if (!selectedTypes.has(file.type)) {
-        continue;
-      }
-      const key = `${reportId}:${file.exportFileId}`;
-      targets.set(key, { reportId, exportFileId: file.exportFileId });
-    }
+    const reportName = cellText(row, "report_name");
+    const reportStatus = cellText(row, "report_status");
+    const createdAt = cellText(row, "created_at");
+    const checksum = cellText(row, "checksum");
+    exportFilesFromRow(row).forEach((file, index) => {
+      files.push({
+        ...file,
+        key: `${reportId}:${file.exportFileId || file.name}:${index}`,
+        reportId,
+        reportName,
+        reportStatus,
+        createdAt,
+        checksum,
+      });
+    });
   }
-  return Array.from(targets.values());
+  return files;
 }
 
 function exportFilesFromRow(row: ReturnType<typeof pageRows>[number]): ReportDownloadFile[] {

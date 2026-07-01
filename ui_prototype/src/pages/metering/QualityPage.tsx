@@ -481,10 +481,12 @@ export function QualityPage({ snapshot, onAction }: PageProps) {
         <div className="qualityModalBackdrop" role="presentation">
           <section className="qualityReassessModal" role="dialog" aria-modal="true" aria-label="重新发起质量评估">
             <header>
-              <h2>重新发起质量评估</h2>
+              <div>
+                <h2>重新发起质量评估</h2>
+                <p>请确认以下信息，评估将生成新版本，不会覆盖历史结果。</p>
+              </div>
               <button type="button" onClick={() => setReassessOpen(false)}>×</button>
             </header>
-            <p>请确认以下信息，评估将生成新版本，不会覆盖历史结果。</p>
             <section className="qualityReassessSteps">
               <QualityStep
                 index="1"

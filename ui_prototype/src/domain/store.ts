@@ -81,7 +81,7 @@ export async function loadBackendWorkbenchStore(
     return {
       ...fallbackStore,
       snapshot: result.data,
-      lastMessage: "后端 API 已连接，工作区已同步。（数据来源：后端）",
+      lastMessage: "",
       dataSource: {
         mode: "backend",
         lastSyncAt: result.data.backend?.lastSyncedAt ?? new Date().toISOString(),
