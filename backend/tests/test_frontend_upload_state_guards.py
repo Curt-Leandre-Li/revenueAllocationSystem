@@ -229,9 +229,20 @@ class FrontendUploadStateGuardsTest(unittest.TestCase):
         ):
             self.assertNotIn(removed_label, reports_source)
         self.assertIn("selectedDownloadTypes", reports_source)
-        self.assertIn("buildDownloadTypes(reportRows)", reports_source)
+        self.assertIn("buildReportFileRows(reportRows)", reports_source)
+        self.assertIn("buildDownloadTypes(reportFileRows)", reports_source)
         self.assertIn("const visibleReportRows = reportRows", reports_source)
-        self.assertIn("buildDownloadTargets(reportRows, selectedDownloadTypes)", reports_source)
+        self.assertIn("const visibleDownloadFiles = useMemo(", reports_source)
+        self.assertIn(
+            "reportFileRows.filter((file) => selectedDownloadTypes.has(file.type))",
+            reports_source,
+        )
+        self.assertIn("const downloadTargets = visibleDownloadFiles", reports_source)
+        self.assertIn(".filter((file) => selectedFileKeys.has(file.key))", reports_source)
+        self.assertIn(
+            ".map((file) => ({ reportId: file.reportId, exportFileId: file.exportFileId }))",
+            reports_source,
+        )
         self.assertIn("downloadSelectedTypes", reports_source)
         self.assertIn("dvasApi.downloadReport(target.reportId, target.exportFileId || undefined)", reports_source)
         self.assertIn("createZipBlob(files)", reports_source)
@@ -289,7 +300,7 @@ class FrontendUploadStateGuardsTest(unittest.TestCase):
         self.assertIn('const silentDisabledActionIds = new Set(["REP-009"]);', dispatcher_source)
         self.assertIn("silentDisabledActionIds.has(action.id)", dispatcher_source)
         self.assertIn('lastMessage: ""', dispatcher_source)
-        self.assertIn("store.lastMessage ? (", app_shell_source)
+        self.assertIn("{showOperationMessage ? (", app_shell_source)
         self.assertIn('className="operationMessage"', app_shell_source)
         self.assertIn("lastMessage: `${action.label} 未执行：${disabledReason}`", dispatcher_source)
 
