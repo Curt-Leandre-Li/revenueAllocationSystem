@@ -1,0 +1,319 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2170" height="1408" viewBox="0 0 2170 1408">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/></marker></defs>
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="1085.0" y="44" text-anchor="middle" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="28" font-weight="700" fill="#0f172a">数据收益分配系统（DVAS）数据库 ER 图</text>
+<text x="1085.0" y="76" text-anchor="middle" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="15" fill="#475569">依据 db/dvas_p0_01_schema.sql 当前 38 张 PostgreSQL 表生成；运行态 JSON 对象在文档中单独说明</text>
+<rect x="60" y="108" width="300" height="30" rx="6" fill="#dfefff" stroke="#94a3b8"/>
+<text x="74" y="129" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a">系统管理</text>
+<rect x="60" y="150" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="60" y="150" width="300" height="24" rx="6" fill="#dfefff" stroke="#334155" stroke-width="1.2"/>
+<text x="70" y="167" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">nav_menu</text>
+<text x="70" y="192" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">导航菜单表</text>
+<text x="70" y="211" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: menu_id</text>
+<text x="70" y="226" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: parent_id</text>
+<rect x="60" y="262" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="60" y="262" width="300" height="24" rx="6" fill="#dfefff" stroke="#334155" stroke-width="1.2"/>
+<text x="70" y="279" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">permission</text>
+<text x="70" y="304" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">权限动作表</text>
+<text x="70" y="323" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: permission_id</text>
+<text x="70" y="338" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: menu_id</text>
+<rect x="60" y="374" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="60" y="374" width="300" height="24" rx="6" fill="#dfefff" stroke="#334155" stroke-width="1.2"/>
+<text x="70" y="391" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">user_account</text>
+<text x="70" y="416" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">用户账户表</text>
+<text x="70" y="435" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: user_id</text>
+<text x="70" y="450" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: -</text>
+<rect x="60" y="486" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="60" y="486" width="300" height="24" rx="6" fill="#dfefff" stroke="#334155" stroke-width="1.2"/>
+<text x="70" y="503" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">role</text>
+<text x="70" y="528" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">角色表</text>
+<text x="70" y="547" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: role_id</text>
+<text x="70" y="562" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: -</text>
+<rect x="60" y="598" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="60" y="598" width="300" height="24" rx="6" fill="#dfefff" stroke="#334155" stroke-width="1.2"/>
+<text x="70" y="615" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">user_role</text>
+<text x="70" y="640" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">用户角色关系表</text>
+<text x="70" y="659" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: id</text>
+<text x="70" y="674" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: user_id, role_id</text>
+<rect x="60" y="710" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="60" y="710" width="300" height="24" rx="6" fill="#dfefff" stroke="#334155" stroke-width="1.2"/>
+<text x="70" y="727" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">role_permission</text>
+<text x="70" y="752" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">角色权限关系表</text>
+<text x="70" y="771" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: id</text>
+<text x="70" y="786" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: role_id, permission_id</text>
+<rect x="60" y="822" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="60" y="822" width="300" height="24" rx="6" fill="#dfefff" stroke="#334155" stroke-width="1.2"/>
+<text x="70" y="839" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">system_parameter</text>
+<text x="70" y="864" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">系统参数表</text>
+<text x="70" y="883" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: parameter_id</text>
+<text x="70" y="898" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: -</text>
+<rect x="60" y="934" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="60" y="934" width="300" height="24" rx="6" fill="#dfefff" stroke="#334155" stroke-width="1.2"/>
+<text x="70" y="951" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">parameter_version</text>
+<text x="70" y="976" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">参数版本表</text>
+<text x="70" y="995" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: version_id</text>
+<text x="70" y="1010" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: parameter_id, project_id</text>
+<rect x="410" y="108" width="300" height="30" rx="6" fill="#eaf7e7" stroke="#94a3b8"/>
+<text x="424" y="129" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a">项目与首页</text>
+<rect x="410" y="150" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="410" y="150" width="300" height="24" rx="6" fill="#eaf7e7" stroke="#334155" stroke-width="1.2"/>
+<text x="420" y="167" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">allocation_project</text>
+<text x="420" y="192" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">项目主表</text>
+<text x="420" y="211" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: project_id</text>
+<text x="420" y="226" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: -</text>
+<rect x="760" y="108" width="300" height="30" rx="6" fill="#fff3db" stroke="#94a3b8"/>
+<text x="774" y="129" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a">数据管理</text>
+<rect x="760" y="150" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="760" y="150" width="300" height="24" rx="6" fill="#fff3db" stroke="#334155" stroke-width="1.2"/>
+<text x="770" y="167" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">input_snapshot</text>
+<text x="770" y="192" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">输入快照表</text>
+<text x="770" y="211" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: snapshot_id</text>
+<text x="770" y="226" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: project_id</text>
+<rect x="760" y="262" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="760" y="262" width="300" height="24" rx="6" fill="#fff3db" stroke="#334155" stroke-width="1.2"/>
+<text x="770" y="279" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">data_package</text>
+<text x="770" y="304" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">数据包表</text>
+<text x="770" y="323" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: package_id</text>
+<text x="770" y="338" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: project_id, input_snapshot_id</text>
+<rect x="760" y="374" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="760" y="374" width="300" height="24" rx="6" fill="#fff3db" stroke="#334155" stroke-width="1.2"/>
+<text x="770" y="391" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">upload_validation_result</text>
+<text x="770" y="416" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">上传校验结果表</text>
+<text x="770" y="435" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: validation_result_id</text>
+<text x="770" y="450" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: project_id, package_id</text>
+<rect x="760" y="486" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="760" y="486" width="300" height="24" rx="6" fill="#fff3db" stroke="#334155" stroke-width="1.2"/>
+<text x="770" y="503" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">data_resource</text>
+<text x="770" y="528" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">数据资源表</text>
+<text x="770" y="547" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: resource_id</text>
+<text x="770" y="562" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: project_id, package_id</text>
+<rect x="760" y="598" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="760" y="598" width="300" height="24" rx="6" fill="#fff3db" stroke="#334155" stroke-width="1.2"/>
+<text x="770" y="615" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">data_resource_field</text>
+<text x="770" y="640" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">资源字段表</text>
+<text x="770" y="659" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: field_id</text>
+<text x="770" y="674" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: resource_id</text>
+<rect x="760" y="710" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="760" y="710" width="300" height="24" rx="6" fill="#fff3db" stroke="#334155" stroke-width="1.2"/>
+<text x="770" y="727" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">party</text>
+<text x="770" y="752" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">参与方表</text>
+<text x="770" y="771" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: party_id</text>
+<text x="770" y="786" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: project_id</text>
+<rect x="760" y="822" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="760" y="822" width="300" height="24" rx="6" fill="#fff3db" stroke="#334155" stroke-width="1.2"/>
+<text x="770" y="839" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">data_resource_party_relation</text>
+<text x="770" y="864" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">资源主体关系表</text>
+<text x="770" y="883" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: relation_id</text>
+<text x="770" y="898" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: project_id, resource_id ...</text>
+<rect x="1110" y="108" width="300" height="30" rx="6" fill="#f0e8ff" stroke="#94a3b8"/>
+<text x="1124" y="129" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a">数元贡献度计量</text>
+<rect x="1110" y="150" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1110" y="150" width="300" height="24" rx="6" fill="#f0e8ff" stroke="#334155" stroke-width="1.2"/>
+<text x="1120" y="167" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">quality_metric_template</text>
+<text x="1120" y="192" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">质量指标模板表</text>
+<text x="1120" y="211" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: metric_id</text>
+<text x="1120" y="226" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: -</text>
+<rect x="1110" y="262" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1110" y="262" width="300" height="24" rx="6" fill="#f0e8ff" stroke="#334155" stroke-width="1.2"/>
+<text x="1120" y="279" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">quality_assessment</text>
+<text x="1120" y="304" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">质量评估主表</text>
+<text x="1120" y="323" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: assessment_id</text>
+<text x="1120" y="338" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: project_id, package_id</text>
+<rect x="1110" y="374" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1110" y="374" width="300" height="24" rx="6" fill="#f0e8ff" stroke="#334155" stroke-width="1.2"/>
+<text x="1120" y="391" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">quality_score_detail</text>
+<text x="1120" y="416" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">质量评分明细表</text>
+<text x="1120" y="435" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: detail_id</text>
+<text x="1120" y="450" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: assessment_id</text>
+<rect x="1110" y="486" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1110" y="486" width="300" height="24" rx="6" fill="#f0e8ff" stroke="#334155" stroke-width="1.2"/>
+<text x="1120" y="503" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">shuyuan_metering</text>
+<text x="1120" y="528" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">数元计量主表</text>
+<text x="1120" y="547" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: metering_id</text>
+<text x="1120" y="562" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: project_id, assessment_id</text>
+<rect x="1110" y="598" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1110" y="598" width="300" height="24" rx="6" fill="#f0e8ff" stroke="#334155" stroke-width="1.2"/>
+<text x="1120" y="615" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">shuyuan_metering_detail</text>
+<text x="1120" y="640" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">数元计量明细表</text>
+<text x="1120" y="659" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: detail_id</text>
+<text x="1120" y="674" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: metering_id, project_id ...</text>
+<rect x="1110" y="710" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1110" y="710" width="300" height="24" rx="6" fill="#f0e8ff" stroke="#334155" stroke-width="1.2"/>
+<text x="1120" y="727" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">contribution_record</text>
+<text x="1120" y="752" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">贡献度记录表</text>
+<text x="1120" y="771" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: contribution_id</text>
+<text x="1120" y="786" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: project_id, party_id ...</text>
+<rect x="1110" y="822" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1110" y="822" width="300" height="24" rx="6" fill="#f0e8ff" stroke="#334155" stroke-width="1.2"/>
+<text x="1120" y="839" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">utility_function_snapshot</text>
+<text x="1120" y="864" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">效用函数快照表</text>
+<text x="1120" y="883" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: snapshot_id</text>
+<text x="1120" y="898" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: project_id</text>
+<rect x="1110" y="934" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1110" y="934" width="300" height="24" rx="6" fill="#f0e8ff" stroke="#334155" stroke-width="1.2"/>
+<text x="1120" y="951" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">utility_record</text>
+<text x="1120" y="976" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">效用记录表</text>
+<text x="1120" y="995" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: utility_id</text>
+<text x="1120" y="1010" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: project_id, party_id ...</text>
+<rect x="1110" y="1046" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1110" y="1046" width="300" height="24" rx="6" fill="#f0e8ff" stroke="#334155" stroke-width="1.2"/>
+<text x="1120" y="1063" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">utility_trace</text>
+<text x="1120" y="1088" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">效用 trace 表</text>
+<text x="1120" y="1107" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: trace_id</text>
+<text x="1120" y="1122" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: utility_id</text>
+<rect x="1460" y="108" width="300" height="30" rx="6" fill="#ffe9e3" stroke="#94a3b8"/>
+<text x="1474" y="129" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a">收益分配计算</text>
+<rect x="1460" y="150" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1460" y="150" width="300" height="24" rx="6" fill="#ffe9e3" stroke="#334155" stroke-width="1.2"/>
+<text x="1470" y="167" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">md_dshap_task</text>
+<text x="1470" y="192" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">MD-DShap 任务表</text>
+<text x="1470" y="211" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: task_id</text>
+<text x="1470" y="226" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: project_id, utility_function_snapshot_id</text>
+<rect x="1460" y="262" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1460" y="262" width="300" height="24" rx="6" fill="#ffe9e3" stroke="#334155" stroke-width="1.2"/>
+<text x="1470" y="279" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">md_dshap_result</text>
+<text x="1470" y="304" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">MD-DShap 权重结果表</text>
+<text x="1470" y="323" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: result_id</text>
+<text x="1470" y="338" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: task_id, project_id ...</text>
+<rect x="1460" y="374" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1460" y="374" width="300" height="24" rx="6" fill="#ffe9e3" stroke="#334155" stroke-width="1.2"/>
+<text x="1470" y="391" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">md_dshap_marginal_trace</text>
+<text x="1470" y="416" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">边际贡献 trace 表</text>
+<text x="1470" y="435" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: trace_id</text>
+<text x="1470" y="450" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: task_id, project_id ...</text>
+<rect x="1460" y="486" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1460" y="486" width="300" height="24" rx="6" fill="#ffe9e3" stroke="#334155" stroke-width="1.2"/>
+<text x="1470" y="503" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">algorithm_audit_snapshot</text>
+<text x="1470" y="528" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">算法审计快照表</text>
+<text x="1470" y="547" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: snapshot_id</text>
+<text x="1470" y="562" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: project_id, task_id</text>
+<rect x="1460" y="598" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1460" y="598" width="300" height="24" rx="6" fill="#ffe9e3" stroke="#334155" stroke-width="1.2"/>
+<text x="1470" y="615" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">allocation_scenario</text>
+<text x="1470" y="640" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">收益分配场景表</text>
+<text x="1470" y="659" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: allocation_id</text>
+<text x="1470" y="674" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: project_id, weight_task_id</text>
+<rect x="1460" y="710" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1460" y="710" width="300" height="24" rx="6" fill="#ffe9e3" stroke="#334155" stroke-width="1.2"/>
+<text x="1470" y="727" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">allocation_priority_item</text>
+<text x="1470" y="752" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">合同优先分配项表</text>
+<text x="1470" y="771" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: item_id</text>
+<text x="1470" y="786" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: allocation_id, project_id ...</text>
+<rect x="1460" y="822" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1460" y="822" width="300" height="24" rx="6" fill="#ffe9e3" stroke="#334155" stroke-width="1.2"/>
+<text x="1470" y="839" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">contract_constraint</text>
+<text x="1470" y="864" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">合同约束表（旧约束兼容）</text>
+<text x="1470" y="883" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: constraint_id</text>
+<text x="1470" y="898" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: project_id, party_id</text>
+<rect x="1460" y="934" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1460" y="934" width="300" height="24" rx="6" fill="#ffe9e3" stroke="#334155" stroke-width="1.2"/>
+<text x="1470" y="951" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">allocation_result</text>
+<text x="1470" y="976" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">收益分配结果表</text>
+<text x="1470" y="995" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: result_id</text>
+<text x="1470" y="1010" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: allocation_id, project_id ...</text>
+<rect x="1460" y="1046" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1460" y="1046" width="300" height="24" rx="6" fill="#ffe9e3" stroke="#334155" stroke-width="1.2"/>
+<text x="1470" y="1063" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">constraint_apply_trace</text>
+<text x="1470" y="1088" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">约束执行 trace 表</text>
+<text x="1470" y="1107" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: trace_id</text>
+<text x="1470" y="1122" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: allocation_id, project_id ...</text>
+<rect x="1810" y="108" width="300" height="30" rx="6" fill="#e6f6f7" stroke="#94a3b8"/>
+<text x="1824" y="129" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a">报告与审计</text>
+<rect x="1810" y="150" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1810" y="150" width="300" height="24" rx="6" fill="#e6f6f7" stroke="#334155" stroke-width="1.2"/>
+<text x="1820" y="167" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">snapshot_store</text>
+<text x="1820" y="192" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">通用快照表</text>
+<text x="1820" y="211" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: snapshot_id</text>
+<text x="1820" y="226" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: project_id</text>
+<rect x="1810" y="262" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1810" y="262" width="300" height="24" rx="6" fill="#e6f6f7" stroke="#334155" stroke-width="1.2"/>
+<text x="1820" y="279" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">report_record</text>
+<text x="1820" y="304" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">报告记录表</text>
+<text x="1820" y="323" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: report_id</text>
+<text x="1820" y="338" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: project_id, source_snapshot_id</text>
+<rect x="1810" y="374" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1810" y="374" width="300" height="24" rx="6" fill="#e6f6f7" stroke="#334155" stroke-width="1.2"/>
+<text x="1820" y="391" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">export_file</text>
+<text x="1820" y="416" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">导出文件表</text>
+<text x="1820" y="435" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: file_id</text>
+<text x="1820" y="450" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: report_id, project_id</text>
+<rect x="1810" y="486" width="300" height="82" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2"/>
+<rect x="1810" y="486" width="300" height="24" rx="6" fill="#e6f6f7" stroke="#334155" stroke-width="1.2"/>
+<text x="1820" y="503" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#0f172a">audit_log</text>
+<text x="1820" y="528" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#334155">审计日志表</text>
+<text x="1820" y="547" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PK: log_id</text>
+<text x="1820" y="562" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FK: project_id</text>
+<path d="M 360 170 C 400 130, 400 248, 360 208" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 360 191.0 C 210.0 191.0, 210.0 303.0, 60 303.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 360 415.0 C 210.0 415.0, 210.0 639.0, 60 639.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 360 527.0 C 210.0 527.0, 210.0 639.0, 60 639.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 360 527.0 C 210.0 527.0, 210.0 751.0, 60 751.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 360 303.0 C 210.0 303.0, 210.0 751.0, 60 751.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 1260.0 191.0, 1260.0 191.0, 1810 191.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 735.0 191.0, 735.0 191.0, 760 191.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 735.0 191.0, 735.0 303.0, 760 303.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1060 191.0 C 910.0 191.0, 910.0 303.0, 760 303.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 735.0 191.0, 735.0 415.0, 760 415.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1060 303.0 C 910.0 303.0, 910.0 415.0, 760 415.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 735.0 191.0, 735.0 527.0, 760 527.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1060 303.0 C 910.0 303.0, 910.0 527.0, 760 527.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1060 527.0 C 910.0 527.0, 910.0 639.0, 760 639.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 735.0 191.0, 735.0 751.0, 760 751.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 735.0 191.0, 735.0 863.0, 760 863.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1060 527.0 C 910.0 527.0, 910.0 863.0, 760 863.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1060 751.0 C 910.0 751.0, 910.0 863.0, 760 863.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 910.0 191.0, 910.0 303.0, 1110 303.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1060 303.0 C 1085.0 303.0, 1085.0 303.0, 1110 303.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1410 303.0 C 1260.0 303.0, 1260.0 415.0, 1110 415.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 910.0 191.0, 910.0 527.0, 1110 527.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1410 303.0 C 1260.0 303.0, 1260.0 527.0, 1110 527.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1410 527.0 C 1260.0 527.0, 1260.0 639.0, 1110 639.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 910.0 191.0, 910.0 639.0, 1110 639.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1060 527.0 C 1085.0 527.0, 1085.0 639.0, 1110 639.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1060 751.0 C 1085.0 751.0, 1085.0 639.0, 1110 639.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 910.0 191.0, 910.0 751.0, 1110 751.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1060 751.0 C 1085.0 751.0, 1085.0 751.0, 1110 751.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1410 527.0 C 1260.0 527.0, 1260.0 751.0, 1110 751.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 910.0 191.0, 910.0 863.0, 1110 863.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 910.0 191.0, 910.0 975.0, 1110 975.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1060 751.0 C 1085.0 751.0, 1085.0 975.0, 1110 975.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1410 751.0 C 1260.0 751.0, 1260.0 975.0, 1110 975.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1410 863.0 C 1260.0 863.0, 1260.0 975.0, 1110 975.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1410 975.0 C 1260.0 975.0, 1260.0 1087.0, 1110 1087.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 1085.0 191.0, 1085.0 191.0, 1460 191.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1410 863.0 C 1435.0 863.0, 1435.0 191.0, 1460 191.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1760 191.0 C 1610.0 191.0, 1610.0 303.0, 1460 303.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 1085.0 191.0, 1085.0 303.0, 1460 303.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1060 751.0 C 1260.0 751.0, 1260.0 303.0, 1460 303.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1760 191.0 C 1610.0 191.0, 1610.0 415.0, 1460 415.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 1085.0 191.0, 1085.0 415.0, 1460 415.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1060 751.0 C 1260.0 751.0, 1260.0 415.0, 1460 415.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 1085.0 191.0, 1085.0 527.0, 1460 527.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1760 191.0 C 1610.0 191.0, 1610.0 527.0, 1460 527.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 1085.0 191.0, 1085.0 639.0, 1460 639.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1760 191.0 C 1610.0 191.0, 1610.0 639.0, 1460 639.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1760 639.0 C 1610.0 639.0, 1610.0 751.0, 1460 751.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 1085.0 191.0, 1085.0 751.0, 1460 751.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1060 751.0 C 1260.0 751.0, 1260.0 751.0, 1460 751.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 1085.0 191.0, 1085.0 863.0, 1460 863.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1060 751.0 C 1260.0 751.0, 1260.0 863.0, 1460 863.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1760 639.0 C 1610.0 639.0, 1610.0 975.0, 1460 975.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 1085.0 191.0, 1085.0 975.0, 1460 975.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1060 751.0 C 1260.0 751.0, 1260.0 975.0, 1460 975.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1760 639.0 C 1610.0 639.0, 1610.0 1087.0, 1460 1087.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 1085.0 191.0, 1085.0 1087.0, 1460 1087.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1760 863.0 C 1610.0 863.0, 1610.0 1087.0, 1460 1087.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 1060 751.0 C 1260.0 751.0, 1260.0 1087.0, 1460 1087.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 1260.0 191.0, 1260.0 303.0, 1810 303.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 2110 191.0 C 1960.0 191.0, 1960.0 303.0, 1810 303.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 2110 303.0 C 1960.0 303.0, 1960.0 415.0, 1810 415.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 1260.0 191.0, 1260.0 415.0, 1810 415.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 710 191.0 C 1260.0 191.0, 1260.0 527.0, 1810 527.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 360 863.0 C 210.0 863.0, 210.0 975.0, 60 975.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<path d="M 410 191.0 C 385.0 191.0, 385.0 975.0, 360 975.0" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.45" marker-end="url(#arrow)"/>
+<rect x="60" y="1180" width="2050" height="126" rx="8" fill="#f8fafc" stroke="#94a3b8"/>
+<text x="78" y="1208" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="16" font-weight="700" fill="#0f172a">运行态 JSON 对象（当前不作为 SQL 表绘制）</text>
+<text x="78" y="1236" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="13" fill="#334155">contract_ratio_plans: 已保存合同比例方案主表语义，当前存放在 JSON 状态；SQL 尚无同名表。；contract_ratio_items:</text>
+<text x="78" y="1256" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="13" fill="#334155">非数据主体合同比例条目；完整链路用它扣减非数据主体金额并形成数据源收益池。；quality_resource_assessments: 逐资源质量评估主对象，当前运行态生成；SQL</text>
+<text x="78" y="1276" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="13" fill="#334155">尚无同名表。；quality_resource_score_details: 逐资源质量指标明细，当前运行态生成；SQL 尚无同名表。。其余对象见数据库设计说明书第 13 节。</text>
+</svg>

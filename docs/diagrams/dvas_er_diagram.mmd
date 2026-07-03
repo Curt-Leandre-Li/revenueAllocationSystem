@@ -1,0 +1,636 @@
+%% 数据收益分配系统（DVAS）数据库 ER 图
+%% Source: db/dvas_p0_01_schema.sql; generated from current DDL only.
+%% Runtime-only JSON objects are documented in docs/数据收益分配系统_数据库设计说明书.md and are not modeled as SQL tables here.
+erDiagram
+    %% 系统管理 - 导航菜单表
+    nav_menu {
+        varchar_64 menu_id PK
+        varchar_64 parent_id FK "NULL"
+        varchar_64 menu_code
+        varchar_100 menu_name
+        varchar_32 module_code
+        varchar_200 route_path
+        smallint menu_level
+        int sort_no
+        boolean p0_required
+        boolean p1_only
+        varchar_16 status
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    %% 系统管理 - 权限动作表
+    permission {
+        varchar_64 permission_id PK
+        varchar_64 menu_id FK
+        varchar_100 permission_code
+        varchar_120 permission_name
+        varchar_32 action_type
+        varchar_100 button_code "NULL"
+        boolean p0_required
+        boolean p1_only
+        varchar_16 status
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    %% 系统管理 - 用户账户表
+    user_account {
+        varchar_64 user_id PK
+        varchar_80 username
+        varchar_100 display_name
+        varchar_80 operator_code
+        varchar_255 password_hash "NULL"
+        varchar_16 status
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    %% 系统管理 - 角色表
+    role {
+        varchar_64 role_id PK
+        varchar_64 role_code
+        varchar_100 role_name
+        text description "NULL"
+        varchar_16 status
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    %% 系统管理 - 用户角色关系表
+    user_role {
+        varchar_64 id PK
+        varchar_64 user_id FK
+        varchar_64 role_id FK
+        timestamp created_at
+    }
+
+    %% 系统管理 - 角色权限关系表
+    role_permission {
+        varchar_64 id PK
+        varchar_64 role_id FK
+        varchar_64 permission_id FK
+        timestamp created_at
+    }
+
+    %% 项目与首页 - 项目主表
+    allocation_project {
+        varchar_64 project_id PK
+        varchar_200 project_name
+        varchar_200 scenario_name "NULL"
+        varchar_32 status
+        varchar_64 current_package_id "NULL"
+        varchar_64 current_algorithm_task_id "NULL"
+        varchar_64 current_allocation_id "NULL"
+        numeric_18_2 total_revenue_amount "NULL"
+        int version_no
+        varchar_64 created_by
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    %% 报告与审计 - 通用快照表
+    snapshot_store {
+        varchar_64 snapshot_id PK
+        varchar_64 project_id FK "NULL"
+        varchar_40 snapshot_type
+        varchar_80 object_type "NULL"
+        varchar_64 object_id "NULL"
+        jsonb content_json
+        varchar_128 checksum
+        varchar_64 created_by
+        timestamp created_at
+    }
+
+    %% 数据管理 - 输入快照表
+    input_snapshot {
+        varchar_64 snapshot_id PK
+        varchar_64 project_id FK
+        varchar_32 source_type
+        varchar_200 source_name "NULL"
+        jsonb content_json
+        varchar_128 checksum
+        varchar_64 created_by
+        timestamp created_at
+    }
+
+    %% 数据管理 - 数据包表
+    data_package {
+        varchar_64 package_id PK
+        varchar_64 project_id FK
+        varchar_64 input_snapshot_id FK "NULL"
+        varchar_200 package_name
+        varchar_32 source_type
+        varchar_255 file_name "NULL"
+        varchar_128 checksum
+        varchar_32 status
+        int version_no
+        varchar_64 created_by
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    %% 数据管理 - 上传校验结果表
+    upload_validation_result {
+        varchar_64 validation_result_id PK
+        varchar_64 project_id FK
+        varchar_64 package_id FK "NULL"
+        boolean is_valid
+        varchar_200 error_field "NULL"
+        varchar_80 error_type "NULL"
+        text error_message "NULL"
+        jsonb detail_json
+        timestamp created_at
+    }
+
+    %% 数据管理 - 数据资源表
+    data_resource {
+        varchar_64 resource_id PK
+        varchar_64 project_id FK
+        varchar_64 package_id FK
+        varchar_200 resource_name
+        varchar_40 modality
+        int field_count
+        bigint sample_count
+        numeric_8_6 missing_rate
+        boolean include_in_calculation
+        jsonb resource_summary_json
+        varchar_16 status
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    %% 数据管理 - 资源字段表
+    data_resource_field {
+        varchar_64 field_id PK
+        varchar_64 resource_id FK
+        varchar_160 field_name
+        varchar_80 field_type "NULL"
+        boolean is_sensitive
+        numeric_8_6 missing_rate
+        bigint distinct_count "NULL"
+        jsonb stats_json
+        jsonb sample_preview_json
+        timestamp created_at
+    }
+
+    %% 数据管理 - 参与方表
+    party {
+        varchar_64 party_id PK
+        varchar_64 project_id FK
+        varchar_200 party_name
+        varchar_40 party_type
+        boolean include_in_md_dshap
+        varchar_100 credit_code "NULL"
+        varchar_100 contact_name "NULL"
+        text description "NULL"
+        varchar_16 status
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    %% 数据管理 - 资源主体关系表
+    data_resource_party_relation {
+        varchar_64 relation_id PK
+        varchar_64 project_id FK
+        varchar_64 resource_id FK
+        varchar_64 party_id FK
+        numeric_18_6 split_ratio
+        boolean is_primary_provider
+        boolean include_in_md_dshap
+        varchar_16 status
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    %% 数元贡献度计量 - 质量指标模板表
+    quality_metric_template {
+        varchar_64 metric_id PK
+        varchar_80 metric_code
+        varchar_80 parent_metric_code "NULL"
+        varchar_160 metric_name
+        smallint metric_level
+        numeric_18_6 default_weight
+        jsonb score_rule_json
+        varchar_16 status
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    %% 数元贡献度计量 - 质量评估主表
+    quality_assessment {
+        varchar_64 assessment_id PK
+        varchar_64 project_id FK
+        varchar_64 package_id FK
+        int assessment_version_no
+        numeric_8_4 quality_score
+        varchar_20 quality_level
+        numeric_12_6 quality_factor
+        jsonb dimension_scores
+        text evidence_summary "NULL"
+        varchar_64 parameter_snapshot_id "NULL"
+        varchar_16 status
+        timestamp generated_at
+    }
+
+    %% 数元贡献度计量 - 质量评分明细表
+    quality_score_detail {
+        varchar_64 detail_id PK
+        varchar_64 assessment_id FK
+        varchar_80 metric_code
+        varchar_80 dimension_code
+        varchar_160 metric_name
+        numeric_18_6 weight
+        numeric_8_4 score
+        numeric_12_6 weighted_score
+        jsonb evidence_json
+        timestamp created_at
+    }
+
+    %% 数元贡献度计量 - 数元计量主表
+    shuyuan_metering {
+        varchar_64 metering_id PK
+        varchar_64 project_id FK
+        varchar_64 assessment_id FK
+        int metering_version_no
+        numeric_18_2 base_shuyuan_price
+        numeric_12_6 scenario_coefficient
+        numeric_12_6 quality_coefficient
+        numeric_12_6 technology_coefficient
+        numeric_12_6 expert_coefficient
+        numeric_12_6 development_coefficient
+        bigint call_count_total
+        numeric_18_2 total_amount
+        varchar_64 parameter_snapshot_id "NULL"
+        varchar_16 status
+        timestamp generated_at
+    }
+
+    %% 数元贡献度计量 - 数元计量明细表
+    shuyuan_metering_detail {
+        varchar_64 detail_id PK
+        varchar_64 metering_id FK
+        varchar_64 project_id FK
+        varchar_64 resource_id FK
+        varchar_64 party_id FK
+        bigint call_count
+        numeric_18_6 effective_units
+        numeric_18_2 metering_amount
+        jsonb formula_json
+        timestamp created_at
+    }
+
+    %% 数元贡献度计量 - 贡献度记录表
+    contribution_record {
+        varchar_64 contribution_id PK
+        varchar_64 project_id FK
+        varchar_64 party_id FK
+        varchar_64 metering_id FK "NULL"
+        numeric_18_6 valid_units
+        numeric_18_6 usage_weight
+        numeric_18_6 coverage_weight
+        numeric_18_6 scarcity_weight
+        numeric_18_6 contribution_score
+        numeric_18_6 normalized_contribution
+        int version_no
+        timestamp created_at
+    }
+
+    %% 数元贡献度计量 - 效用函数快照表
+    utility_function_snapshot {
+        varchar_64 snapshot_id PK
+        varchar_64 project_id FK
+        varchar_80 utility_source
+        text formula_text
+        jsonb parameter_json
+        varchar_128 checksum
+        int version_no
+        varchar_64 created_by
+        timestamp created_at
+    }
+
+    %% 数元贡献度计量 - 效用记录表
+    utility_record {
+        varchar_64 utility_id PK
+        varchar_64 project_id FK
+        varchar_64 party_id FK
+        varchar_64 contribution_id FK "NULL"
+        varchar_64 utility_function_snapshot_id FK
+        varchar_80 task_key
+        numeric_18_6 normalized_contribution
+        numeric_12_6 quality_factor
+        numeric_12_6 usage_factor
+        numeric_12_6 scenario_factor
+        numeric_18_6 utility_value
+        int version_no
+        timestamp created_at
+    }
+
+    %% 数元贡献度计量 - 效用 trace 表
+    utility_trace {
+        varchar_64 trace_id PK
+        varchar_64 utility_id FK
+        text formula_text
+        jsonb input_json
+        jsonb output_json
+        varchar_64 parameter_snapshot_id "NULL"
+        timestamp created_at
+    }
+
+    %% 收益分配计算 - MD-DShap 任务表
+    md_dshap_task {
+        varchar_64 task_id PK
+        varchar_64 project_id FK
+        varchar_64 utility_function_snapshot_id FK "NULL"
+        varchar_32 algorithm_mode
+        jsonb participant_set_json
+        jsonb task_set_json
+        bigint seed "NULL"
+        int sample_rounds
+        numeric_18_8 epsilon
+        varchar_16 status
+        varchar_40 algorithm_version
+        boolean baseline_enabled
+        varchar_64 parameter_snapshot_id "NULL"
+        text failure_reason "NULL"
+        timestamp started_at "NULL"
+        timestamp finished_at "NULL"
+        varchar_64 created_by
+        timestamp created_at
+    }
+
+    %% 收益分配计算 - MD-DShap 权重结果表
+    md_dshap_result {
+        varchar_64 result_id PK
+        varchar_64 task_id FK
+        varchar_64 project_id FK
+        varchar_64 party_id FK
+        numeric_18_6 participant_weight
+        numeric_18_6 normalized_weight
+        numeric_18_6 baseline_weight "NULL"
+        numeric_18_6 weight_diff "NULL"
+        jsonb task_level_weight_json
+        text approximation_note "NULL"
+        int result_version
+        timestamp created_at
+    }
+
+    %% 收益分配计算 - 边际贡献 trace 表
+    md_dshap_marginal_trace {
+        varchar_64 trace_id PK
+        varchar_64 task_id FK
+        varchar_64 project_id FK
+        varchar_64 party_id FK
+        varchar_80 task_key
+        int iteration_no
+        jsonb coalition_before
+        varchar_64 participant_added
+        numeric_18_6 v_before
+        numeric_18_6 v_after
+        numeric_18_6 marginal_contribution
+        bigint random_seed "NULL"
+        timestamp created_at
+    }
+
+    %% 收益分配计算 - 算法审计快照表
+    algorithm_audit_snapshot {
+        varchar_64 snapshot_id PK
+        varchar_64 project_id FK
+        varchar_64 task_id FK
+        jsonb input_snapshot_json
+        jsonb parameter_snapshot_json
+        jsonb output_snapshot_json
+        text assumption_text
+        varchar_128 checksum
+        timestamp created_at
+    }
+
+    %% 收益分配计算 - 收益分配场景表
+    allocation_scenario {
+        varchar_64 allocation_id PK
+        varchar_64 project_id FK
+        varchar_64 weight_task_id FK "NULL"
+        varchar_200 scenario_name
+        numeric_18_2 total_revenue
+        numeric_18_2 priority_allocation_amount
+        numeric_18_2 data_provider_revenue_pool
+        varchar_40 allocation_mode
+        varchar_20 status
+        int version_no
+        varchar_64 locked_by "NULL"
+        timestamp locked_at "NULL"
+        varchar_64 created_by
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    %% 收益分配计算 - 合同优先分配项表
+    allocation_priority_item {
+        varchar_64 item_id PK
+        varchar_64 allocation_id FK
+        varchar_64 project_id FK
+        varchar_64 party_id FK
+        numeric_18_2 priority_amount
+        numeric_18_6 priority_ratio "NULL"
+        text basis_text
+        int priority_order
+        varchar_16 status
+        timestamp created_at
+    }
+
+    %% 收益分配计算 - 合同约束表（旧约束兼容）
+    contract_constraint {
+        varchar_64 constraint_id PK
+        varchar_64 project_id FK
+        varchar_64 party_id FK
+        varchar_40 constraint_type
+        numeric_18_6 constraint_value
+        int priority
+        text basis_text "NULL"
+        varchar_16 status
+        varchar_64 created_by
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    %% 收益分配计算 - 收益分配结果表
+    allocation_result {
+        varchar_64 result_id PK
+        varchar_64 allocation_id FK
+        varchar_64 project_id FK
+        varchar_64 party_id FK
+        numeric_18_6 raw_weight
+        numeric_18_6 normalized_weight
+        numeric_18_2 pre_constraint_amount
+        numeric_18_2 post_constraint_amount
+        numeric_18_2 adjustment_amount
+        text constraint_adjustment_reason "NULL"
+        int result_version
+        timestamp created_at
+    }
+
+    %% 收益分配计算 - 约束执行 trace 表
+    constraint_apply_trace {
+        varchar_64 trace_id PK
+        varchar_64 allocation_id FK
+        varchar_64 project_id FK
+        varchar_64 constraint_id FK "NULL"
+        varchar_64 party_id FK
+        numeric_18_2 before_amount
+        numeric_18_2 after_amount
+        numeric_18_2 adjustment_amount
+        text reason
+        int step_no
+        timestamp created_at
+    }
+
+    %% 报告与审计 - 报告记录表
+    report_record {
+        varchar_64 report_id PK
+        varchar_64 project_id FK
+        varchar_64 source_snapshot_id FK "NULL"
+        varchar_60 report_type
+        int report_version_no
+        varchar_255 file_name
+        varchar_16 file_format
+        varchar_500 file_path
+        varchar_128 checksum
+        varchar_16 status
+        varchar_64 created_by
+        timestamp created_at
+    }
+
+    %% 报告与审计 - 导出文件表
+    export_file {
+        varchar_64 file_id PK
+        varchar_64 report_id FK
+        varchar_64 project_id FK
+        varchar_255 file_name
+        varchar_60 file_type
+        varchar_16 file_format
+        varchar_500 file_path
+        jsonb field_scope_json
+        varchar_128 checksum
+        varchar_64 created_by
+        timestamp created_at
+    }
+
+    %% 报告与审计 - 审计日志表
+    audit_log {
+        varchar_64 log_id PK
+        varchar_64 project_id FK "NULL"
+        varchar_32 module_code
+        varchar_64 menu_code
+        varchar_40 operation_type
+        varchar_80 object_type
+        varchar_64 object_id "NULL"
+        varchar_64 operator_id
+        varchar_64 role_code
+        jsonb before_value_json "NULL"
+        jsonb after_value_json "NULL"
+        varchar_64 input_snapshot_id "NULL"
+        varchar_64 parameter_snapshot_id "NULL"
+        varchar_64 result_snapshot_id "NULL"
+        varchar_16 status
+        text failure_reason "NULL"
+        varchar_128 checksum "NULL"
+        timestamp created_at
+    }
+
+    %% 系统管理 - 系统参数表
+    system_parameter {
+        varchar_64 parameter_id PK
+        varchar_100 parameter_code
+        varchar_160 parameter_name
+        varchar_40 parameter_type
+        jsonb default_value_json
+        jsonb current_value_json
+        varchar_40 scope
+        boolean is_editable
+        int version_no
+        varchar_16 status
+        varchar_64 updated_by
+        timestamp updated_at
+        timestamp created_at
+    }
+
+    %% 系统管理 - 参数版本表
+    parameter_version {
+        varchar_64 version_id PK
+        varchar_64 parameter_id FK
+        varchar_64 project_id FK "NULL"
+        int version_no
+        jsonb value_json
+        varchar_128 checksum
+        varchar_64 created_by
+        timestamp created_at
+    }
+
+    nav_menu ||--o{ nav_menu : "parent_id -> menu_id"
+    nav_menu ||--o{ permission : "menu_id -> menu_id"
+    user_account ||--o{ user_role : "user_id -> user_id"
+    role ||--o{ user_role : "role_id -> role_id"
+    role ||--o{ role_permission : "role_id -> role_id"
+    permission ||--o{ role_permission : "permission_id -> permission_id"
+    allocation_project ||--o{ snapshot_store : "project_id -> project_id"
+    allocation_project ||--o{ input_snapshot : "project_id -> project_id"
+    allocation_project ||--o{ data_package : "project_id -> project_id"
+    input_snapshot ||--o{ data_package : "input_snapshot_id -> snapshot_id"
+    allocation_project ||--o{ upload_validation_result : "project_id -> project_id"
+    data_package ||--o{ upload_validation_result : "package_id -> package_id"
+    allocation_project ||--o{ data_resource : "project_id -> project_id"
+    data_package ||--o{ data_resource : "package_id -> package_id"
+    data_resource ||--o{ data_resource_field : "resource_id -> resource_id"
+    allocation_project ||--o{ party : "project_id -> project_id"
+    allocation_project ||--o{ data_resource_party_relation : "project_id -> project_id"
+    data_resource ||--o{ data_resource_party_relation : "resource_id -> resource_id"
+    party ||--o{ data_resource_party_relation : "party_id -> party_id"
+    allocation_project ||--o{ quality_assessment : "project_id -> project_id"
+    data_package ||--o{ quality_assessment : "package_id -> package_id"
+    quality_assessment ||--o{ quality_score_detail : "assessment_id -> assessment_id"
+    allocation_project ||--o{ shuyuan_metering : "project_id -> project_id"
+    quality_assessment ||--o{ shuyuan_metering : "assessment_id -> assessment_id"
+    shuyuan_metering ||--o{ shuyuan_metering_detail : "metering_id -> metering_id"
+    allocation_project ||--o{ shuyuan_metering_detail : "project_id -> project_id"
+    data_resource ||--o{ shuyuan_metering_detail : "resource_id -> resource_id"
+    party ||--o{ shuyuan_metering_detail : "party_id -> party_id"
+    allocation_project ||--o{ contribution_record : "project_id -> project_id"
+    party ||--o{ contribution_record : "party_id -> party_id"
+    shuyuan_metering ||--o{ contribution_record : "metering_id -> metering_id"
+    allocation_project ||--o{ utility_function_snapshot : "project_id -> project_id"
+    allocation_project ||--o{ utility_record : "project_id -> project_id"
+    party ||--o{ utility_record : "party_id -> party_id"
+    contribution_record ||--o{ utility_record : "contribution_id -> contribution_id"
+    utility_function_snapshot ||--o{ utility_record : "utility_function_snapshot_id -> snapshot_id"
+    utility_record ||--o{ utility_trace : "utility_id -> utility_id"
+    allocation_project ||--o{ md_dshap_task : "project_id -> project_id"
+    utility_function_snapshot ||--o{ md_dshap_task : "utility_function_snapshot_id -> snapshot_id"
+    md_dshap_task ||--o{ md_dshap_result : "task_id -> task_id"
+    allocation_project ||--o{ md_dshap_result : "project_id -> project_id"
+    party ||--o{ md_dshap_result : "party_id -> party_id"
+    md_dshap_task ||--o{ md_dshap_marginal_trace : "task_id -> task_id"
+    allocation_project ||--o{ md_dshap_marginal_trace : "project_id -> project_id"
+    party ||--o{ md_dshap_marginal_trace : "party_id -> party_id"
+    allocation_project ||--o{ algorithm_audit_snapshot : "project_id -> project_id"
+    md_dshap_task ||--o{ algorithm_audit_snapshot : "task_id -> task_id"
+    allocation_project ||--o{ allocation_scenario : "project_id -> project_id"
+    md_dshap_task ||--o{ allocation_scenario : "weight_task_id -> task_id"
+    allocation_scenario ||--o{ allocation_priority_item : "allocation_id -> allocation_id"
+    allocation_project ||--o{ allocation_priority_item : "project_id -> project_id"
+    party ||--o{ allocation_priority_item : "party_id -> party_id"
+    allocation_project ||--o{ contract_constraint : "project_id -> project_id"
+    party ||--o{ contract_constraint : "party_id -> party_id"
+    allocation_scenario ||--o{ allocation_result : "allocation_id -> allocation_id"
+    allocation_project ||--o{ allocation_result : "project_id -> project_id"
+    party ||--o{ allocation_result : "party_id -> party_id"
+    allocation_scenario ||--o{ constraint_apply_trace : "allocation_id -> allocation_id"
+    allocation_project ||--o{ constraint_apply_trace : "project_id -> project_id"
+    contract_constraint ||--o{ constraint_apply_trace : "constraint_id -> constraint_id"
+    party ||--o{ constraint_apply_trace : "party_id -> party_id"
+    allocation_project ||--o{ report_record : "project_id -> project_id"
+    snapshot_store ||--o{ report_record : "source_snapshot_id -> snapshot_id"
+    report_record ||--o{ export_file : "report_id -> report_id"
+    allocation_project ||--o{ export_file : "project_id -> project_id"
+    allocation_project ||--o{ audit_log : "project_id -> project_id"
+    system_parameter ||--o{ parameter_version : "parameter_id -> parameter_id"
+    allocation_project ||--o{ parameter_version : "project_id -> project_id"
